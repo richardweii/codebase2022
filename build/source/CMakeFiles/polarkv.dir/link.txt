@@ -1,0 +1,2 @@
+/opt/rh/devtoolset-8/root/usr/bin/ar cr libpolarkv.a  CMakeFiles/polarkv.dir/kv_engine.cc.o CMakeFiles/polarkv.dir/conn_manager.cc.o CMakeFiles/polarkv.dir/connection.cc.o CMakeFiles/polarkv.dir/kv_hash.cc.o CMakeFiles/polarkv.dir/kv_mem.cc.o
+/opt/rh/devtoolset-8/root/usr/bin/ranlib libpolarkv.a
