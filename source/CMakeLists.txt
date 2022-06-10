@@ -1,7 +1,7 @@
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
 set(BASE_SOURCE
-    kv_engine.cc)
+    local_engine.cc remote_engine.cc rdma_conn_manager.cc rdma_conn.cc )
 
 add_library(polarkv STATIC ${BASE_SOURCE})
 
