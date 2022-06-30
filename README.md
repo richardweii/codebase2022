@@ -1,4 +1,5 @@
-## `` Note: 考虑到大家可能对RDMA不太熟悉，我们在本仓库的demo_kv分支有一份完整的RDMA实现的demo，大家可以利用这个demo支持访问remote节点，然后专注在local节点的KV设计和并发控制。``
+## `` Note: 考虑到大家可能对RDMA不太熟悉，我们在本仓库的demo_kv分支有一份完整的RDMA实现的demo，大家可以利用这个demo支持访问remote节点，``
+## ``然后专注在local节点的KV设计和并发控制。``
 
 
 ### 一些注意事项：
