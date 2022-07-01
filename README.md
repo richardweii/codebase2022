@@ -10,7 +10,7 @@
 5. 模拟环境跑demo，server在创建pd的时候默认用第一块网卡，而选手在添加模拟网卡时，可能会遇到一些网卡成功添加但不能使用的情况，这样在跑demo的时候，即使设置了对应网卡的addr和port，也会因为pd没对应上失败；
     解决方法是用rdma link delete NAME命令，删掉无法使用的网卡；
 6. 模拟环境单次注册内存，到64M就会失败，erdma单次可以注册2G；
-7. 还有一个是自己写server/client测试的时候，如果复用同一个工程，注意在server/client编译时候得加link对应库文件；
+7. 自己写server/client测试的时候，如果复用同一个工程，注意在server/client编译时候得加link对应库文件；
 
 ## 1. 赛题背景
 参见相关网页
@@ -129,7 +129,10 @@ int main(int argc, char *argv[]) {
 
 Local节点限制为16 Core、8 GB内存，Remote节点限制为4 Core、32 GB内存；
 
-OS为Linux version 3.10.0-693.2.2.el7.x86_64
+
+操作系统: Alibaba Cloud Linux 2.1903 LTS 64位
+
+gcc version 8.3.1 20190311 (Red Hat 8.3.1-3) (GCC)
 
 ### 6. 程序评测逻辑
 评测程序分为2个阶段：
@@ -144,3 +147,45 @@ OS为Linux version 3.10.0-693.2.2.el7.x86_64
 
 ### 7. 排名规则
 在正确性验证通过的情况下，对性能评测整体计时，根据规模压测总用时从低到高进行排名（用时越短排名越靠前）
+
+### 8. 选手lib的评测程序生成example
+```cmake
+cmake_minimum_required(VERSION 2.8)
+project(TCTEST)
+
+set(CMAKE_BUILD_TYPE "Release")
+
+set(RDMA_LIB "-lrdmacm -libverbs -libumad -lpci -lefa")
+set(CMAKE_CXX_FLAGS "-std=c++17 ${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "-pthread -ldl -lrt ${RDMA_LIB} -${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fopenmp")
+
+set(CMAKE_INSTALL_PREFIX ${CMAKE_BINARY_DIR}/xxxxx)
+MESSAGE("Install prefix is: ${CMAKE_INSTALL_PREFIX}")
+
+add_subdirectory(include)
+add_subdirectory(lib)
+
+include_directories(include)
+include_directories(${PROJECT_SOURCE_DIR}/lib)
+link_directories(${PROJECT_SOURCE_DIR}/lib)
+
+add_executable(local
+            local.cc)
+target_link_libraries(dblocal polarkv)
+install(TARGETS dblocal
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin
+        PUBLIC_HEADER DESTINATION include)
+
+add_executable(remote
+            remote.cc)
+target_link_libraries(dbremote polarkv)
+install(TARGETS dbremote
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin
+        PUBLIC_HEADER DESTINATION include)
+```
+
