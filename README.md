@@ -1,4 +1,4 @@
-## `` Note: 考虑到大家可能对RDMA不太熟悉，我们在本仓库的demo_kv分支有一份完整实现的demo，大家可以利用这个demo支持访问remote节点，无需关注RDMA的``
+## `` Note: 考虑到大家可能对RDMA不太熟悉，我们在本仓库的demo_kv分支有一份完整实现的demo。初赛，大家可以利用这个demo支持访问remote节点，无需关注RDMA的``
 ## ``底层实现，然后专注在local节点的KV设计和并发控制。Demo直接提交会报时间超时（Timer expired）或OOM（已杀死），需要做适当的优化。``
 
 
