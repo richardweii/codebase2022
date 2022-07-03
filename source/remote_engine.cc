@@ -1,5 +1,7 @@
 #include "kv_engine.h"
 
+#define MEM_ALIGN_SIZE 4096
+
 namespace kv {
 
 /**
@@ -233,13 +235,17 @@ struct ibv_mr *RemoteEngine::rdma_register_memory(void *ptr, uint64_t size) {
 
 int RemoteEngine::allocate_and_register_memory(uint64_t &addr, uint32_t &rkey,
                                                uint64_t size) {
-  char *ptr = new char[size];
-  struct ibv_mr *mr = rdma_register_memory((void *)ptr, size);
+  /* align mem */
+  uint64_t total_size = size + MEM_ALIGN_SIZE;
+  uint64_t mem = (uint64_t)malloc(total_size);
+  addr = mem;
+  if (addr % MEM_ALIGN_SIZE != 0)
+    addr = addr + (MEM_ALIGN_SIZE - addr % MEM_ALIGN_SIZE);
+  struct ibv_mr *mr = rdma_register_memory((void *)addr, size);
   if (!mr) {
     perror("ibv_reg_mr fail");
     return -1;
   }
-  addr = (uint64_t)ptr;
   rkey = mr->rkey;
   // printf("allocate and register memory %ld %d\n", addr, rkey);
   // TODO: save this memory info for later delete

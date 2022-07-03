@@ -1,4 +1,5 @@
 #include "rdma_conn_manager.h"
+#include "atomic"
 
 namespace kv {
 

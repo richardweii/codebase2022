@@ -11,11 +11,16 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "kv_engine.h"
-#include "map"
 #include "msg.h"
 #include "rdma_conn_manager.h"
+#include "rdma_mem_pool.h"
 #include "string"
 #include "thread"
+#include "unordered_map"
+
+#define SHARDING_NUM 32
+static_assert(((SHARDING_NUM & (~SHARDING_NUM + 1)) == SHARDING_NUM),
+              "RingBuffer's size must be a positive power of 2");
 
 namespace kv {
 
@@ -50,8 +55,11 @@ class LocalEngine : public Engine {
 
  private:
   kv::ConnectionManager *m_rdma_conn_;
-  std::map<std::string, internal_value_t> m_map_;
-  std::mutex m_mutex_;
+  /* NOTE: should use some concurrent data structure, and also should take the
+   * extra memory overhead into consideration */
+  std::unordered_map<std::string, internal_value_t> m_map_[SHARDING_NUM];
+  std::mutex m_mutex_[SHARDING_NUM];
+  RDMAMemPool *m_rdma_mem_pool_;
 };
 
 /* Remote-side engine */
