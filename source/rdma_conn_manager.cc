@@ -2,8 +2,7 @@
 
 namespace kv {
 
-int ConnectionManager::init(const std::string ip, const std::string port,
-                            uint32_t rpc_conn_num,
+int ConnectionManager::init(const std::string ip, const std::string port, uint32_t rpc_conn_num,
                             uint32_t one_sided_conn_num) {
   m_rpc_conn_queue_ = new ConnQue();
   m_one_sided_conn_queue_ = new ConnQue();
@@ -35,8 +34,7 @@ int ConnectionManager::init(const std::string ip, const std::string port,
   return 0;
 }
 
-int ConnectionManager::register_remote_memory(uint64_t &addr, uint32_t &rkey,
-                                              uint64_t size) {
+int ConnectionManager::register_remote_memory(uint64_t &addr, uint32_t &rkey, uint64_t size) {
   RDMAConnection *conn = m_rpc_conn_queue_->dequeue();
   assert(conn != nullptr);
   int ret = conn->register_remote_memory(addr, rkey, size);
@@ -44,8 +42,7 @@ int ConnectionManager::register_remote_memory(uint64_t &addr, uint32_t &rkey,
   return ret;
 }
 
-int ConnectionManager::remote_read(void *ptr, uint32_t size,
-                                   uint64_t remote_addr, uint32_t rkey) {
+int ConnectionManager::remote_read(void *ptr, uint32_t size, uint64_t remote_addr, uint32_t rkey) {
   RDMAConnection *conn = m_one_sided_conn_queue_->dequeue();
   assert(conn != nullptr);
   int ret = conn->remote_read(ptr, size, remote_addr, rkey);
@@ -53,8 +50,7 @@ int ConnectionManager::remote_read(void *ptr, uint32_t size,
   return ret;
 }
 
-int ConnectionManager::remote_write(void *ptr, uint32_t size,
-                                    uint64_t remote_addr, uint32_t rkey) {
+int ConnectionManager::remote_write(void *ptr, uint32_t size, uint64_t remote_addr, uint32_t rkey) {
   RDMAConnection *conn = m_one_sided_conn_queue_->dequeue();
   assert(conn != nullptr);
   int ret = conn->remote_write(ptr, size, remote_addr, rkey);

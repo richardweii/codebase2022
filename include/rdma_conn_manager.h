@@ -44,13 +44,10 @@ class ConnectionManager {
     // TODO: release resources;
   }
 
-  int init(const std::string ip, const std::string port, uint32_t rpc_conn_num,
-           uint32_t one_sided_conn_num);
+  int init(const std::string ip, const std::string port, uint32_t rpc_conn_num, uint32_t one_sided_conn_num);
   int register_remote_memory(uint64_t &addr, uint32_t &rkey, uint64_t size);
-  int remote_read(void *ptr, uint32_t size, uint64_t remote_addr,
-                  uint32_t rkey);
-  int remote_write(void *ptr, uint32_t size, uint64_t remote_addr,
-                   uint32_t rkey);
+  int remote_read(void *ptr, uint32_t size, uint64_t remote_addr, uint32_t rkey);
+  int remote_write(void *ptr, uint32_t size, uint64_t remote_addr, uint32_t rkey);
 
  private:
   ConnQue *m_rpc_conn_queue_;

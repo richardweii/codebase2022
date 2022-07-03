@@ -198,8 +198,7 @@ int RemoteEngine::create_connection(struct rdma_cm_id *cm_id) {
     m_worker_info_[num]->cq = cq;
 
     assert(m_worker_threads_[num] == nullptr);
-    m_worker_threads_[num] =
-        new std::thread(&RemoteEngine::worker, this, m_worker_info_[num], num);
+    m_worker_threads_[num] = new std::thread(&RemoteEngine::worker, this, m_worker_info_[num], num);
   }
 
   struct rdma_conn_param conn_param;
@@ -221,9 +220,7 @@ int RemoteEngine::create_connection(struct rdma_cm_id *cm_id) {
 
 struct ibv_mr *RemoteEngine::rdma_register_memory(void *ptr, uint64_t size) {
   struct ibv_mr *mr =
-      ibv_reg_mr(m_pd_, ptr, size,
-                 IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ |
-                     IBV_ACCESS_REMOTE_WRITE);
+      ibv_reg_mr(m_pd_, ptr, size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
   if (!mr) {
     perror("ibv_reg_mr fail");
     return nullptr;
@@ -231,8 +228,7 @@ struct ibv_mr *RemoteEngine::rdma_register_memory(void *ptr, uint64_t size) {
   return mr;
 }
 
-int RemoteEngine::allocate_and_register_memory(uint64_t &addr, uint32_t &rkey,
-                                               uint64_t size) {
+int RemoteEngine::allocate_and_register_memory(uint64_t &addr, uint32_t &rkey, uint64_t size) {
   char *ptr = new char[size];
   struct ibv_mr *mr = rdma_register_memory((void *)ptr, size);
   if (!mr) {
@@ -246,8 +242,7 @@ int RemoteEngine::allocate_and_register_memory(uint64_t &addr, uint32_t &rkey,
   return 0;
 }
 
-int RemoteEngine::remote_write(WorkerInfo *work_info, uint64_t local_addr,
-                               uint32_t lkey, uint32_t length,
+int RemoteEngine::remote_write(WorkerInfo *work_info, uint64_t local_addr, uint32_t lkey, uint32_t length,
                                uint64_t remote_addr, uint32_t rkey) {
   struct ibv_sge sge;
   sge.addr = (uintptr_t)local_addr;
@@ -322,21 +317,18 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
       // printf("receive a memory register message, size: %ld\n",
       // reg_req->size);
       RegisterResponse *resp_msg = (RegisterResponse *)cmd_resp;
-      if (allocate_and_register_memory(resp_msg->addr, resp_msg->rkey,
-                                       reg_req->size)) {
+      if (allocate_and_register_memory(resp_msg->addr, resp_msg->rkey, reg_req->size)) {
         resp_msg->status = RES_FAIL;
       } else {
         resp_msg->status = RES_OK;
       }
       /* write response */
-      remote_write(work_info, (uint64_t)cmd_resp, resp_mr->lkey,
-                   sizeof(CmdMsgRespBlock), reg_req->resp_addr,
+      remote_write(work_info, (uint64_t)cmd_resp, resp_mr->lkey, sizeof(CmdMsgRespBlock), reg_req->resp_addr,
                    reg_req->resp_rkey);
     } else if (request->type == MSG_UNREGISTER) {
       /* handle memory unregister requests */
       UnregisterRequest *unreg_req = (UnregisterRequest *)request;
-      printf("receive a memory unregister message, addr: %ld\n",
-             unreg_req->addr);
+      printf("receive a memory unregister message, addr: %ld\n", unreg_req->addr);
       // TODO: implemente memory unregister
     } else {
       printf("wrong request type\n");

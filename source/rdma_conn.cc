@@ -141,8 +141,7 @@ int RDMAConnection::init(const std::string ip, const std::string port) {
 
   m_cmd_resp_ = new CmdMsgRespBlock();
   memset(m_cmd_resp_, 0, sizeof(CmdMsgRespBlock));
-  m_resp_mr_ =
-      rdma_register_memory((void *)m_cmd_resp_, sizeof(CmdMsgRespBlock));
+  m_resp_mr_ = rdma_register_memory((void *)m_cmd_resp_, sizeof(CmdMsgRespBlock));
   if (!m_resp_mr_) {
     perror("ibv_reg_mr m_resp_mr_ fail");
     return -1;
@@ -160,9 +159,7 @@ int RDMAConnection::init(const std::string ip, const std::string port) {
 
 struct ibv_mr *RDMAConnection::rdma_register_memory(void *ptr, uint64_t size) {
   struct ibv_mr *mr =
-      ibv_reg_mr(m_pd_, ptr, size,
-                 IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ |
-                     IBV_ACCESS_REMOTE_WRITE);
+      ibv_reg_mr(m_pd_, ptr, size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
   if (!mr) {
     perror("ibv_reg_mr fail");
     return nullptr;
@@ -170,8 +167,7 @@ struct ibv_mr *RDMAConnection::rdma_register_memory(void *ptr, uint64_t size) {
   return mr;
 }
 
-int RDMAConnection::rdma_remote_read(uint64_t local_addr, uint32_t lkey,
-                                     uint64_t length, uint64_t remote_addr,
+int RDMAConnection::rdma_remote_read(uint64_t local_addr, uint32_t lkey, uint64_t length, uint64_t remote_addr,
                                      uint32_t rkey) {
   struct ibv_sge sge;
   sge.addr = (uintptr_t)local_addr;
@@ -227,8 +223,7 @@ int RDMAConnection::rdma_remote_read(uint64_t local_addr, uint32_t lkey,
   return ret;
 }
 
-int RDMAConnection::rdma_remote_write(uint64_t local_addr, uint32_t lkey,
-                                      uint64_t length, uint64_t remote_addr,
+int RDMAConnection::rdma_remote_write(uint64_t local_addr, uint32_t lkey, uint64_t length, uint64_t remote_addr,
                                       uint32_t rkey) {
   struct ibv_sge sge;
   sge.addr = (uintptr_t)local_addr;
@@ -287,10 +282,8 @@ int RDMAConnection::rdma_remote_write(uint64_t local_addr, uint32_t lkey,
   return ret;
 }
 
-int RDMAConnection::remote_read(void *ptr, uint64_t size, uint64_t remote_addr,
-                                uint32_t rkey) {
-  int ret = rdma_remote_read((uint64_t)m_reg_buf_, m_reg_buf_mr_->lkey, size,
-                             remote_addr, rkey);
+int RDMAConnection::remote_read(void *ptr, uint64_t size, uint64_t remote_addr, uint32_t rkey) {
+  int ret = rdma_remote_read((uint64_t)m_reg_buf_, m_reg_buf_mr_->lkey, size, remote_addr, rkey);
   if (ret) {
     return -1;
   }
@@ -298,15 +291,12 @@ int RDMAConnection::remote_read(void *ptr, uint64_t size, uint64_t remote_addr,
   return ret;
 }
 
-int RDMAConnection::remote_write(void *ptr, uint64_t size, uint64_t remote_addr,
-                                 uint32_t rkey) {
+int RDMAConnection::remote_write(void *ptr, uint64_t size, uint64_t remote_addr, uint32_t rkey) {
   memcpy(m_reg_buf_, ptr, size);
-  return rdma_remote_write((uint64_t)m_reg_buf_, m_reg_buf_mr_->lkey, size,
-                           remote_addr, rkey);
+  return rdma_remote_write((uint64_t)m_reg_buf_, m_reg_buf_mr_->lkey, size, remote_addr, rkey);
 }
 
-int RDMAConnection::register_remote_memory(uint64_t &addr, uint32_t &rkey,
-                                           uint64_t size) {
+int RDMAConnection::register_remote_memory(uint64_t &addr, uint32_t &rkey, uint64_t size) {
   memset(m_cmd_msg_, 0, sizeof(CmdMsgBlock));
   memset(m_cmd_resp_, 0, sizeof(CmdMsgRespBlock));
   m_cmd_resp_->notify = NOTIFY_IDLE;
@@ -318,8 +308,7 @@ int RDMAConnection::register_remote_memory(uint64_t &addr, uint32_t &rkey,
   m_cmd_msg_->notify = NOTIFY_WORK;
 
   /* send a request to sever */
-  int ret = rdma_remote_write((uint64_t)m_cmd_msg_, m_msg_mr_->lkey,
-                              sizeof(CmdMsgBlock), m_server_cmd_msg_,
+  int ret = rdma_remote_write((uint64_t)m_cmd_msg_, m_msg_mr_->lkey, sizeof(CmdMsgBlock), m_server_cmd_msg_,
                               m_server_cmd_rkey_);
   if (ret) {
     printf("fail to send requests\n");

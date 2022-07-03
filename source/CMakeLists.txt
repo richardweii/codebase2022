@@ -1,9 +1,9 @@
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-set(BASE_SOURCE
-    local_engine.cc remote_engine.cc rdma_conn_manager.cc rdma_conn.cc )
+aux_source_directory(${PROJECT_SOURCE_DIR}/source SRC)
+aux_source_directory(${PROJECT_SOURCE_DIR}/source/util SRC)
 
-add_library(polarkv STATIC ${BASE_SOURCE})
+add_library(polarkv STATIC ${SRC})
 
 install(TARGETS polarkv
         ARCHIVE DESTINATION lib

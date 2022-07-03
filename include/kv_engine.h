@@ -79,11 +79,10 @@ class RemoteEngine : public Engine {
 
   struct ibv_mr *rdma_register_memory(void *ptr, uint64_t size);
 
-  int remote_write(WorkerInfo *work_info, uint64_t local_addr, uint32_t lkey,
-                   uint32_t length, uint64_t remote_addr, uint32_t rkey);
+  int remote_write(WorkerInfo *work_info, uint64_t local_addr, uint32_t lkey, uint32_t length, uint64_t remote_addr,
+                   uint32_t rkey);
 
-  int allocate_and_register_memory(uint64_t &addr, uint32_t &rkey,
-                                   uint64_t size);
+  int allocate_and_register_memory(uint64_t &addr, uint32_t &rkey, uint64_t size);
 
   void worker(WorkerInfo *work_info, uint32_t num);
 

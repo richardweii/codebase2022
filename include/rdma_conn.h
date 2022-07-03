@@ -21,19 +21,15 @@ class RDMAConnection {
  public:
   int init(const std::string ip, const std::string port);
   int register_remote_memory(uint64_t &addr, uint32_t &rkey, uint64_t size);
-  int remote_read(void *ptr, uint64_t size, uint64_t remote_addr,
-                  uint32_t rkey);
-  int remote_write(void *ptr, uint64_t size, uint64_t remote_addr,
-                   uint32_t rkey);
+  int remote_read(void *ptr, uint64_t size, uint64_t remote_addr, uint32_t rkey);
+  int remote_write(void *ptr, uint64_t size, uint64_t remote_addr, uint32_t rkey);
 
  private:
   struct ibv_mr *rdma_register_memory(void *ptr, uint64_t size);
 
-  int rdma_remote_read(uint64_t local_addr, uint32_t lkey, uint64_t length,
-                       uint64_t remote_addr, uint32_t rkey);
+  int rdma_remote_read(uint64_t local_addr, uint32_t lkey, uint64_t length, uint64_t remote_addr, uint32_t rkey);
 
-  int rdma_remote_write(uint64_t local_addr, uint32_t lkey, uint64_t length,
-                        uint64_t remote_addr, uint32_t rkey);
+  int rdma_remote_write(uint64_t local_addr, uint32_t lkey, uint64_t length, uint64_t remote_addr, uint32_t rkey);
 
   struct rdma_event_channel *m_cm_channel_;
   struct ibv_pd *m_pd_;

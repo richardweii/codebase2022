@@ -49,8 +49,7 @@ bool LocalEngine::write(const std::string key, const std::string value) {
   int ret = 0;
   ret = m_rdma_conn_->register_remote_memory(remote_addr, rkey, value.size());
   if (ret) return false;
-  ret = m_rdma_conn_->remote_write((void *)value.c_str(), value.size(),
-                                   remote_addr, rkey);
+  ret = m_rdma_conn_->remote_write((void *)value.c_str(), value.size(), remote_addr, rkey);
   if (ret) return false;
   internal_value.remote_addr = remote_addr;
   internal_value.rkey = rkey;
@@ -78,8 +77,7 @@ bool LocalEngine::read(const std::string key, std::string &value) {
   inter_val = it->second;
   m_mutex_.unlock();
   value.reserve(inter_val.size);
-  if (m_rdma_conn_->remote_read((void *)value.c_str(), inter_val.size,
-                                inter_val.remote_addr, inter_val.rkey))
+  if (m_rdma_conn_->remote_read((void *)value.c_str(), inter_val.size, inter_val.remote_addr, inter_val.rkey))
     return false;
   return true;
 }

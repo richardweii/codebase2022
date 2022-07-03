@@ -15,16 +15,13 @@ namespace kv {
 #define MAX_REMOTE_SIZE (1UL << 25)
 
 #define TIME_NOW (std::chrono::high_resolution_clock::now())
-#define TIME_DURATION_US(START, END)                                      \
-  (std::chrono::duration_cast<std::chrono::microseconds>((END) - (START)) \
-       .count())
+#define TIME_DURATION_US(START, END) (std::chrono::duration_cast<std::chrono::microseconds>((END) - (START)).count())
 
 enum MsgType { MSG_REGISTER, MSG_UNREGISTER };
 
 enum ResStatus { RES_OK, RES_FAIL };
 
-#define CHECK_RDMA_MSG_SIZE(T) \
-  static_assert(sizeof(T) < MAX_MSG_SIZE, #T " msg size is too big!")
+#define CHECK_RDMA_MSG_SIZE(T) static_assert(sizeof(T) < MAX_MSG_SIZE, #T " msg size is too big!")
 
 struct PData {
   uint64_t buf_addr;
