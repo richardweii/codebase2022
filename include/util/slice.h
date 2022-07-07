@@ -18,6 +18,8 @@
 #include <cstring>
 #include <string>
 
+namespace kv {
+
 // 对字符串的只读引用
 class Slice {
  public:
@@ -100,3 +102,4 @@ inline int Slice::compare(const Slice &b) const {
   }
   return r;
 }
+}  // namespace kv

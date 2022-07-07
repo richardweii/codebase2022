@@ -1,6 +1,7 @@
 #include <memory>
 #include "util/filter.h"
 #include "util/hash.h"
+namespace kv {
 
 static uint32_t BloomHash(const Slice &key) { return Hash(key.data(), key.size(), 0xbc9f1d34); }
 
@@ -64,11 +65,15 @@ class BloomFilter : public Filter {
     return true;
   }
 
+  ~BloomFilter() override = default;
+
  private:
   size_t bits_per_key_;
   size_t k_;
 };
 
-Ptr<Filter> NewBloomFilterPolicy(int bits_per_key) {
-  return Ptr<Filter>(new BloomFilter(bits_per_key));
+std::shared_ptr<Filter> NewBloomFilterPolicy(int bits_per_key) {
+  return std::shared_ptr<Filter>(new BloomFilter(bits_per_key));
 }
+
+}  // namespace kv

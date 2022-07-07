@@ -2,5 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+namespace kv {
 
-uint32_t Hash(const char* data, size_t n, uint32_t seed);
+uint32_t Hash(const char *data, size_t n, uint32_t seed);
+
+}  // namespace kv

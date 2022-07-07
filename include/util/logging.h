@@ -32,6 +32,7 @@ extern LOG_LEVEL level;
     GET_TIME                                                                                            \
     if (level >= LOG_LEVEL_FATAL)                                                                       \
       DEBUG("\033[;31m[FATAL] %s %s:%d: " format "\n\033[0m", TIME, __FILE__, __LINE__, ##__VA_ARGS__); \
+    exit(1);                                                                                            \
   } while (0)
 
 #define LOG_ERROR(format, ...)                                                                          \

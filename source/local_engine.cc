@@ -1,5 +1,12 @@
+#include <cstddef>
 #include "assert.h"
+#include "config.h"
 #include "kv_engine.h"
+#include "pool.h"
+#include "rdma_conn_manager.h"
+#include "util/filter.h"
+#include "util/hash.h"
+#include "util/logging.h"
 
 #define MAX_VALUE_SIZE 4096
 
@@ -12,12 +19,35 @@ namespace kv {
  * @return {bool} true for success
  */
 bool LocalEngine::start(const std::string addr, const std::string port) {
-  m_rdma_conn_ = new ConnectionManager();
-  if (m_rdma_conn_ == nullptr) return -1;
-  if (m_rdma_conn_->init(addr, port, 4, 16))
+  constexpr size_t buffer_pool_size = kLocalDataSize / kPoolShardNum / kDataBlockSize;
+  constexpr size_t filter_bits = 10 * kKeyNum / kPoolShardNum;
+  constexpr size_t cache_size = kCacheSize / kPoolShardNum;
+  LOG_INFO("Create %d pool, each pool with %lu datablock, %lu MB filter data, %lu MB cache", kPoolShardNum,
+           buffer_pool_size, filter_bits / 8 / 1024 / 1024, cache_size / 1024 / 1024);
+
+  struct ibv_context **ibv_ctxs;
+  int nr_devices_;
+  ibv_ctxs = rdma_get_devices(&nr_devices_);
+  if (!ibv_ctxs) {
+    perror("get device list fail");
     return false;
-  else
-    return true;
+  }
+
+  auto context = ibv_ctxs[0];
+  pd_ = ibv_alloc_pd(context);
+  if (!pd_) {
+    perror("ibv_alloc_pd fail");
+    return false;
+  }
+
+  connection_manager_ = new ConnectionManager(pd_);
+  connection_manager_->Init(addr, port, 4, 4);
+
+  for (int i = 0; i < kPoolShardNum; i++) {
+    pool_[i] = new Pool(buffer_pool_size, filter_bits, cache_size, i, connection_manager_);
+    pool_[i]->Init();
+  }
+  return true;
 }
 
 /**
@@ -42,22 +72,9 @@ bool LocalEngine::alive() { return true; }
  * @return {bool} true for success
  */
 bool LocalEngine::write(const std::string key, const std::string value) {
-  assert(m_rdma_conn_ != nullptr);
-  internal_value_t internal_value;
-  uint64_t remote_addr;
-  uint32_t rkey;
-  int ret = 0;
-  ret = m_rdma_conn_->register_remote_memory(remote_addr, rkey, value.size());
-  if (ret) return false;
-  ret = m_rdma_conn_->remote_write((void *)value.c_str(), value.size(), remote_addr, rkey);
-  if (ret) return false;
-  internal_value.remote_addr = remote_addr;
-  internal_value.rkey = rkey;
-  internal_value.size = value.size();
-  m_mutex_.lock();
-  m_map_[key] = internal_value;
-  m_mutex_.unlock();
-  return true;
+  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
+  int index = Shard(hash);
+  return pool_[index]->Write(Key(new std::string(key)), Value(new std::string(value)), NewBloomFilterPolicy());
 }
 
 /**
@@ -67,19 +84,14 @@ bool LocalEngine::write(const std::string key, const std::string value) {
  * @return {bool}  true for success
  */
 bool LocalEngine::read(const std::string key, std::string &value) {
-  internal_value_t inter_val;
-  m_mutex_.lock();
-  auto it = m_map_.find(key);
-  if (it == m_map_.end()) {
-    m_mutex_.unlock();
-    return false;
+  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
+  int index = Shard(hash);
+  Value val = pool_[index]->Read(Key(new std::string(key)), NewBloomFilterPolicy());
+  if (val != nullptr) {
+    value = *val;
+    return true;
   }
-  inter_val = it->second;
-  m_mutex_.unlock();
-  value.reserve(inter_val.size);
-  if (m_rdma_conn_->remote_read((void *)value.c_str(), inter_val.size, inter_val.remote_addr, inter_val.rkey))
-    return false;
-  return true;
+  return false;
 }
 
 }  // namespace kv

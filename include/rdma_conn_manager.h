@@ -1,9 +1,16 @@
 #pragma once
 
+#include <infiniband/verbs.h>
+#include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <unordered_map>
+#include "config.h"
 #include "rdma_conn.h"
+#include "util/logging.h"
+#include "util/nocopy.h"
 
 namespace kv {
 
@@ -36,22 +43,26 @@ class ConnQue {
 };
 
 /* The RDMA connection manager */
-class ConnectionManager {
+class ConnectionManager NOCOPYABLE {
  public:
-  ConnectionManager() {}
+  ConnectionManager(ibv_pd *pd) : pd_(pd){LOG_ASSERT(pd != nullptr, "Invalid pd.")};
 
   ~ConnectionManager() {
-    // TODO: release resources;
+    delete one_sided_conn_queue_;
+    delete rpc_conn_queue_;
   }
-
-  int init(const std::string ip, const std::string port, uint32_t rpc_conn_num, uint32_t one_sided_conn_num);
-  int register_remote_memory(uint64_t &addr, uint32_t &rkey, uint64_t size);
-  int remote_read(void *ptr, uint32_t size, uint64_t remote_addr, uint32_t rkey);
-  int remote_write(void *ptr, uint32_t size, uint64_t remote_addr, uint32_t rkey);
+  ibv_pd *Pd() const { return pd_; }
+  int Init(const std::string ip, const std::string port, uint32_t rpc_conn_num, uint32_t one_sided_conn_num);
+  int Alloc(uint8_t shard,uint64_t &addr, uint32_t &rkey, uint64_t size);
+  int Lookup(std::string key, uint64_t &addr, uint32_t &rkey, bool &found);
+  int Free(uint8_t shard,BlockId id);
+  int RemoteRead(void *ptr, uint32_t lkey, uint32_t size, uint64_t remote_addr, uint32_t rkey);
+  int RemoteWrite(void *ptr, uint32_t lkey, uint32_t size, uint64_t remote_addr, uint32_t rkey);
 
  private:
-  ConnQue *m_rpc_conn_queue_;
-  ConnQue *m_one_sided_conn_queue_;
+  ConnQue *rpc_conn_queue_;
+  ConnQue *one_sided_conn_queue_;
+  ibv_pd *pd_;
 };
 
 };  // namespace kv

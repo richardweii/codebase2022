@@ -1,6 +1,7 @@
 #pragma once
 
 #include <arpa/inet.h>
+#include <infiniband/verbs.h>
 #include <netdb.h>
 #include <rdma/rdma_cma.h>
 #include <stdint.h>
@@ -10,9 +11,12 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <cstdint>
+#include "config.h"
 #include "kv_engine.h"
 #include "map"
 #include "msg.h"
+#include "pool.h"
 #include "rdma_conn_manager.h"
 #include "string"
 #include "thread"
@@ -49,9 +53,11 @@ class LocalEngine : public Engine {
   bool read(const std::string key, std::string &value);
 
  private:
-  kv::ConnectionManager *m_rdma_conn_;
-  std::map<std::string, internal_value_t> m_map_;
-  std::mutex m_mutex_;
+  static uint32_t Shard(uint32_t hash) { return hash >> (32 - kPoolShardBits); }
+
+  Pool *pool_[kPoolShardNum];
+  ibv_pd *pd_;
+  ConnectionManager *connection_manager_;
 };
 
 /* Remote-side engine */
@@ -64,6 +70,8 @@ class RemoteEngine : public Engine {
     struct ibv_mr *resp_mr;
     rdma_cm_id *cm_id;
     struct ibv_cq *cq;
+    uint64_t remote_addr_;
+    uint32_t remote_rkey_;
   };
 
   ~RemoteEngine(){};
@@ -73,6 +81,8 @@ class RemoteEngine : public Engine {
   bool alive() override;
 
  private:
+  static uint32_t Shard(uint32_t hash) { return hash >> (32 - kPoolShardBits); }
+
   void handle_connection();
 
   int create_connection(struct rdma_cm_id *cm_id);
@@ -82,19 +92,18 @@ class RemoteEngine : public Engine {
   int remote_write(WorkerInfo *work_info, uint64_t local_addr, uint32_t lkey, uint32_t length, uint64_t remote_addr,
                    uint32_t rkey);
 
-  int allocate_and_register_memory(uint64_t &addr, uint32_t &rkey, uint64_t size);
-
   void worker(WorkerInfo *work_info, uint32_t num);
 
-  struct rdma_event_channel *m_cm_channel_;
-  struct rdma_cm_id *m_listen_id_;
-  struct ibv_pd *m_pd_;
-  struct ibv_context *m_context_;
-  bool m_stop_;
-  std::thread *m_conn_handler_;
-  WorkerInfo **m_worker_info_;
-  uint32_t m_worker_num_;
-  std::thread **m_worker_threads_;
+  struct rdma_event_channel *cm_channel_;
+  struct rdma_cm_id *listen_id_;
+  struct ibv_pd *pd_;
+  struct ibv_context *context_;
+  bool stop_;
+  std::thread *conn_handler_;
+  WorkerInfo **worker_info_;
+  uint32_t worker_num_;
+  std::thread **worker_threads_;
+  RemotePool *pool_[kPoolShardNum];
 };
 
 }  // namespace kv

@@ -3,6 +3,8 @@
 #include <assert.h>
 #include <stdint.h>
 #include <chrono>
+#include <cstdint>
+#include "config.h"
 
 namespace kv {
 
@@ -17,7 +19,7 @@ namespace kv {
 #define TIME_NOW (std::chrono::high_resolution_clock::now())
 #define TIME_DURATION_US(START, END) (std::chrono::duration_cast<std::chrono::microseconds>((END) - (START)).count())
 
-enum MsgType { MSG_REGISTER, MSG_UNREGISTER };
+enum MsgType { MSG_PING, MSG_ALLOC, MSG_LOOKUP, MSG_FREE };
 
 enum ResStatus { RES_OK, RES_FAIL };
 
@@ -39,40 +41,51 @@ struct CmdMsgRespBlock {
   volatile uint8_t notify;
 };
 
-class RequestsMsg {
- public:
-  uint64_t resp_addr;
-  uint32_t resp_rkey;
+struct RequestsMsg {
   uint8_t type;
 };
 CHECK_RDMA_MSG_SIZE(RequestsMsg);
 
-class ResponseMsg {
- public:
+struct ResponseMsg {
   uint8_t status;
 };
 CHECK_RDMA_MSG_SIZE(ResponseMsg);
 
-class RegisterRequest : public RequestsMsg {
- public:
-  uint64_t size;
+struct PingMsg : RequestsMsg {
+  uint64_t resp_addr;
+  uint32_t resp_rkey;
 };
-CHECK_RDMA_MSG_SIZE(RegisterRequest);
+CHECK_RDMA_MSG_SIZE(PingMsg);
 
-class RegisterResponse : public ResponseMsg {
- public:
+struct AllocRequest : public RequestsMsg {
+  uint8_t shard;
+};
+CHECK_RDMA_MSG_SIZE(AllocRequest);
+
+struct AllocResponse : public ResponseMsg {
   uint64_t addr;
   uint32_t rkey;
 };
-CHECK_RDMA_MSG_SIZE(RegisterResponse);
+CHECK_RDMA_MSG_SIZE(AllocResponse);
 
-struct UnregisterRequest : public RequestsMsg {
- public:
-  uint64_t addr;
+struct LookupRequest : public RequestsMsg {
+  char key[kKeyLength];
 };
-CHECK_RDMA_MSG_SIZE(UnregisterRequest);
+CHECK_RDMA_MSG_SIZE(LookupRequest);
 
-struct UnregisterResponse : public ResponseMsg {};
-CHECK_RDMA_MSG_SIZE(UnregisterResponse);
+struct LookupResponse : public ResponseMsg {
+  uint64_t addr;
+  uint32_t rkey;
+};
+CHECK_RDMA_MSG_SIZE(LookupResponse);
+
+struct FreeRequest : public RequestsMsg {
+  uint8_t shard;
+  BlockId id;
+};
+CHECK_RDMA_MSG_SIZE(FreeRequest);
+
+struct FreeResponse : public ResponseMsg {};
+CHECK_RDMA_MSG_SIZE(FreeResponse);
 
 }  // namespace kv

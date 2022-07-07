@@ -11,6 +11,8 @@
 #include <cstring>
 #include <string>
 
+namespace kv {
+
 inline void EncodeFixed32(char *dst, uint32_t value) {
   uint8_t *const buffer = reinterpret_cast<uint8_t *>(dst);
 
@@ -55,3 +57,5 @@ inline uint64_t DecodeFixed64(const char *ptr) {
          (static_cast<uint64_t>(buffer[4]) << 32) | (static_cast<uint64_t>(buffer[5]) << 40) |
          (static_cast<uint64_t>(buffer[6]) << 48) | (static_cast<uint64_t>(buffer[7]) << 56);
 }
+
+}  // namespace kv

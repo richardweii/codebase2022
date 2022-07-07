@@ -18,9 +18,11 @@
 #include <string>
 #include "slice.h"
 
+namespace kv {
+
 class Filter {
  public:
-  virtual ~Filter();
+  virtual ~Filter(){};
   // keys[0,n-1] contains a list of keys (potentially with duplicates)
   // that are ordered according to the user supplied comparator.
   // Append a filter that summarizes keys[0,n-1] to *dst.
@@ -51,4 +53,6 @@ class Filter {
 // ignores trailing spaces, it would be incorrect to use a
 // Filter (like NewBloomFilterPolicy) that does not ignore
 // trailing spaces in keys.
-Ptr<Filter> NewBloomFilterPolicy(int bits_per_key = 10);
+std::shared_ptr<Filter> NewBloomFilterPolicy(int bits_per_key = 10);
+
+}  // namespace kv
