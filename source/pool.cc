@@ -119,7 +119,7 @@ bool Pool::Write(Key key, Value val, Ptr<Filter> filter) {
     CacheEntry *entry = new CacheEntry();
     ret = buffer_pool_->Modify(key, val, filter, *entry);
     if (ret) {
-      // in remote
+      // in archive
       auto handle = cache_->Insert(Slice(key->c_str(), key->size()), entry, sizeof(CacheEntry), CacheDeleter);
       cache_->Release(handle);
     } else {

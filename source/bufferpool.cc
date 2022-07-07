@@ -72,6 +72,9 @@ DataBlock *BufferPool::GetNewDataBlock() {
   datablocks_[frame_id].Free();
   datablocks_[frame_id].SetId(id);
   datablocks_[frame_id].SetUsed();
+
+  renew(frame_id);
+  
   return &datablocks_[frame_id];
 }
 
@@ -132,21 +135,46 @@ bool BufferPool::replacement(Key key, FrameId &fid) {
 }
 
 void BufferPool::renew(FrameId frame_id) {
-  if (frame_mapping_.count(frame_id) != 0) {  // has been inserted
-    return;
-  }
-  // add to frame_mapping_
-  Frame *new_frame = new Frame(frame_id);
-  frame_mapping_.emplace(frame_id, new_frame);
-  // add to frame_list
-  if (frame_list_head_ == nullptr) {
-    assert(frame_list_head_ == frame_list_tail_);
-    frame_list_head_ = new_frame;
-    frame_list_tail_ = new_frame;
+  if (frame_mapping_.count(frame_id) == 0) {
+    // add to frame_mapping_
+    Frame *new_frame = new Frame(frame_id);
+    frame_mapping_.emplace(frame_id, new_frame);
+    // add to frame_list
+    if (frame_list_head_ == nullptr) {
+      assert(frame_list_head_ == frame_list_tail_);
+      frame_list_head_ = new_frame;
+      frame_list_tail_ = new_frame;
+    } else {
+      frame_list_tail_->next = new_frame;
+      new_frame->front = frame_list_tail_;
+      frame_list_tail_ = new_frame;
+    }
   } else {
-    frame_list_tail_->next = new_frame;
-    new_frame->front = frame_list_tail_;
-    frame_list_tail_ = new_frame;
+    auto frame = frame_mapping_[frame_id];
+    // remove from list
+    if (frame->front == nullptr && frame->next == nullptr) {
+      frame_list_head_ = nullptr;
+      frame_list_tail_ = nullptr;
+    } else if (frame->front == nullptr) {  // head
+      frame_list_head_ = frame->next;
+      frame_list_head_->front = nullptr;
+    } else if (frame->next == nullptr) {  // tail
+      frame_list_tail_ = frame->front;
+      frame_list_tail_->next = nullptr;
+    } else {
+      frame->front->next = frame->next;
+      frame->next->front = frame->front;
+    }
+    // add to frame_list
+    if (frame_list_head_ == nullptr) {
+      assert(frame_list_head_ == frame_list_tail_);
+      frame_list_head_ = frame;
+      frame_list_tail_ = frame;
+    } else {
+      frame_list_tail_->next = frame;
+      frame->front = frame_list_tail_;
+      frame_list_tail_ = frame;
+    }
   }
 }
 

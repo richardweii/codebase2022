@@ -74,7 +74,7 @@ bool LocalEngine::alive() { return true; }
 bool LocalEngine::write(const std::string key, const std::string value) {
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  return pool_[index]->Write(Key(new std::string(key)), Value(new std::string(value)), NewBloomFilterPolicy());
+  return pool_[index]->Write(Key(new std::string(key)), Value(new std::string(std::move(value))), NewBloomFilterPolicy());
 }
 
 /**
