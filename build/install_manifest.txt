@@ -1,9 +1,0 @@
-/root/example/build/polarkv/include/kv_engine.h
-/root/example/build/polarkv/include/conn_manager.h
-/root/example/build/polarkv/include/connection.h
-/root/example/build/polarkv/include/kv_base.h
-/root/example/build/polarkv/include/kv_hash.h
-/root/example/build/polarkv/include/kv_lock.h
-/root/example/build/polarkv/include/kv_mem.h
-/root/example/build/polarkv/include/msg.h
-/root/example/build/polarkv/lib/libpolarkv.a

@@ -1,6 +1,6 @@
 ## `` Note: 考虑到大家可能对RDMA不太熟悉，我们在本仓库的demo_kv分支有一份完整实现的demo。初赛，大家可以利用这个demo支持访问remote节点，无需关注RDMA的``
-## ``底层实现，然后专注在local节点的KV设计和并发控制。Demo直接提交会报时间超时（Timer expired）或OOM（已杀死），需要做适当的优化。具体来说，OOM需要优化``
-## ``Hash Table，不能直接使用std::map，因为后者内存开销较大。而Timer expired需要优化数据的布局，采用冷热分层的方式将热数据放到local memory。``
+## ``底层实现，然后专注在local节点的KV设计和并发控制。最新版本Demo提供了简单的Hash Table实现，不会再出现OOM，但该Demo时间消耗较长，也许无法通过评测机的检测。``
+## ``后续选手需要做适当的优化，比如采用冷热分层的方式将热数据放到local memory。``
 
 
 ### 一些注意事项：
@@ -189,4 +189,3 @@ install(TARGETS dbremote
         RUNTIME DESTINATION bin
         PUBLIC_HEADER DESTINATION include)
 ```
-
