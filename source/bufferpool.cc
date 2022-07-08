@@ -21,6 +21,10 @@ BufferPool::BufferPool(size_t size, uint8_t shard, ConnectionManager *conn_manag
   shard_ = shard;
   pool_size_ = size;
   datablocks_ = new DataBlock[size];
+  handles_.reserve(size);
+  for (size_t i = 0; i < size; i++) {
+    handles_.emplace_back(new BlockHandle(&datablocks_[i]));
+  }
   mr_ = new ibv_mr *[size];
   connection_manager_ = conn_manager;
   pd_ = conn_manager->Pd();
@@ -45,6 +49,7 @@ bool BufferPool::Init() {
 
 DataBlock *BufferPool::GetNewDataBlock() {
   std::lock_guard<std::mutex> guard(mutex_);
+  int ret;
 
   FrameId frame_id;
   if (!free_list_.empty()) {
@@ -57,30 +62,41 @@ DataBlock *BufferPool::GetNewDataBlock() {
     if (frame_id == INVALID_FRAME_ID) {
       return nullptr;
     }
+    // erase old
+    WriteLockTable();
+    ret = block_table_.erase(datablocks_[frame_id].GetId());
+    datablocks_[frame_id].Free();
+    assert(ret == 1);
+    WriteUnlockTable();
 
     // write back victim
     uint64_t addr;
     uint32_t rkey;
-    int ret;
+    LOG_DEBUG("Request new datablock from remote...");
     ret = connection_manager_->Alloc(shard_, addr, rkey, kDataBlockSize);
+    LOG_DEBUG("addr %lx, rkey %x", addr, rkey);
+    
     LOG_ASSERT(ret == 0, "Alloc Failed.");
     ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_[frame_id]->lkey, kDataBlockSize, addr, rkey);
     LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
+    LOG_DEBUG("Get new datablock from remote successfully...");
   }
 
   BlockId id = getGetBlockId();
   datablocks_[frame_id].Free();
   datablocks_[frame_id].SetId(id);
-  datablocks_[frame_id].SetUsed();
+
+  // insert new
+  WriteLockTable();
+  block_table_[datablocks_[frame_id].GetId()] = frame_id;
+  WriteUnlockTable();
 
   renew(frame_id);
-  
+
   return &datablocks_[frame_id];
 }
 
 bool BufferPool::replacement(Key key, FrameId &fid) {
-  std::lock_guard<std::mutex> guard(mutex_);
-
   // lookup
   uint64_t read_addr;
   uint32_t read_rkey;
@@ -102,6 +118,7 @@ bool BufferPool::replacement(Key key, FrameId &fid) {
   // write back victim
   uint64_t write_addr;
   uint32_t write_rkey;
+  LOG_DEBUG("Request new datablock for replace block %d", datablocks_[frame_id].GetId());
   ret = connection_manager_->Alloc(shard_, write_addr, write_rkey, kDataBlockSize);
   LOG_ASSERT(ret == 0, "Alloc Failed.");
   ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_[frame_id]->lkey, kDataBlockSize, write_addr,
@@ -129,6 +146,7 @@ bool BufferPool::replacement(Key key, FrameId &fid) {
   renew(frame_id);
 
   connection_manager_->Free(shard_, datablocks_[frame_id].GetId());
+  LOG_DEBUG("Replacement finish.");
 
   fid = frame_id;
   return found;
@@ -207,8 +225,8 @@ Value BufferPool::Read(Key key, Ptr<Filter> filter, CacheEntry &entry) {
   for (auto &kv : block_table_) {
     FrameId fid = kv.second;
 
-    BlockHandle &handle = handles_[fid];
-    if ((value = handle.Read(key, filter, entry)) != nullptr) {
+    BlockHandle *handle = handles_[fid];
+    if ((value = handle->Read(key, filter, entry)) != nullptr) {
       renew(fid);
       return value;
     }
@@ -219,7 +237,7 @@ Value BufferPool::Read(Key key, Ptr<Filter> filter, CacheEntry &entry) {
   if (!found) {
     return nullptr;
   }
-  value = handles_[fid].Read(key, filter, entry);
+  value = handles_[fid]->Read(key, filter, entry);
   LOG_ASSERT(value != nullptr, "Fetched invalid datablock.")
   return value;
 }
@@ -231,8 +249,8 @@ bool BufferPool::Modify(Key key, Value val, Ptr<Filter> filter, CacheEntry &entr
     BlockId id = kv.first;
     FrameId fid = kv.second;
 
-    BlockHandle &handle = handles_[id];
-    if (handle.Modify(key, val, filter, entry)) {
+    BlockHandle *handle = handles_[fid];
+    if (handle->Modify(key, val, filter, entry)) {
       renew(fid);
       return true;
     }
@@ -244,7 +262,7 @@ bool BufferPool::Modify(Key key, Value val, Ptr<Filter> filter, CacheEntry &entr
     return false;
   }
 
-  bool succ = handles_[fid].Modify(key, val, filter, entry);
+  bool succ = handles_[fid]->Modify(key, val, filter, entry);
   LOG_ASSERT(succ, "Fetched invalid datablock.")
 
   return true;

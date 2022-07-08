@@ -67,7 +67,7 @@ class RemotePool NOCOPYABLE {
   BlockId Lookup(Key key, Ptr<Filter> filter) const;
 
  private:
-  std::unordered_map<BlockId, FrameId> block_table_;
+  FrameId findBlock(BlockId id) const;
   std::vector<ibv_mr *> mr_;
   std::vector<BlockHandle* > handles_;
   std::vector<DataBlock *> datablocks_;

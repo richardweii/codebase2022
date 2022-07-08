@@ -96,9 +96,9 @@ class BlockHandle {
   int binarySearch(Key key) const;
 
   mutable std::atomic_flag locks_[kItemNum] = {ATOMIC_FLAG_INIT};
-  DataBlock *datablock_;
-  Item *items_;
-  char *filter_data_;
+  DataBlock *datablock_ = nullptr;
+  Item *items_ = nullptr;
+  char *filter_data_ = nullptr;
 };
 
 struct CacheEntry {

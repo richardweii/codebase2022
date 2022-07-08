@@ -22,10 +22,4 @@ MESSAGE("Install prefix is: ${CMAKE_INSTALL_PREFIX}")
 
 add_subdirectory(include)
 add_subdirectory(source)
-add_subdirectory(test)      # unit tests
-
-add_executable(server server.cc)
-target_link_libraries(server polarkv rdmacm ibverbs ibumad pci efa)
-
-add_executable(client client.cc)
-target_link_libraries(client polarkv rdmacm ibverbs ibumad pci efa)
+add_subdirectory(test)

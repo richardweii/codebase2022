@@ -75,6 +75,7 @@ Value Pool::Read(Key key, Ptr<Filter> filter) {
 void Pool::insertIntoMemtable(Key key, Value val, Ptr<Filter> filter) {
   if (memtable_->Full()) {
     DataBlock *block = buffer_pool_->GetNewDataBlock();
+    // LOG_DEBUG("memtable is full, get new block %d", block->GetId());
     memtable_->BuildDataBlock(block);
     memtable_->Reset();
   }
@@ -130,29 +131,38 @@ bool Pool::Write(Key key, Value val, Ptr<Filter> filter) {
   }
 }
 
+FrameId RemotePool::findBlock(BlockId id) const {
+  for (int i = 0; i < datablocks_.size(); i++) {
+    if (datablocks_[i]->GetId() == id) {
+      return i;
+    }
+  }
+  return INVALID_FRAME_ID;
+}
+
 bool RemotePool::FreeDataBlock(BlockId id) {
   latch_.WLock();
   defer { latch_.WUnlock(); };
-  if (!block_table_.count(id)) {
+  FrameId fid = findBlock(id);
+  if (fid == INVALID_FRAME_ID) {
     // does not exist
     LOG_DEBUG("The block %d to be freed not exists.", id);
     return false;
   }
-  FrameId fid = block_table_[id];
-  block_table_.erase(id);
-
+  datablocks_[fid]->Free();
   free_list_.push_back(fid);
   return true;
 }
 
 RemotePool::MemoryAccess RemotePool::AllocDataBlock() {
   latch_.WLock();
-  defer { latch_.WLock(); };
+  defer { latch_.WUnlock(); };
   if (!free_list_.empty()) {
     FrameId fid = free_list_.front();
     free_list_.pop_front();
     static_assert(sizeof(DataBlock *) == sizeof(uint64_t), "Pointer should be 8 bytes.");
-    return {(uint64_t)datablocks_[fid], mr_[fid]->lkey};
+    LOG_DEBUG("addr %lx, rkey %x", datablocks_[fid], mr_[fid]->rkey);
+    return {(uint64_t)datablocks_[fid], mr_[fid]->rkey};
   }
 
   // need allocate new frame
@@ -161,19 +171,20 @@ RemotePool::MemoryAccess RemotePool::AllocDataBlock() {
   auto mr = ibv_reg_mr(pd_, datablocks_.back(), kDataBlockSize, RDMA_MR_FLAG);
   LOG_ASSERT(mr != nullptr, "Registration new datablock failed.");
   mr_.push_back(mr);
-  return {(uint64_t)datablocks_.back(), mr_.back()->lkey};
+  LOG_DEBUG("addr %lx, rkey %x", datablocks_.back(), mr_.back()->rkey);
+  return {(uint64_t)datablocks_.back(), mr_.back()->rkey};
 }
 
 RemotePool::MemoryAccess RemotePool::AccessDataBlock(BlockId id) const {
   latch_.RLock();
   defer { latch_.RUnlock(); };
-  if (!block_table_.count(id)) {
+  FrameId fid = findBlock(id);
+  if (fid == INVALID_FRAME_ID) {
     LOG_FATAL("Invalid block id %d", id);
     return {};
   }
 
-  FrameId fid = block_table_.at(id);
-  return {(uint64_t)datablocks_[fid], mr_[fid]->lkey};
+  return {(uint64_t)datablocks_[fid], mr_[fid]->rkey};
 }
 
 BlockId RemotePool::Lookup(Key key, Ptr<Filter> filter) const {

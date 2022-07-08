@@ -19,7 +19,7 @@ void BlockBuilder::Put(Key key, Value value) {
 
 void BlockBuilder::Finish(Ptr<Filter> filter) {
   LOG_ASSERT(pos_ <= (kKeyLength + kValueLength) * kItemNum, "Invalid position %d", pos_);
-  pos_ = (kKeyLength + kValueLength) * kItemNum;
+  pos_ = kDataSize;
   filter->CreateFilter(&keys_[0], keys_.size(), current());
   datablock_->SetEntryNum(keys_.size());
   datablock_->SetUsed();

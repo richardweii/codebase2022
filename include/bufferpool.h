@@ -1,6 +1,7 @@
 #pragma once
 
 #include <infiniband/verbs.h>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -21,7 +22,9 @@ class BufferPool NOCOPYABLE {
   BufferPool(size_t size, uint8_t shard, ConnectionManager *conn_manager);
   ~BufferPool() {
     delete[] datablocks_;
-    delete[] handles_;
+    for (auto &handle : handles_) {
+      delete handle;
+    }
   }
 
   // init local memory regestration
@@ -52,7 +55,7 @@ class BufferPool NOCOPYABLE {
   bool replacement(Key key, FrameId &fid);
 
   DataBlock *datablocks_ = nullptr;
-  BlockHandle *handles_ = nullptr;
+  std::vector<BlockHandle *> handles_;
 
   ConnectionManager *connection_manager_;
   ibv_pd *pd_ = nullptr;

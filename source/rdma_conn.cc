@@ -116,8 +116,10 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
   }
 
   struct PData rep_pdata;
+
   rep_pdata.buf_addr = (uint64_t)cmd_resp_;
-  rep_pdata.buf_rkey = msg_mr_->rkey;
+  rep_pdata.buf_rkey = resp_mr_->rkey;
+  LOG_DEBUG("local addr %lx rkey %x", rep_pdata.buf_addr, rep_pdata.buf_rkey);
 
   struct rdma_conn_param conn_param = {};
   conn_param.private_data = &rep_pdata;
@@ -287,6 +289,7 @@ int RDMAConnection::RemoteWrite(void *ptr, uint32_t lkey, uint64_t size, uint64_
 }
 
 int RDMAConnection::AllocDataBlock(uint8_t shard, uint64_t &addr, uint32_t &rkey) {
+  LOG_DEBUG("Connection %d AllocDataBlock, shard %d", conn_id_, shard);
   memset(cmd_msg_, 0, sizeof(CmdMsgBlock));
   memset(cmd_resp_, 0, sizeof(CmdMsgRespBlock));
   cmd_resp_->notify = NOTIFY_IDLE;
@@ -322,7 +325,28 @@ int RDMAConnection::AllocDataBlock(uint8_t shard, uint64_t &addr, uint32_t &rkey
   return 0;
 }
 
+int RDMAConnection::Ping() {
+  memset(cmd_msg_, 0, sizeof(CmdMsgBlock));
+  memset(cmd_resp_, 0, sizeof(CmdMsgRespBlock));
+  cmd_resp_->notify = NOTIFY_IDLE;
+  PingMsg *request = (PingMsg *)cmd_msg_;
+  request->type = MSG_PING;
+  request->resp_addr = (uint64_t)cmd_resp_;
+  request->resp_rkey = resp_mr_->rkey;
+  cmd_msg_->notify = NOTIFY_WORK;
+
+  /* send a request to sever */
+  int ret = RDMAWrite((uint64_t)cmd_msg_, msg_mr_->lkey, sizeof(CmdMsgBlock), server_cmd_msg_, server_cmd_rkey_);
+  if (ret) {
+    LOG_ERROR("fail to send requests\n");
+    return ret;
+  }
+  // no need response
+  return 0;
+}
+
 int RDMAConnection::Lookup(std::string key, uint64_t &addr, uint32_t &rkey, bool &found) {
+  LOG_DEBUG("Connection %d Lookup, key %s", conn_id_, key.c_str());
   memset(cmd_msg_, 0, sizeof(CmdMsgBlock));
   memset(cmd_resp_, 0, sizeof(CmdMsgRespBlock));
   cmd_resp_->notify = NOTIFY_IDLE;
@@ -363,7 +387,7 @@ int RDMAConnection::Free(uint8_t shard, BlockId id) {
   memset(cmd_resp_, 0, sizeof(CmdMsgRespBlock));
   cmd_resp_->notify = NOTIFY_IDLE;
   FreeRequest *request = (FreeRequest *)cmd_msg_;
-  request->type = MSG_LOOKUP;
+  request->type = MSG_FREE;
   request->id = id;
   request->shard = shard;
   cmd_msg_->notify = NOTIFY_WORK;

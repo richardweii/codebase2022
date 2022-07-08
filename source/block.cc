@@ -8,6 +8,7 @@ namespace kv {
 
 BlockHandle::BlockHandle(DataBlock *datablock) : datablock_(datablock) {
   items_ = reinterpret_cast<Item *>(datablock_->Data());
+  filter_data_ = datablock_->Data() + kDataSize;
 }
 
 Value BlockHandle::Read(Key key, Ptr<Filter> filter, CacheEntry &entry) const {
@@ -52,7 +53,7 @@ bool BlockHandle::Modify(Key key, Value value, Ptr<Filter> filter, CacheEntry &e
 
 bool BlockHandle::find(Key key, Ptr<Filter> filter, int *index) const {
   // filter
-  if (!filter->KeyMayMatch(Slice(*key), Slice(filter_data_, kFilterSize))) {
+  if (!filter->KeyMayMatch(Slice(*key), Slice(filter_data_, this->EntryNum() * kBloomFilterBitsPerKey / 8))) {
     return false;
   }
   // search
@@ -67,7 +68,7 @@ int BlockHandle::binarySearch(Key key) const {
   int left = 0, right = EntryNum();
   while (left <= right) {
     int mid = left + (right - left) / 2;
-    int cmp = strcmp(items_[mid].key, key->c_str());
+    int cmp = strncmp(items_[mid].key, key->c_str(), key->size());
     if (cmp == 0) {
       return mid;
     } else if (cmp < 0) {

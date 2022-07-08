@@ -23,11 +23,13 @@ namespace kv {
 /* RDMA connection */
 class RDMAConnection NOCOPYABLE {
  public:
-  RDMAConnection(ibv_pd *pd) : pd_(pd) {}
+  RDMAConnection(ibv_pd *pd, int id) : pd_(pd), conn_id_(id) {}
   ~RDMAConnection(){
       // TODO: release resource
   };
   int Init(const std::string ip, const std::string port);
+
+  int Ping();
 
   // Allocate a datablock at the remote
   int AllocDataBlock(uint8_t shard, uint64_t &addr, uint32_t &rkey);
@@ -56,6 +58,7 @@ class RDMAConnection NOCOPYABLE {
   uint64_t server_cmd_msg_;
   uint32_t server_cmd_rkey_;
   uint32_t remote_size_;
+  int conn_id_;
 
   struct CmdMsgBlock *cmd_msg_;
   struct CmdMsgRespBlock *cmd_resp_;

@@ -16,7 +16,7 @@ int ConnectionManager::Init(const std::string ip, const std::string port, uint32
   }
 
   for (uint32_t i = 0; i < rpc_conn_num; i++) {
-    RDMAConnection *conn = new RDMAConnection(pd_);
+    RDMAConnection *conn = new RDMAConnection(pd_, i);
     if (conn->Init(ip, port)) {
       // TODO: release resources
       LOG_FATAL("Failed to init rpc connection.");
@@ -26,13 +26,18 @@ int ConnectionManager::Init(const std::string ip, const std::string port, uint32
   }
 
   for (uint32_t i = 0; i < one_sided_conn_num; i++) {
-    RDMAConnection *conn = new RDMAConnection(pd_);
+    RDMAConnection *conn = new RDMAConnection(pd_, i + rpc_conn_num);
     if (conn->Init(ip, port)) {
       // TODO: release resources
       LOG_FATAL("Failed to init one side read/write connection.");
       return -1;
     }
     one_sided_conn_queue_->enqueue(conn);
+  }
+  for (uint32_t i = 0; i < rpc_conn_num; i++) {
+    auto conn = rpc_conn_queue_->dequeue();
+    conn->Ping();
+    rpc_conn_queue_->enqueue(conn);
   }
   return 0;
 }
