@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 2.8)
 project(POLAR_CONTEST)
 
 # set(CMAKE_BUILD_TYPE "Release")   # 手动指定编译版本
