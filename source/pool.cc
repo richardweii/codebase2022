@@ -18,6 +18,7 @@ Pool::Pool(size_t buffer_pool_size, size_t filter_bits, size_t cache_size, uint8
            ConnectionManager *conn_manager) {
   buffer_pool_ = new BufferPool(buffer_pool_size, shard, conn_manager);
   filter_data_ = new char[filter_bits / 8];
+  filter_length_ = filter_bits / 8;
   memtable_ = new MemTable();
   cache_ = NewLRUCache(cache_size);
 }
@@ -79,7 +80,7 @@ void Pool::insertIntoMemtable(Key key, Value val, Ptr<Filter> filter) {
   }
   memtable_->Insert(key, val);
   Slice s(key->c_str(), key->size());
-  filter->CreateFilter(&s, 1, filter_data_);
+  filter->AddFilter(s, this->filter_length_ * 8, filter_data_);
 }
 
 bool Pool::Write(Key key, Value val, Ptr<Filter> filter) {
