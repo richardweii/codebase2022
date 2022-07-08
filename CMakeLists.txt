@@ -1,7 +1,19 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.10)
 project(POLAR_CONTEST)
 
-set(CMAKE_BUILD_TYPE "Release")
+# set(CMAKE_BUILD_TYPE "Release")   # 手动指定编译版本
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_STANDARD 11)
+
+# gtest
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/609281088cfefc76f9d0ce82e1ff6c30cc3591e5.zip
+)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
 
 set(RDMA_LIB "-lrdmacm -libverbs -libumad -lpci -lefa")
 set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS}")
@@ -20,3 +32,10 @@ MESSAGE("Install prefix is: ${CMAKE_INSTALL_PREFIX}")
 
 add_subdirectory(include)
 add_subdirectory(source)
+add_subdirectory(test)      # unit tests
+
+add_executable(server server.cc)
+target_link_libraries(server polarkv rdmacm ibverbs ibumad pci efa)
+
+add_executable(client client.cc)
+target_link_libraries(client polarkv rdmacm ibverbs ibumad pci efa)
