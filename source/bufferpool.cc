@@ -112,7 +112,7 @@ bool BufferPool::replacement(Key key, FrameId &fid) {
   FrameId frame_id;
   frame_id = pop();
   if (frame_id == INVALID_FRAME_ID) {
-    return INVALID_FRAME_ID;
+    return false;
   }
 
   // write back victim
@@ -183,6 +183,8 @@ void BufferPool::renew(FrameId frame_id) {
       frame->front->next = frame->next;
       frame->next->front = frame->front;
     }
+    frame->front = nullptr;
+    frame->next = nullptr;
     // add to frame_list
     if (frame_list_head_ == nullptr) {
       assert(frame_list_head_ == frame_list_tail_);
@@ -210,7 +212,10 @@ FrameId BufferPool::pop() {
     frame_list_tail_ = nullptr;
   }
   // remove from hash_table
-  assert(frame_mapping_.count(frame->frame_) != 0);
+  // assert(frame_mapping_.count(frame->frame_) != 0);
+  if(frame_mapping_.count(frame->frame_) == 0) {
+    LOG_ERROR("fuck");
+  }
   frame_mapping_.erase(frame->frame_);
 
   FrameId ret = frame->frame_;

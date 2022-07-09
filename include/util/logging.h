@@ -10,11 +10,8 @@
 
 #define TIME tmp
 
-#ifndef NDEBUG
 #define DEBUG(format, ...) printf(format, ##__VA_ARGS__)
-#else
-#define DEBUG(format, ...)
-#endif
+
 
 //定义日志级别
 enum LOG_LEVEL {

@@ -19,14 +19,14 @@ constexpr int kPoolShardNum = 1 << kPoolShardBits;
 // constexpr size_t kKeyNum = 16 * 100;                  // 16 * 12 * 32K key
 // constexpr size_t kCacheSize = 16 * 1024;                  // 32KB cache
 
-constexpr size_t kLocalDataSize = (size_t)4 * 1024 * 1024 * 1024;  // 2GB local data
+constexpr size_t kLocalDataSize = (size_t)4 * 1024 * 1024 * 1024;  // 4GB local data
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                  // 16 * 12M key
 constexpr size_t kCacheSize = 1024 * 1024 * 1024;                  // 1GB cache
 
 constexpr int kKeyLength = 16;
 constexpr int kValueLength = 128;
 constexpr int kBloomFilterBitsPerKey = 10;
-constexpr int kDataBlockSize = 128 * 1024;  // 16KB
+constexpr int kDataBlockSize = 256 * 1024;  // 16KB
 constexpr int kItemNum = kDataBlockSize * 8 / (kKeyLength * 8 + kValueLength * 8 + kBloomFilterBitsPerKey);
 constexpr int kDataSize = kItemNum * (kKeyLength + kValueLength);
 constexpr int kFilterSize = (kItemNum * kBloomFilterBitsPerKey + 7) / 8;
