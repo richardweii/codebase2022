@@ -17,7 +17,7 @@ Value BlockHandle::Read(Key key, Ptr<Filter> filter, CacheEntry &entry) const {
     LOG_ASSERT(index < kItemNum, "Out of bounds.");
     entry.id = this->GetBlockId();
     entry.off = index;
-    entry.handle = const_cast<BlockHandle*>(this);
+    entry.handle = const_cast<BlockHandle *>(this);
     return Read(index);
   }
   return nullptr;
@@ -53,7 +53,7 @@ bool BlockHandle::Modify(Key key, Value value, Ptr<Filter> filter, CacheEntry &e
 
 bool BlockHandle::find(Key key, Ptr<Filter> filter, int *index) const {
   // filter
-  if (!filter->KeyMayMatch(Slice(*key), Slice(filter_data_, this->EntryNum() * kBloomFilterBitsPerKey / 8))) {
+  if (!filter->KeyMayMatch(Slice(*key), Slice(filter_data_, (this->EntryNum() * kBloomFilterBitsPerKey + 7) / 8))) {
     return false;
   }
   // search
@@ -84,6 +84,5 @@ void CacheDeleter(const Slice &key, void *value) {
   CacheEntry *entry = (CacheEntry *)value;
   delete entry;
 }
-
 
 }  // namespace kv

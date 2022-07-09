@@ -17,8 +17,8 @@ namespace kv {
 Pool::Pool(size_t buffer_pool_size, size_t filter_bits, size_t cache_size, uint8_t shard,
            ConnectionManager *conn_manager) {
   buffer_pool_ = new BufferPool(buffer_pool_size, shard, conn_manager);
-  filter_data_ = new char[filter_bits / 8];
-  filter_length_ = filter_bits / 8;
+  filter_length_ = (filter_bits + 7)/ 8;
+  filter_data_ = new char[filter_length_];
   memtable_ = new MemTable();
   cache_ = NewLRUCache(cache_size);
 }
