@@ -11,7 +11,7 @@ namespace kv {
 #define NOTIFY_WORK 0xFF
 #define NOTIFY_IDLE 0x00
 #define MAX_MSG_SIZE 32
-#define MAX_SERVER_WORKER 1
+#define MAX_SERVER_WORKER 4
 #define RESOLVE_TIMEOUT_MS 5000
 #define RDMA_TIMEOUT_US 10000000  // 10s
 #define MAX_REMOTE_SIZE (1UL << 25)

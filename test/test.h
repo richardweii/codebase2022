@@ -27,15 +27,15 @@ using namespace std;
     OUTPUT("\033[;33mExpect ' %s ' \n%s:%d: " format "\n\033[0m", #condition, __FILE__, __LINE__, ##__VA_ARGS__); \
   }
 
-inline vector<Key> genKey(int num) {
-  std::mt19937 gen;
-  gen.seed(std::random_device()());
-  std::uniform_int_distribution<std::mt19937::result_type> dist;
-  std::vector<Key> keys;
+inline vector<string> genKey(int num) {
+  mt19937 gen;
+  gen.seed(random_device()());
+  uniform_int_distribution<mt19937::result_type> dist;
+  vector<string> keys;
   for (int i = 0; i < num; i++) {
-    keys.emplace_back(new std::string());
-    keys.back()->resize(kKeyLength);
-    uint8_t *data = (uint8_t *)(keys.back()->c_str());
+    keys.emplace_back();
+    keys.back().resize(kKeyLength);
+    uint8_t *data = (uint8_t *)(keys.back().c_str());
     for (int i = 0; i < kKeyLength; i++) {
       data[i] = (dist(gen) % 26) + 'a';
     }
@@ -43,15 +43,15 @@ inline vector<Key> genKey(int num) {
   return keys;
 }
 
-inline vector<Value> genValue(int num) {
-  std::mt19937 gen;
-  gen.seed(std::random_device()());
-  std::uniform_int_distribution<std::mt19937::result_type> dist;
-  std::vector<Key> keys;
+inline vector<string> genValue(int num) {
+  mt19937 gen;
+  gen.seed(random_device()());
+  uniform_int_distribution<mt19937::result_type> dist;
+  vector<string> keys;
   for (int i = 0; i < num; i++) {
-    keys.emplace_back(new std::string());
-    keys.back()->resize(kValueLength);
-    uint8_t *data = (uint8_t *)(keys.back()->c_str());
+    keys.emplace_back();
+    keys.back().resize(kValueLength);
+    uint8_t *data = (uint8_t *)(keys.back().c_str());
     for (int i = 0; i < kValueLength; i++) {
       data[i] = (dist(gen) % 26) + 'a';
     }

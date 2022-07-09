@@ -65,7 +65,6 @@ DataBlock *BufferPool::GetNewDataBlock() {
     // erase old
     WriteLockTable();
     ret = block_table_.erase(datablocks_[frame_id].GetId());
-    datablocks_[frame_id].Free();
     assert(ret == 1);
     WriteUnlockTable();
 
@@ -136,7 +135,7 @@ bool BufferPool::replacement(Key key, FrameId &fid) {
   ret = connection_manager_->RemoteRead(&datablocks_[frame_id], mr_[frame_id]->lkey, kDataBlockSize, read_addr,
                                         read_rkey);
   LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
-
+  LOG_DEBUG("Read Block %d", datablocks_[frame_id].GetId());
   // insert new
   WriteLockTable();
   block_table_[datablocks_[frame_id].GetId()] = frame_id;

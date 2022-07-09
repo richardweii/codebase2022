@@ -10,18 +10,18 @@ namespace kv {
 
 constexpr int kPoolHashSeed = 0x89ea7d2f;
 
-// constexpr int kPoolShardBits = 5;
-constexpr int kPoolShardBits = 1;
+constexpr int kPoolShardBits = 5;
+// constexpr int kPoolShardBits = 2;
 constexpr int kPoolShardNum = 1 << kPoolShardBits;
 
-// for test
-constexpr size_t kLocalDataSize = (size_t)4 * 32 * 1024;  // 128KB = 16 * 8
-constexpr size_t kKeyNum = 16 * 12 * 32;                  // 16 * 12 * 32K key
-constexpr size_t kCacheSize = 32 * 1024;                  // 32KB cache
+// // for test
+// constexpr size_t kLocalDataSize = (size_t)4 * 16 * 1024;  // 128KB = 16 * 8
+// constexpr size_t kKeyNum = 16 * 100;                  // 16 * 12 * 32K key
+// constexpr size_t kCacheSize = 16 * 1024;                  // 32KB cache
 
-// constexpr size_t kLocalDataSize = (size_t)4 * 1024 * 1024 * 1024;  // 4GB local data
-// constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                  // 16 * 12M key
-// constexpr size_t kCacheSize = 1024 * 1024 * 1024;                  // 1GB cache
+constexpr size_t kLocalDataSize = (size_t)4 * 1024 * 1024 * 1024;  // 4GB local data
+constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                  // 16 * 12M key
+constexpr size_t kCacheSize = 1024 * 1024 * 1024;                  // 1GB cache
 
 constexpr int kKeyLength = 16;
 constexpr int kValueLength = 128;

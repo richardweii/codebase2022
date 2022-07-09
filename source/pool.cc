@@ -161,7 +161,7 @@ RemotePool::MemoryAccess RemotePool::AllocDataBlock() {
     FrameId fid = free_list_.front();
     free_list_.pop_front();
     static_assert(sizeof(DataBlock *) == sizeof(uint64_t), "Pointer should be 8 bytes.");
-    LOG_DEBUG("addr %lx, rkey %x", datablocks_[fid], mr_[fid]->rkey);
+    LOG_DEBUG("addr %lx, rkey %x", (uint64_t)datablocks_[fid], mr_[fid]->rkey);
     return {(uint64_t)datablocks_[fid], mr_[fid]->rkey};
   }
 
@@ -171,7 +171,7 @@ RemotePool::MemoryAccess RemotePool::AllocDataBlock() {
   auto mr = ibv_reg_mr(pd_, datablocks_.back(), kDataBlockSize, RDMA_MR_FLAG);
   LOG_ASSERT(mr != nullptr, "Registration new datablock failed.");
   mr_.push_back(mr);
-  LOG_DEBUG("addr %lx, rkey %x", datablocks_.back(), mr_.back()->rkey);
+  LOG_DEBUG("addr %lx, rkey %x", (uint64_t)datablocks_.back(), mr_.back()->rkey);
   return {(uint64_t)datablocks_.back(), mr_.back()->rkey};
 }
 
