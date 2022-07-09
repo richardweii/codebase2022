@@ -352,7 +352,7 @@ int RDMAConnection::Lookup(std::string key, uint64_t &addr, uint32_t &rkey, bool
   cmd_resp_->notify = NOTIFY_IDLE;
   LookupRequest *request = (LookupRequest *)cmd_msg_;
   request->type = MSG_LOOKUP;
-  memcpy(request->key, key.c_str(), key.size());
+  memcpy(request->key, key.c_str(), kKeyLength);
   cmd_msg_->notify = NOTIFY_WORK;
 
   /* send a request to sever */
@@ -373,8 +373,9 @@ int RDMAConnection::Lookup(std::string key, uint64_t &addr, uint32_t &rkey, bool
   LookupResponse *resp_msg = (LookupResponse *)cmd_resp_;
   if (resp_msg->status != RES_OK) {
     found = false;
-    return 0;
+    return 1;
   }
+  found = true;
   addr = resp_msg->addr;
   rkey = resp_msg->rkey;
   // LOG_ERROR("receive response: addr: %ld, key: %d\n", resp_msg->addr,
@@ -383,6 +384,7 @@ int RDMAConnection::Lookup(std::string key, uint64_t &addr, uint32_t &rkey, bool
 }
 
 int RDMAConnection::Free(uint8_t shard, BlockId id) {
+  LOG_DEBUG("Connection %d Free block %d, shard %d", conn_id_, id, shard);
   memset(cmd_msg_, 0, sizeof(CmdMsgBlock));
   memset(cmd_resp_, 0, sizeof(CmdMsgRespBlock));
   cmd_resp_->notify = NOTIFY_IDLE;
@@ -398,7 +400,19 @@ int RDMAConnection::Free(uint8_t shard, BlockId id) {
     LOG_ERROR("fail to send requests\n");
     return ret;
   }
-  // no need response
+  /* wait for response */
+  auto start = TIME_NOW;
+  while (cmd_resp_->notify == NOTIFY_IDLE) {
+    if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
+      LOG_ERROR("wait for request completion timeout\n");
+      return -1;
+    }
+  }
+  FreeResponse *resp_msg = (FreeResponse *)cmd_resp_;
+  if (resp_msg->status != RES_OK) {
+    LOG_ERROR("Connection %d Free block %d shard %d failed.", conn_id_, id, shard);
+    return 1;
+  }
   return 0;
 }
 

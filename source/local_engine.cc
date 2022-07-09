@@ -41,7 +41,7 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   }
 
   connection_manager_ = new ConnectionManager(pd_);
-  connection_manager_->Init(addr, port, 1, 4);
+  connection_manager_->Init(addr, port, 4, 4);
 
   for (int i = 0; i < kPoolShardNum; i++) {
     pool_[i] = new Pool(buffer_pool_size, filter_bits, cache_size, i, connection_manager_);

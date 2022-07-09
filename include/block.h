@@ -42,6 +42,7 @@ class DataBlock NOCOPYABLE {
   char *Data() { return data_; }
 
   void Free() {
+    memset(data_, 0, kDataBlockSize);
     SetId(INVALID_BLOCK_ID);
     SetEntryNum(0);
     data_[kDataBlockSize - 1] = FREE;

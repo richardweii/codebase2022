@@ -232,6 +232,7 @@ struct ibv_mr *RemoteEngine::rdma_register_memory(void *ptr, uint64_t size) {
   struct ibv_mr *mr =
       ibv_reg_mr(pd_, ptr, size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
   if (!mr) {
+    LOG_ERROR("registrate %lu memory failed.", size);
     perror("ibv_reg_mr fail");
     return nullptr;
   }
@@ -305,7 +306,7 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
     if (stop_) break;
     if (cmd_msg->notify == NOTIFY_IDLE) continue;
     cmd_msg->notify = NOTIFY_IDLE;
-    LOG_DEBUG("Receive Message");
+    LOG_DEBUG("Work %d Receive Message", num);
     RequestsMsg *request = (RequestsMsg *)cmd_msg;
     switch (request->type) {
       case MSG_PING: {
@@ -353,9 +354,14 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
       }
       case MSG_FREE: {
         FreeRequest *free_req = (FreeRequest *)request;
+        FreeResponse *free_resp = (FreeResponse *)cmd_resp;
         LOG_DEBUG("Free msg, shard %d block %d:", free_req->shard, free_req->id);
         auto ret = pool_[free_req->shard]->FreeDataBlock(free_req->id);
         LOG_ASSERT(ret, "Failed to free block %d", free_req->id);
+        free_resp->status = RES_OK;
+        remote_write(work_info, (uint64_t)cmd_resp, resp_mr->lkey, sizeof(CmdMsgRespBlock), work_info->remote_addr_,
+                     work_info->remote_rkey_);
+        LOG_DEBUG("Response Free msg, blockid %d", free_req->id);
         break;
       }
       default:
