@@ -11,10 +11,10 @@ namespace kv {
 constexpr int kPoolHashSeed = 0x89ea7d2f;
 
 constexpr int kPoolShardBits = 5;
-// constexpr int kPoolShardBits = 2;
+// constexpr int kPoolShardBits = 1;
 constexpr int kPoolShardNum = 1 << kPoolShardBits;
 
-// // for test
+// for test
 // constexpr size_t kLocalDataSize = (size_t)4 * 16 * 1024;  // 128KB = 16 * 8
 // constexpr size_t kKeyNum = 16 * 100;                  // 16 * 12 * 32K key
 // constexpr size_t kCacheSize = 16 * 1024;                  // 32KB cache
@@ -26,10 +26,17 @@ constexpr size_t kCacheSize = 1024 * 1024 * 1024;                  // 1GB cache
 constexpr int kKeyLength = 16;
 constexpr int kValueLength = 128;
 constexpr int kBloomFilterBitsPerKey = 10;
+<<<<<<< HEAD
 constexpr int kDataBlockSize = 16 * 1024;  // 16KB
 constexpr int kItemNum = kDataBlockSize * 8 / (kKeyLength * 8 + kValueLength * 8 + kBloomFilterBitsPerKey);
 constexpr int kDataSize = kItemNum * (kKeyLength + kValueLength);
 constexpr int kFilterSize = kItemNum * kBloomFilterBitsPerKey / 8;
+=======
+constexpr int kDataBlockSize = 256 * 1024;  // 16KB
+constexpr int kItemNum = kDataBlockSize * 8 / (kKeyLength * 8 + kValueLength * 8 + kBloomFilterBitsPerKey);
+constexpr int kDataSize = kItemNum * (kKeyLength + kValueLength);
+constexpr int kFilterSize = (kItemNum * kBloomFilterBitsPerKey + 7) / 8;
+>>>>>>> master
 
 constexpr int kAlign = 8;  // kAlign show be powers of 2, say 2, 4 ,8, 16, 32, ...
 inline constexpr int roundUp(unsigned int nBytes) { return ((nBytes) + (kAlign - 1)) & ~(kAlign - 1); }

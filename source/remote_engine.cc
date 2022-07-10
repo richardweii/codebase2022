@@ -232,6 +232,7 @@ struct ibv_mr *RemoteEngine::rdma_register_memory(void *ptr, uint64_t size) {
   struct ibv_mr *mr =
       ibv_reg_mr(pd_, ptr, size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
   if (!mr) {
+    LOG_ERROR("registrate %lu memory failed.", size);
     perror("ibv_reg_mr fail");
     return nullptr;
   }

@@ -79,8 +79,8 @@ class BufferPool NOCOPYABLE {
     Frame *next;
     Frame *front;
   };
-  Frame *frame_list_head_;
-  Frame *frame_list_tail_;
+  Frame *frame_list_head_ = nullptr;
+  Frame *frame_list_tail_ = nullptr;
   std::unordered_map<FrameId, Frame *> frame_mapping_;
   void renew(FrameId frame_id);
   FrameId pop();
