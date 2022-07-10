@@ -31,6 +31,7 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
       break;
     }
   }
+  freeaddrinfo(res);
   if (!t) {
     perror("getaddrdma_resolve_addrrinfo fail");
     return -1;
@@ -67,14 +68,14 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
 
   rdma_ack_cm_event(event);
 
-  struct ibv_comp_channel *comp_chan;
-  comp_chan = ibv_create_comp_channel(cm_id_->verbs);
-  if (!comp_chan) {
+
+  comp_chan_ = ibv_create_comp_channel(cm_id_->verbs);
+  if (!comp_chan_) {
     perror("ibv_create_comp_channel fail");
     return -1;
   }
 
-  cq_ = ibv_create_cq(cm_id_->verbs, 2, NULL, comp_chan, 0);
+  cq_ = ibv_create_cq(cm_id_->verbs, 2, NULL, comp_chan_, 0);
   if (!cq_) {
     perror("ibv_create_cq fail");
     return -1;
@@ -334,6 +335,24 @@ int RDMAConnection::Ping() {
   request->type = MSG_PING;
   request->resp_addr = (uint64_t)cmd_resp_;
   request->resp_rkey = resp_mr_->rkey;
+  cmd_msg_->notify = NOTIFY_WORK;
+
+  /* send a request to sever */
+  int ret = RDMAWrite((uint64_t)cmd_msg_, msg_mr_->lkey, sizeof(CmdMsgBlock), server_cmd_msg_, server_cmd_rkey_);
+  if (ret) {
+    LOG_ERROR("fail to send requests\n");
+    return ret;
+  }
+  // no need response
+  return 0;
+}
+
+int RDMAConnection::Stop() {
+  memset(cmd_msg_, 0, sizeof(CmdMsgBlock));
+  memset(cmd_resp_, 0, sizeof(CmdMsgRespBlock));
+  cmd_resp_->notify = NOTIFY_IDLE;
+  StopMsg *request = (StopMsg *)cmd_msg_;
+  request->type = MSG_STOP;
   cmd_msg_->notify = NOTIFY_WORK;
 
   /* send a request to sever */

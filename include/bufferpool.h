@@ -2,6 +2,7 @@
 
 #include <infiniband/verbs.h>
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -21,9 +22,14 @@ class BufferPool NOCOPYABLE {
  public:
   BufferPool(size_t size, uint8_t shard, ConnectionManager *conn_manager);
   ~BufferPool() {
+    auto ret = ibv_dereg_mr(mr_);
     delete[] datablocks_;
     for (auto &handle : handles_) {
       delete handle;
+    }
+    assert(ret == 0);
+    for (auto &kv : frame_mapping_) {
+      delete kv.second;
     }
   }
 

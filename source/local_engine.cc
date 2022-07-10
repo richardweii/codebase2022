@@ -1,4 +1,7 @@
+#include <infiniband/verbs.h>
+#include <rdma/rdma_cma.h>
 #include <cstddef>
+#include <cstdio>
 #include "assert.h"
 #include "config.h"
 #include "kv_engine.h"
@@ -25,15 +28,15 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   LOG_INFO("Create %d pool, each pool with %lu datablock, %lu MB filter data, %lu MB cache", kPoolShardNum,
            buffer_pool_size, filter_bits / 8 / 1024 / 1024, cache_size / 1024 / 1024);
 
-  struct ibv_context **ibv_ctxs;
+
   int nr_devices_;
-  ibv_ctxs = rdma_get_devices(&nr_devices_);
-  if (!ibv_ctxs) {
+  ibv_ctxs_ = rdma_get_devices(&nr_devices_);
+  if (!ibv_ctxs_) {
     perror("get device list fail");
     return false;
   }
 
-  auto context = ibv_ctxs[0];
+  auto context = ibv_ctxs_[0];
   pd_ = ibv_alloc_pd(context);
   if (!pd_) {
     perror("ibv_alloc_pd fail");
@@ -55,7 +58,16 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
  * @return {void}
  */
 void LocalEngine::stop() {
-  // TODO
+  delete connection_manager_;
+  for (int i = 0; i < kPoolShardNum; i++) {
+    delete pool_[i];
+  }
+  auto ret = ibv_dealloc_pd(pd_);
+  if (ret != 0) {
+    perror("ibv_dealloc_pd failed.");
+  }
+  assert(ret == 0);
+  rdma_free_devices(ibv_ctxs_);
   return;
 };
 
@@ -74,7 +86,8 @@ bool LocalEngine::alive() { return true; }
 bool LocalEngine::write(const std::string key, const std::string value) {
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  return pool_[index]->Write(Key(new std::string(key)), Value(new std::string(std::move(value))), NewBloomFilterPolicy());
+  return pool_[index]->Write(Key(new std::string(key)), Value(new std::string(std::move(value))),
+                             NewBloomFilterPolicy());
 }
 
 /**

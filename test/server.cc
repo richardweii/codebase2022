@@ -7,5 +7,7 @@ int main() {
   engine->start("", "12344");
   while (engine->alive())
     ;
+  engine->stop();
+  delete  engine;
   return 0;
 }

@@ -68,6 +68,8 @@ Value Pool::Read(Key key, Ptr<Filter> filter) {
     if (val != nullptr) {
       auto handle = cache_->Insert(Slice(key->c_str(), key->size()), entry, sizeof(CacheEntry), CacheDeleter);
       cache_->Release(handle);
+    } else {
+      delete entry;
     }
     return val;
   }
@@ -128,6 +130,7 @@ bool Pool::Write(Key key, Value val, Ptr<Filter> filter) {
       cache_->Release(handle);
     } else {
       insertIntoMemtable(key, val, filter);
+      delete entry;
     }
     return true;
   }
