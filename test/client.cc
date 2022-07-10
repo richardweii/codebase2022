@@ -19,7 +19,7 @@ constexpr int read_thread = 4;
 
 int main() {
   LocalEngine *local_engine = new LocalEngine();
-  local_engine->start("192.168.2.102",
+  local_engine->start("192.168.2.103",
                       "12344");  // ip 必须写具体ip，不能直接写localhost和127.0.0.1
   auto keys = genKey(key_num);
   auto values = genValue(key_num);

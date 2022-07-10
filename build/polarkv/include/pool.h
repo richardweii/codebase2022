@@ -2,6 +2,7 @@
 
 #include <infiniband/verbs.h>
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -14,6 +15,7 @@
 #include "memtable.h"
 #include "rdma_conn_manager.h"
 #include "util/filter.h"
+#include "util/logging.h"
 #include "util/nocopy.h"
 #include "util/rwlock.h"
 
@@ -31,7 +33,11 @@ class Pool NOCOPYABLE {
   Pool(size_t buffer_pool_size, size_t filter_bits, size_t cache_size, uint8_t shard, ConnectionManager *conn_manager);
   ~Pool();
 
-  void Init() { buffer_pool_->Init(); }
+  void Init() {
+    if (!buffer_pool_->Init()) {
+      LOG_ERROR("Init bufferpool failed.");
+    }
+  }
 
   Value Read(Key key, Ptr<Filter> filter);
   bool Write(Key key, Value val, Ptr<Filter> filter);
@@ -53,6 +59,9 @@ class RemotePool NOCOPYABLE {
     uint64_t data;
     uint32_t key;
   };
+  struct MR {
+    DataBlock data[kRemoteMrSize / kDataBlockSize];
+  };
   RemotePool(ibv_pd *pd, uint8_t shard) : pd_(pd), shard_(shard) {}
   // Free a datablock have been fetched from local node
   bool FreeDataBlock(BlockId id);
@@ -68,9 +77,24 @@ class RemotePool NOCOPYABLE {
 
  private:
   FrameId findBlock(BlockId id) const;
+  DataBlock *getDataBlock(FrameId id) const {
+    constexpr int ratio = kRemoteMrSize / kDataBlockSize;
+    int index = id / ratio;
+    int off = id % ratio;
+    assert(index < datablocks_.size());
+    return &datablocks_[index]->data[off];
+  }
+
+  ibv_mr *getMr(FrameId id) const {
+    constexpr int ratio = kRemoteMrSize / kDataBlockSize;
+    int index = id / ratio;
+    assert(index < mr_.size());
+    return mr_[index];
+  }
+
   std::vector<ibv_mr *> mr_;
-  std::vector<BlockHandle* > handles_;
-  std::vector<DataBlock *> datablocks_;
+  std::vector<BlockHandle *> handles_;
+  std::vector<MR *> datablocks_;
   std::list<FrameId> free_list_;
   ibv_pd *pd_;
   uint8_t shard_;

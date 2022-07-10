@@ -59,7 +59,7 @@ class BufferPool NOCOPYABLE {
 
   ConnectionManager *connection_manager_;
   ibv_pd *pd_ = nullptr;
-  ibv_mr **mr_ = nullptr;
+  ibv_mr *mr_ = nullptr;  // one mr
 
   uint8_t shard_;
 

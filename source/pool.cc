@@ -132,8 +132,8 @@ bool Pool::Write(Key key, Value val, Ptr<Filter> filter) {
 }
 
 FrameId RemotePool::findBlock(BlockId id) const {
-  for (int i = 0; i < datablocks_.size(); i++) {
-    if (datablocks_[i]->GetId() == id) {
+  for (int i = 0; i < handles_.size(); i++) {
+    if (handles_[i]->GetBlockId() == id) {
       return i;
     }
   }
@@ -146,10 +146,10 @@ bool RemotePool::FreeDataBlock(BlockId id) {
   FrameId fid = findBlock(id);
   if (fid == INVALID_FRAME_ID) {
     // does not exist
-    LOG_DEBUG("The block %d to be freed not exists.", id);
+    LOG_ERROR("The block %d to be freed not exists.", id);
     return false;
   }
-  datablocks_[fid]->Free();
+  getDataBlock(fid)->Free();
   free_list_.push_back(fid);
   return true;
 }
@@ -161,17 +161,24 @@ RemotePool::MemoryAccess RemotePool::AllocDataBlock() {
     FrameId fid = free_list_.front();
     free_list_.pop_front();
     static_assert(sizeof(DataBlock *) == sizeof(uint64_t), "Pointer should be 8 bytes.");
-    LOG_DEBUG("addr %lx, rkey %x", (uint64_t)datablocks_[fid], mr_[fid]->rkey);
-    return {(uint64_t)datablocks_[fid], mr_[fid]->rkey};
+    LOG_DEBUG("addr %lx, rkey %x", (uint64_t)getDataBlock(fid), getMr(fid)->rkey);
+    return {(uint64_t)getDataBlock(fid), getMr(fid)->rkey};
   }
 
   // need allocate new frame
-  datablocks_.emplace_back(new DataBlock());
-  handles_.emplace_back(new BlockHandle(datablocks_.back()));
-  auto mr = ibv_reg_mr(pd_, datablocks_.back(), kDataBlockSize, RDMA_MR_FLAG);
-  LOG_ASSERT(mr != nullptr, "Registration new datablock failed.");
+  constexpr int num = kRemoteMrSize / kDataBlockSize;
+  datablocks_.emplace_back(new MR());
+  FrameId cur = handles_.size();
+  for (int i = 0; i < num; i++) {
+    handles_.emplace_back(new BlockHandle(&datablocks_.back()->data[i]));
+  }
+  for (FrameId id = cur + 1; id < handles_.size(); id++) {
+    free_list_.push_back(id);
+  }
+  auto mr = ibv_reg_mr(pd_, datablocks_.back(), kRemoteMrSize, RDMA_MR_FLAG);
+  LOG_ASSERT(mr != nullptr, "Registrate new datablock failed.");
   mr_.push_back(mr);
-  LOG_DEBUG("addr %lx, rkey %x", (uint64_t)datablocks_.back(), mr_.back()->rkey);
+  LOG_DEBUG("Registrate %d datablock", num);
   return {(uint64_t)datablocks_.back(), mr_.back()->rkey};
 }
 
@@ -184,7 +191,7 @@ RemotePool::MemoryAccess RemotePool::AccessDataBlock(BlockId id) const {
     return {};
   }
 
-  return {(uint64_t)datablocks_[fid], mr_[fid]->rkey};
+  return {(uint64_t)getDataBlock(fid), getMr(fid)->rkey};
 }
 
 BlockId RemotePool::Lookup(Key key, Ptr<Filter> filter) const {

@@ -25,7 +25,6 @@ BufferPool::BufferPool(size_t size, uint8_t shard, ConnectionManager *conn_manag
   for (size_t i = 0; i < size; i++) {
     handles_.emplace_back(new BlockHandle(&datablocks_[i]));
   }
-  mr_ = new ibv_mr *[size];
   connection_manager_ = conn_manager;
   pd_ = conn_manager->Pd();
   // Initially, every page is in the free list.
@@ -35,16 +34,14 @@ BufferPool::BufferPool(size_t size, uint8_t shard, ConnectionManager *conn_manag
 }
 
 bool BufferPool::Init() {
-  for (size_t i = 0; i < pool_size_; i++) {
-    auto mr = ibv_reg_mr(pd_, &datablocks_[i], kDataBlockSize,
-                         IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
-    if (!mr) {
-      LOG_ERROR("registrate datablock %zu failed.", i);
-      perror("ibv_reg_mr fail");
-      return false;
-    }
-    mr_[i] = mr;
+  auto mr = ibv_reg_mr(pd_, datablocks_, kDataBlockSize * pool_size_,
+                       IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
+  if (!mr) {
+    LOG_ERROR("%d shard registrate datablock failed.", shard_);
+    perror("ibv_reg_mr fail");
+    return false;
   }
+  mr_ = mr;
   return true;
 }
 
@@ -75,9 +72,9 @@ DataBlock *BufferPool::GetNewDataBlock() {
     LOG_DEBUG("Request new datablock from remote...");
     ret = connection_manager_->Alloc(shard_, addr, rkey, kDataBlockSize);
     LOG_DEBUG("addr %lx, rkey %x", addr, rkey);
-    
+
     LOG_ASSERT(ret == 0, "Alloc Failed.");
-    ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_[frame_id]->lkey, kDataBlockSize, addr, rkey);
+    ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, addr, rkey);
     LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
     LOG_DEBUG("Get new datablock from remote successfully...");
   }
@@ -121,7 +118,7 @@ bool BufferPool::replacement(Key key, FrameId &fid) {
   LOG_DEBUG("Request new datablock for replace block %d", datablocks_[frame_id].GetId());
   ret = connection_manager_->Alloc(shard_, write_addr, write_rkey, kDataBlockSize);
   LOG_ASSERT(ret == 0, "Alloc Failed.");
-  ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_[frame_id]->lkey, kDataBlockSize, write_addr,
+  ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr,
                                          write_rkey);
   LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
 
@@ -133,7 +130,7 @@ bool BufferPool::replacement(Key key, FrameId &fid) {
   WriteUnlockTable();
 
   // fetch
-  ret = connection_manager_->RemoteRead(&datablocks_[frame_id], mr_[frame_id]->lkey, kDataBlockSize, read_addr,
+  ret = connection_manager_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr,
                                         read_rkey);
   LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
   LOG_DEBUG("Read Block %d", datablocks_[frame_id].GetId());
@@ -213,7 +210,7 @@ FrameId BufferPool::pop() {
   }
   // remove from hash_table
   // assert(frame_mapping_.count(frame->frame_) != 0);
-  if(frame_mapping_.count(frame->frame_) == 0) {
+  if (frame_mapping_.count(frame->frame_) == 0) {
     LOG_ERROR("fuck");
   }
   frame_mapping_.erase(frame->frame_);
