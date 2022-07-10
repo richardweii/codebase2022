@@ -87,7 +87,7 @@ bool RemoteEngine::start(const std::string addr, const std::string port) {
  * @return {bool}  true for alive
  */
 bool RemoteEngine::alive() {  // TODO
-  return true;
+  return !stop_;
 }
 
 /**
@@ -315,6 +315,10 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
         work_info->remote_addr_ = ping->resp_addr;
         work_info->remote_rkey_ = ping->resp_rkey;
         break;
+      }
+      case MSG_STOP: {
+        this->stop_ = true;
+        return;
       }
       case MSG_ALLOC: {
         AllocRequest *alloc_req = (AllocRequest *)request;

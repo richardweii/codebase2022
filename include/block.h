@@ -103,7 +103,7 @@ class BlockHandle {
 };
 
 struct CacheEntry {
-  size_t off;
+  uint32_t off;
   BlockId id;
 };
 

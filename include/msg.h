@@ -19,7 +19,7 @@ namespace kv {
 #define TIME_NOW (std::chrono::high_resolution_clock::now())
 #define TIME_DURATION_US(START, END) (std::chrono::duration_cast<std::chrono::microseconds>((END) - (START)).count())
 
-enum MsgType { MSG_PING, MSG_ALLOC, MSG_LOOKUP, MSG_FREE };
+enum MsgType { MSG_PING, MSG_ALLOC, MSG_LOOKUP, MSG_FREE, MSG_STOP };
 
 enum ResStatus { RES_OK, RES_FAIL };
 
@@ -56,6 +56,9 @@ struct PingMsg : RequestsMsg {
   uint32_t resp_rkey;
 };
 CHECK_RDMA_MSG_SIZE(PingMsg);
+
+struct StopMsg : RequestsMsg {};
+CHECK_RDMA_MSG_SIZE(StopMsg);
 
 struct AllocRequest : public RequestsMsg {
   uint8_t shard;

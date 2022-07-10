@@ -18,7 +18,13 @@ namespace kv {
 class ConnQue {
  public:
   ConnQue() {}
-
+  ~ConnQue() {
+    while (!m_queue_.empty()) {
+      auto conn = m_queue_.front();
+      delete conn;
+      m_queue_.pop();
+    }
+  }
   void enqueue(RDMAConnection *conn) {
     std::unique_lock<std::mutex> lock(m_mutex_);
     m_queue_.push(conn);
@@ -37,6 +43,8 @@ class ConnQue {
     return conn;
   }
 
+  bool empty() const { return m_queue_.empty(); }
+
  private:
   std::queue<RDMAConnection *> m_queue_;
   std::mutex m_mutex_;
@@ -48,14 +56,20 @@ class ConnectionManager NOCOPYABLE {
   ConnectionManager(ibv_pd *pd) : pd_(pd){LOG_ASSERT(pd != nullptr, "Invalid pd.")};
 
   ~ConnectionManager() {
+    while (!rpc_conn_queue_->empty()) {
+      RDMAConnection *conn = rpc_conn_queue_->dequeue();
+      assert(conn != nullptr);
+      int ret = conn->Stop();
+      delete conn;
+    }
     delete one_sided_conn_queue_;
     delete rpc_conn_queue_;
   }
   ibv_pd *Pd() const { return pd_; }
   int Init(const std::string ip, const std::string port, uint32_t rpc_conn_num, uint32_t one_sided_conn_num);
-  int Alloc(uint8_t shard,uint64_t &addr, uint32_t &rkey, uint64_t size);
+  int Alloc(uint8_t shard, uint64_t &addr, uint32_t &rkey, uint64_t size);
   int Lookup(std::string key, uint64_t &addr, uint32_t &rkey, bool &found);
-  int Free(uint8_t shard,BlockId id);
+  int Free(uint8_t shard, BlockId id);
   int RemoteRead(void *ptr, uint32_t lkey, uint32_t size, uint64_t remote_addr, uint32_t rkey);
   int RemoteWrite(void *ptr, uint32_t lkey, uint32_t size, uint64_t remote_addr, uint32_t rkey);
 
