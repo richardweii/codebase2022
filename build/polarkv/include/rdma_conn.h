@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <cassert>
 #include <cstdint>
 #include <string>
 #include "config.h"
@@ -24,12 +25,27 @@ namespace kv {
 class RDMAConnection NOCOPYABLE {
  public:
   RDMAConnection(ibv_pd *pd, int id) : pd_(pd), conn_id_(id) {}
-  ~RDMAConnection(){
-      // TODO: release resource
+  ~RDMAConnection() {
+    int ret;
+    rdma_destroy_qp(cm_id_);
+    ret = ibv_destroy_cq(cq_);
+    if (ret != 0) {
+      perror("ibv_destory_cq failed.");
+    }
+    assert(ret == 0);
+    ibv_destroy_comp_channel(comp_chan_);
+    rdma_destroy_id(cm_id_);
+    rdma_destroy_event_channel(cm_channel_);
+    ibv_dereg_mr(msg_mr_);
+    ibv_dereg_mr(resp_mr_);
+    delete cmd_msg_;
+    delete cmd_resp_;
   };
   int Init(const std::string ip, const std::string port);
 
   int Ping();
+
+  int Stop();
 
   // Allocate a datablock at the remote
   int AllocDataBlock(uint8_t shard, uint64_t &addr, uint32_t &rkey);
@@ -50,6 +66,7 @@ class RDMAConnection NOCOPYABLE {
 
   int RDMAWrite(uint64_t local_addr, uint32_t lkey, uint64_t length, uint64_t remote_addr, uint32_t rkey);
 
+  struct ibv_comp_channel *comp_chan_;
   struct rdma_event_channel *cm_channel_;
   struct ibv_pd *pd_;
   struct ibv_cq *cq_;

@@ -56,6 +56,7 @@ class LocalEngine : public Engine {
   static uint32_t Shard(uint32_t hash) { return hash >> (32 - kPoolShardBits); }
 
   Pool *pool_[kPoolShardNum];
+  struct ibv_context **ibv_ctxs_;
   ibv_pd *pd_;
   ConnectionManager *connection_manager_;
 };
@@ -98,7 +99,7 @@ class RemoteEngine : public Engine {
   struct rdma_cm_id *listen_id_;
   struct ibv_pd *pd_;
   struct ibv_context *context_;
-  bool stop_;
+  volatile bool stop_;
   std::thread *conn_handler_;
   WorkerInfo **worker_info_;
   uint32_t worker_num_;
