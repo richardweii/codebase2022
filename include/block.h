@@ -105,7 +105,6 @@ class BlockHandle {
 struct CacheEntry {
   size_t off;
   BlockId id;
-  BlockHandle *handle;
 };
 
 void CacheDeleter(const Slice &key, void *value);

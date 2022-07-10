@@ -47,16 +47,17 @@ Value Pool::Read(Key key, Ptr<Filter> filter) {
     defer { cache_->Release(cache_handle); };
 
     buffer_pool_->ReadLockTable();
-    BlockHandle *handle = entry->handle;
-
     if (buffer_pool_->HasBlock(entry->id)) {
+      BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
       val = handle->Read(entry->off);
+      buffer_pool_->ReadUnlockTable();
       return val;
     } else {
       // cache invalid, need fetch the datablock
       buffer_pool_->ReadUnlockTable();
       buffer_pool_->Fetch(key, entry->id);
-      LOG_ASSERT(handle->GetBlockId() == entry->id, "Invalid handle.");
+      BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
+      LOG_ASSERT(handle->GetBlockId() == entry->id, "Invalid handle. expected %d, got %d", handle->GetBlockId(), entry->id);
       val = handle->Read(entry->off);
       return val;
     }
@@ -103,14 +104,15 @@ bool Pool::Write(Key key, Value val, Ptr<Filter> filter) {
     auto entry = (CacheEntry *)cache_->Value(cache_handle);
     defer { cache_->Release(cache_handle); };
 
-    BlockHandle *handle = entry->handle;
     if (buffer_pool_->HasBlock(entry->id)) {
+      BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
       ret = handle->Modify(entry->off, val);
       LOG_ASSERT(ret, "Invalid cache entry %s.", key->c_str());
       return true;
     } else {
       // cache invalid, need fetch the datablock
       buffer_pool_->Fetch(key, entry->id);
+      BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
       LOG_ASSERT(handle->GetBlockId() == entry->id, "Invalid handle.");
       ret = handle->Modify(entry->off, val);
       LOG_ASSERT(ret, "Invalid cache entry %s.", key->c_str());
@@ -161,7 +163,6 @@ RemotePool::MemoryAccess RemotePool::AllocDataBlock() {
     FrameId fid = free_list_.front();
     free_list_.pop_front();
     static_assert(sizeof(DataBlock *) == sizeof(uint64_t), "Pointer should be 8 bytes.");
-    LOG_DEBUG("addr %lx, rkey %x", (uint64_t)getDataBlock(fid), getMr(fid)->rkey);
     return {(uint64_t)getDataBlock(fid), getMr(fid)->rkey};
   }
 
@@ -179,7 +180,7 @@ RemotePool::MemoryAccess RemotePool::AllocDataBlock() {
   LOG_ASSERT(mr != nullptr, "Registrate new datablock failed.");
   mr_.push_back(mr);
   LOG_DEBUG("Registrate %d datablock", num);
-  return {(uint64_t)datablocks_.back(), mr_.back()->rkey};
+  return {(uint64_t)datablocks_.back()->data, mr_.back()->rkey};
 }
 
 RemotePool::MemoryAccess RemotePool::AccessDataBlock(BlockId id) const {
@@ -197,9 +198,9 @@ RemotePool::MemoryAccess RemotePool::AccessDataBlock(BlockId id) const {
 BlockId RemotePool::Lookup(Key key, Ptr<Filter> filter) const {
   latch_.RLock();
   defer { latch_.RUnlock(); };
-  CacheEntry entry;  // not used
+  CacheEntry tmp;  // uesless, just for satisfying the interface
   for (auto &handle : handles_) {
-    if (handle->Read(key, filter, entry) != nullptr) {
+    if (handle->Read(key, filter, tmp) != nullptr) {
       return handle->GetBlockId();
     }
   }

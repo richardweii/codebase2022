@@ -322,6 +322,7 @@ int RDMAConnection::AllocDataBlock(uint8_t shard, uint64_t &addr, uint32_t &rkey
   rkey = resp_msg->rkey;
   // LOG_ERROR("receive response: addr: %ld, key: %d\n", resp_msg->addr,
   //  resp_msg->rkey);
+  LOG_DEBUG("Connection %d Alloc successfully, shard %d", conn_id_, shard);
   return 0;
 }
 

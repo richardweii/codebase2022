@@ -43,17 +43,15 @@ int main() {
   threads.clear();
 
   LOG_INFO(" ============= start read ================");
-  op_per_thread = key_num / read_thread;
-
   for (int i = 0; i < read_thread; i++) {
-    for (int j = 0; j < op_per_thread; j++) {
-      threads.emplace_back([=]() {
+    threads.emplace_back([=]() {
+      for (int j = 0; j < key_num; j++) {
         std::string value;
-        bool found = local_engine->read(keys[j + i * op_per_thread], value);
-        EXPECT(found, "Read %s failed.", keys[j + i * op_per_thread].c_str());
-        ASSERT(found && value == values[j + i * op_per_thread], "Unexpected value %s ", value.c_str());
-      });
-    }
+        bool found = local_engine->read(keys[j], value);
+        EXPECT(found, "Read %s failed.", keys[j].c_str());
+        ASSERT(found && value == values[j], "Unexpected value %s ", value.c_str());
+      }
+    });
   }
 
   for (auto &th : threads) {

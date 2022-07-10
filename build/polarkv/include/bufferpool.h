@@ -42,8 +42,16 @@ class BufferPool NOCOPYABLE {
   // modify the value if the key exists
   bool Modify(Key key, Value val, Ptr<Filter> filter, CacheEntry &entry);
 
-  // not thread-safe
+  // not thread-safe, need protect block_table_
   bool HasBlock(BlockId id) const { return block_table_.count(id); }
+
+  // not thread-safe, need protect block_table_
+  BlockHandle *GetHandle(BlockId id) const {
+    if (block_table_.count(id) == 0){
+      return nullptr;
+    }
+    return handles_.at(block_table_.at(id));
+  }
 
   void ReadLockTable() { table_latch_.RLock(); }
   void ReadUnlockTable() { table_latch_.RUnlock(); };

@@ -132,7 +132,7 @@ bool BufferPool::replacement(Key key, FrameId &fid) {
   // fetch
   ret = connection_manager_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr,
                                         read_rkey);
-  LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
+  LOG_ASSERT(ret == 0, "Remote Read Datablock Failed.");
   LOG_DEBUG("Read Block %d", datablocks_[frame_id].GetId());
   // insert new
   WriteLockTable();
@@ -271,9 +271,11 @@ bool BufferPool::Modify(Key key, Value val, Ptr<Filter> filter, CacheEntry &entr
 }
 
 bool BufferPool::Fetch(Key key, BlockId id) {
+  LOG_DEBUG("Fetch block %d for key %s", id, key->c_str());
   std::lock_guard<std::mutex> lg(mutex_);
 
   if (block_table_.count(id)) {
+    LOG_DEBUG("Other has fetched the block.");
     return true;
   }
 

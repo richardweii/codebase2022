@@ -17,7 +17,6 @@ Value BlockHandle::Read(Key key, Ptr<Filter> filter, CacheEntry &entry) const {
     LOG_ASSERT(index < kItemNum, "Out of bounds.");
     entry.id = this->GetBlockId();
     entry.off = index;
-    entry.handle = const_cast<BlockHandle *>(this);
     return Read(index);
   }
   return nullptr;
@@ -45,7 +44,6 @@ bool BlockHandle::Modify(Key key, Value value, Ptr<Filter> filter, CacheEntry &e
   if (find(key, filter, &index)) {
     entry.id = this->GetBlockId();
     entry.off = index;
-    entry.handle = this;
     return Modify(index, value);
   }
   return false;
