@@ -21,9 +21,9 @@ class MemTable NOCOPYABLE {
  public:
   MemTable(int cap = kItemNum) : cap_(cap) {}
   bool Insert(Slice key, Slice value) {
-    LOG_ASSERT(count_ < cap_, "Insert too many items to memtable, need build a block.");
     Key k(key);
     if (!table_.count(k)) {
+      LOG_ASSERT(count_ < cap_, "Insert too many items to memtable, need build a block.");
       count_++;
     }
     table_[std::move(k)] = Value(value);
