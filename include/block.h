@@ -5,8 +5,10 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <vector>
 #include "config.h"
+#include "internal.h"
 #include "util/coding.h"
 #include "util/filter.h"
 #include "util/logging.h"
@@ -74,11 +76,11 @@ class BlockHandle {
   };
   BlockHandle(DataBlock *datablock);
 
-  Value Read(Key key, Ptr<Filter> filter, CacheEntry &entry) const;
-  bool Modify(Key key, Value value, Ptr<Filter> filter, CacheEntry &entry);
+  bool Read(Slice key, std::string &value, Ptr<Filter> filter, CacheEntry &entry) const;
+  bool Modify(Slice key, Slice value, Ptr<Filter> filter, CacheEntry &entry);
 
-  Value Read(size_t off) const;
-  bool Modify(size_t off, Value value);
+  bool Read(size_t off, std::string &value) const;
+  bool Modify(size_t off, Slice value);
 
   void Lock(size_t item_index) const {
     while (locks_[item_index].test_and_set())
@@ -92,9 +94,10 @@ class BlockHandle {
 
   uint32_t EntryNum() const { return datablock_->GetEntryNum(); }
 
+  bool Find(Slice key, Ptr<Filter> filter, int *index = nullptr) const;
+
  private:
-  bool find(Key key, Ptr<Filter> filter, int *index = nullptr) const;
-  int binarySearch(Key key) const;
+  int binarySearch(Slice key) const;
 
   mutable std::atomic_flag locks_[kItemNum] = {ATOMIC_FLAG_INIT};
   DataBlock *datablock_ = nullptr;
@@ -108,6 +111,5 @@ struct CacheEntry {
 };
 
 void CacheDeleter(const Slice &key, void *value);
-
 
 }  // namespace kv

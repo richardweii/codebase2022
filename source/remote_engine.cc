@@ -97,15 +97,15 @@ bool RemoteEngine::alive() {  // TODO
 void RemoteEngine::stop() {
   stop_ = true;
   if (conn_handler_ != nullptr) {
-    conn_handler_->join();
+    // conn_handler_->join();
     delete conn_handler_;
-    conn_handler_ = nullptr;
+    // conn_handler_ = nullptr;
   }
   for (uint32_t i = 0; i < MAX_SERVER_WORKER; i++) {
     if (worker_threads_[i] != nullptr) {
-      worker_threads_[i]->join();
+      // worker_threads_[i]->join();
       delete worker_threads_[i];
-      worker_threads_[i] = nullptr;
+      // worker_threads_[i] = nullptr;
     }
   }
   // TODO: release resources
@@ -305,11 +305,11 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
   while (true) {
     if (stop_) break;
     if (cmd_msg->notify == NOTIFY_IDLE) continue;
-    cmd_msg->notify = NOTIFY_IDLE;
-    LOG_DEBUG("Work %d Receive Message", num);
     RequestsMsg *request = (RequestsMsg *)cmd_msg;
+    LOG_DEBUG("Work %d Receive Message %d", num, request->rid);
     switch (request->type) {
       case MSG_PING: {
+        cmd_msg->notify = NOTIFY_IDLE;
         PingMsg *ping = (PingMsg *)request;
         LOG_DEBUG("Client addr %lx rkey %x", ping->resp_addr, ping->resp_rkey);
         work_info->remote_addr_ = ping->resp_addr;
@@ -318,12 +318,13 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
       }
       case MSG_STOP: {
         this->stop_ = true;
-        return;
+        break;
       }
       case MSG_ALLOC: {
+        cmd_msg->notify = NOTIFY_IDLE;
         AllocRequest *alloc_req = (AllocRequest *)request;
         AllocResponse *alloc_resp = (AllocResponse *)cmd_resp;
-        LOG_DEBUG("Alloc msg, shard %d:", alloc_req->shard);
+        LOG_DEBUG("Work %d Alloc msg, shard %d:", num, alloc_req->shard);
         auto access = pool_[alloc_req->shard]->AllocDataBlock();
         LOG_DEBUG("Alloc successfully, prepare response.");
         alloc_resp->addr = access.data;
@@ -331,20 +332,21 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
         alloc_resp->status = RES_OK;
         remote_write(work_info, (uint64_t)cmd_resp, resp_mr->lkey, sizeof(CmdMsgRespBlock), work_info->remote_addr_,
                      work_info->remote_rkey_);
-        LOG_DEBUG("Response Alloc msg...");
+        LOG_DEBUG("Work %d Response Alloc msg...", num);
         break;
       }
       case MSG_LOOKUP: {
+        cmd_msg->notify = NOTIFY_IDLE;
         LookupRequest *lookup_req = (LookupRequest *)request;
         LookupResponse *lookup_resp = (LookupResponse *)cmd_resp;
-        Key key(new std::string(lookup_req->key, kKeyLength));
-        uint32_t hash = Hash(key->c_str(), kKeyLength, kPoolHashSeed);
+        Slice key(lookup_req->key, kKeyLength);
+        uint32_t hash = Hash(key.data(), kKeyLength, kPoolHashSeed);
         int index = Shard(hash);
-        LOG_DEBUG("Lookup msg, key %s, shard %d", key->c_str(), index);
+        LOG_DEBUG("Work %d Lookup msg, key %s, shard %d", num, key.data(), index);
         BlockId id = pool_[index]->Lookup(key, NewBloomFilterPolicy());
         if (id == INVALID_BLOCK_ID) {
           lookup_resp->status = RES_FAIL;
-          LOG_DEBUG("Failed to find key %s", key->c_str());
+          LOG_DEBUG("Failed to find key %s", key.data());
         } else {
           auto access = pool_[index]->AccessDataBlock(id);
           lookup_resp->addr = access.data;
@@ -353,25 +355,27 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
         }
         remote_write(work_info, (uint64_t)cmd_resp, resp_mr->lkey, sizeof(CmdMsgRespBlock), work_info->remote_addr_,
                      work_info->remote_rkey_);
-        LOG_DEBUG("Response Lookup msg, blockid %d", id);
+        LOG_DEBUG("Work %d Response Lookup %s msg, blockid %d", num, key.data(), id);
         break;
       }
       case MSG_FREE: {
+        cmd_msg->notify = NOTIFY_IDLE;
         FreeRequest *free_req = (FreeRequest *)request;
         FreeResponse *free_resp = (FreeResponse *)cmd_resp;
-        LOG_DEBUG("Free msg, shard %d block %d:", free_req->shard, free_req->id);
+        LOG_DEBUG("Work %d Free msg, shard %d block %d:", num, free_req->shard, free_req->id);
         auto ret = pool_[free_req->shard]->FreeDataBlock(free_req->id);
         LOG_ASSERT(ret, "Failed to free block %d", free_req->id);
         free_resp->status = RES_OK;
         remote_write(work_info, (uint64_t)cmd_resp, resp_mr->lkey, sizeof(CmdMsgRespBlock), work_info->remote_addr_,
                      work_info->remote_rkey_);
-        LOG_DEBUG("Response Free msg, blockid %d", free_req->id);
+        LOG_DEBUG("Work %d Response Free msg, blockid %d", num, free_req->id);
         break;
       }
       default:
         LOG_FATAL("Invalid Message.");
     }
   }
+  LOG_INFO("Worker %d stop.", num);
 }
 
 }  // namespace kv

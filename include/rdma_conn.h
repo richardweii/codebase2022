@@ -16,6 +16,7 @@
 #include "config.h"
 #include "msg.h"
 #include "util/nocopy.h"
+#include "util/slice.h"
 
 namespace kv {
 
@@ -51,7 +52,7 @@ class RDMAConnection NOCOPYABLE {
   int AllocDataBlock(uint8_t shard, uint64_t &addr, uint32_t &rkey);
 
   // lookup a entry at the remote
-  int Lookup(std::string key, uint64_t &addr, uint32_t &rkey, bool &found);
+  int Lookup(Slice key, uint64_t &addr, uint32_t &rkey, bool &found);
 
   int Free(uint8_t shard, BlockId id);
 

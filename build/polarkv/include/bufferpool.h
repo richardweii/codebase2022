@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <list>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 #include "block.h"
@@ -40,20 +41,20 @@ class BufferPool NOCOPYABLE {
   DataBlock *GetNewDataBlock();
 
   // read the value by key, return empty slice if not found
-  Value Read(Key key, Ptr<Filter> filter, CacheEntry &entry);
+  bool Read(Slice key, std::string &value, Ptr<Filter> filter, CacheEntry &entry);
 
   // when a cache entry point to a invalid datablock, need fetch the block from remote.
-  bool Fetch(Key key, BlockId id);
+  bool Fetch(Slice key, BlockId id);
 
   // modify the value if the key exists
-  bool Modify(Key key, Value val, Ptr<Filter> filter, CacheEntry &entry);
+  bool Modify(Slice key, Slice value, Ptr<Filter> filter, CacheEntry &entry);
 
   // not thread-safe, need protect block_table_
   bool HasBlock(BlockId id) const { return block_table_.count(id); }
 
   // not thread-safe, need protect block_table_
   BlockHandle *GetHandle(BlockId id) const {
-    if (block_table_.count(id) == 0){
+    if (block_table_.count(id) == 0) {
       return nullptr;
     }
     return handles_.at(block_table_.at(id));
@@ -66,7 +67,7 @@ class BufferPool NOCOPYABLE {
 
  private:
   // write back one datablock for fetching another one from remote if the block holding the key exists.
-  bool replacement(Key key, FrameId &fid);
+  bool replacement(Slice key, FrameId &fid);
 
   DataBlock *datablocks_ = nullptr;
   std::vector<BlockHandle *> handles_;

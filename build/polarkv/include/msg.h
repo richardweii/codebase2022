@@ -43,6 +43,7 @@ struct CmdMsgRespBlock {
 
 struct RequestsMsg {
   uint8_t type;
+  uint32_t rid;
 };
 CHECK_RDMA_MSG_SIZE(RequestsMsg);
 

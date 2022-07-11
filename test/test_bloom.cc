@@ -3,6 +3,7 @@
 #include "block_builder.h"
 #include "config.h"
 #include "memtable.h"
+#include "slice.h"
 #include "test.h"
 #include "util/filter.h"
 
@@ -16,7 +17,7 @@ int main() {
   auto values = genValue(8);
 
   for (int i = 0; i < 8; i++) {
-    table.Insert(Key(new std::string(keys[i])), Key(new std::string(values[i])));
+    table.Insert(Slice(keys[i]), Slice(values[i]));
   }
   table.BuildDataBlock(datablock);
 
@@ -24,7 +25,8 @@ int main() {
 
   CacheEntry entry;
   for (int i = 0; i < 8; i++) {
-    auto val = handle.Read(Key(new std::string(keys[i])), NewBloomFilterPolicy(), entry);
-    EXPECT(val != nullptr, "Cannot find %s", keys[i].c_str());
+    std::string value;
+    bool succ = handle.Read(Slice(keys[i]), value, NewBloomFilterPolicy(), entry);
+    EXPECT(succ, "Cannot find %s", keys[i].c_str());
   }
 }

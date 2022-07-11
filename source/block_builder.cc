@@ -4,17 +4,17 @@
 #include "util/logging.h"
 namespace kv {
 
-void BlockBuilder::Put(Key key, Value value) {
+void BlockBuilder::Put(Slice key, Slice value) {
   LOG_ASSERT(pos_ < cap_, "position %d is out of capacity %d.", pos_, cap_);
-  LOG_ASSERT(key->size() == kKeyLength, "Invalid key size %lu.", key->size());
-  LOG_ASSERT(value->size() == kValueLength, "Invalid value size %lu.", value->size());
+  LOG_ASSERT(key.size() == kKeyLength, "Invalid key size %zu.", key.size());
+  LOG_ASSERT(value.size() == kValueLength, "Invalid value size %zu.", value.size());
 
-  memcpy(current(), key->c_str(), key->size());
-  keys_.push_back(Slice(current(), key->size()));
-  advance(key->size());
+  memcpy(current(), key.data(), key.size());
+  keys_.push_back(Slice(current(), key.size()));
+  advance(key.size());
 
-  memcpy(current(), value->c_str(), value->size());
-  advance(value->size());
+  memcpy(current(), value.data(), value.size());
+  advance(value.size());
 }
 
 void BlockBuilder::Finish(Ptr<Filter> filter) {

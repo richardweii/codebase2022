@@ -3,6 +3,7 @@
 #include <cstring>
 #include "config.h"
 #include "msg.h"
+#include "rdma_conn_manager.h"
 #include "util/logging.h"
 
 namespace kv {
@@ -67,7 +68,6 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
   }
 
   rdma_ack_cm_event(event);
-
 
   comp_chan_ = ibv_create_comp_channel(cm_id_->verbs);
   if (!comp_chan_) {
@@ -290,13 +290,14 @@ int RDMAConnection::RemoteWrite(void *ptr, uint32_t lkey, uint64_t size, uint64_
 }
 
 int RDMAConnection::AllocDataBlock(uint8_t shard, uint64_t &addr, uint32_t &rkey) {
-  LOG_DEBUG("Connection %d AllocDataBlock, shard %d", conn_id_, shard);
   memset(cmd_msg_, 0, sizeof(CmdMsgBlock));
   memset(cmd_resp_, 0, sizeof(CmdMsgRespBlock));
   cmd_resp_->notify = NOTIFY_IDLE;
   AllocRequest *request = (AllocRequest *)cmd_msg_;
   request->type = MSG_ALLOC;
   request->shard = shard;
+  request->rid = ConnectionManager::GetRequestId();
+  LOG_DEBUG("Connection %d AllocDataBlock, shard %d, rid %d", conn_id_, shard, request->rid);
   cmd_msg_->notify = NOTIFY_WORK;
 
   /* send a request to sever */
@@ -335,6 +336,7 @@ int RDMAConnection::Ping() {
   request->type = MSG_PING;
   request->resp_addr = (uint64_t)cmd_resp_;
   request->resp_rkey = resp_mr_->rkey;
+  request->rid = ConnectionManager::GetRequestId();
   cmd_msg_->notify = NOTIFY_WORK;
 
   /* send a request to sever */
@@ -353,6 +355,7 @@ int RDMAConnection::Stop() {
   cmd_resp_->notify = NOTIFY_IDLE;
   StopMsg *request = (StopMsg *)cmd_msg_;
   request->type = MSG_STOP;
+  request->rid = ConnectionManager::GetRequestId();
   cmd_msg_->notify = NOTIFY_WORK;
 
   /* send a request to sever */
@@ -365,15 +368,16 @@ int RDMAConnection::Stop() {
   return 0;
 }
 
-int RDMAConnection::Lookup(std::string key, uint64_t &addr, uint32_t &rkey, bool &found) {
-  LOG_DEBUG("Connection %d Lookup, key %s", conn_id_, key.c_str());
+int RDMAConnection::Lookup(Slice key, uint64_t &addr, uint32_t &rkey, bool &found) {
   memset(cmd_msg_, 0, sizeof(CmdMsgBlock));
   memset(cmd_resp_, 0, sizeof(CmdMsgRespBlock));
   cmd_resp_->notify = NOTIFY_IDLE;
   LookupRequest *request = (LookupRequest *)cmd_msg_;
   request->type = MSG_LOOKUP;
-  memcpy(request->key, key.c_str(), kKeyLength);
+  request->rid = ConnectionManager::GetRequestId();
+  memcpy(request->key, key.data(), kKeyLength);
   cmd_msg_->notify = NOTIFY_WORK;
+  LOG_DEBUG("Connection %d Lookup, key %s, rid %d", conn_id_, key.data(), request->rid);
 
   /* send a request to sever */
   int ret = RDMAWrite((uint64_t)cmd_msg_, msg_mr_->lkey, sizeof(CmdMsgBlock), server_cmd_msg_, server_cmd_rkey_);
@@ -404,15 +408,16 @@ int RDMAConnection::Lookup(std::string key, uint64_t &addr, uint32_t &rkey, bool
 }
 
 int RDMAConnection::Free(uint8_t shard, BlockId id) {
-  LOG_DEBUG("Connection %d Free block %d, shard %d", conn_id_, id, shard);
   memset(cmd_msg_, 0, sizeof(CmdMsgBlock));
   memset(cmd_resp_, 0, sizeof(CmdMsgRespBlock));
   cmd_resp_->notify = NOTIFY_IDLE;
   FreeRequest *request = (FreeRequest *)cmd_msg_;
   request->type = MSG_FREE;
   request->id = id;
+  request->rid = ConnectionManager::GetRequestId();
   request->shard = shard;
   cmd_msg_->notify = NOTIFY_WORK;
+  LOG_DEBUG("Connection %d Free block %d, shard %d, rid %d", conn_id_, id, shard, request->rid);
 
   /* send a request to sever */
   int ret = RDMAWrite((uint64_t)cmd_msg_, msg_mr_->lkey, sizeof(CmdMsgBlock), server_cmd_msg_, server_cmd_rkey_);

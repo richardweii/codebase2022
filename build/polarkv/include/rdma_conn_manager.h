@@ -1,6 +1,7 @@
 #pragma once
 
 #include <infiniband/verbs.h>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -11,6 +12,7 @@
 #include "rdma_conn.h"
 #include "util/logging.h"
 #include "util/nocopy.h"
+#include "util/slice.h"
 
 namespace kv {
 
@@ -43,8 +45,6 @@ class ConnQue {
     return conn;
   }
 
-  bool empty() const { return m_queue_.empty(); }
-
  private:
   std::queue<RDMAConnection *> m_queue_;
   std::mutex m_mutex_;
@@ -56,22 +56,32 @@ class ConnectionManager NOCOPYABLE {
   ConnectionManager(ibv_pd *pd) : pd_(pd){LOG_ASSERT(pd != nullptr, "Invalid pd.")};
 
   ~ConnectionManager() {
-    while (!rpc_conn_queue_->empty()) {
-      RDMAConnection *conn = rpc_conn_queue_->dequeue();
-      assert(conn != nullptr);
-      int ret = conn->Stop();
-      delete conn;
-    }
+    RDMAConnection *conn = rpc_conn_queue_->dequeue();
+    assert(conn != nullptr);
+    int ret = conn->Stop();
+    delete conn;
     delete one_sided_conn_queue_;
     delete rpc_conn_queue_;
   }
+
   ibv_pd *Pd() const { return pd_; }
+
   int Init(const std::string ip, const std::string port, uint32_t rpc_conn_num, uint32_t one_sided_conn_num);
+
   int Alloc(uint8_t shard, uint64_t &addr, uint32_t &rkey, uint64_t size);
-  int Lookup(std::string key, uint64_t &addr, uint32_t &rkey, bool &found);
+
+  int Lookup(Slice key, uint64_t &addr, uint32_t &rkey, bool &found);
+
   int Free(uint8_t shard, BlockId id);
+
   int RemoteRead(void *ptr, uint32_t lkey, uint32_t size, uint64_t remote_addr, uint32_t rkey);
+
   int RemoteWrite(void *ptr, uint32_t lkey, uint32_t size, uint64_t remote_addr, uint32_t rkey);
+
+  static uint32_t GetRequestId() {
+    static std::atomic_uint32_t rid(1);
+    return rid.fetch_add(1);
+  }
 
  private:
   ConnQue *rpc_conn_queue_;
