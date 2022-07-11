@@ -13,6 +13,8 @@ int RDMAMemPool::get_mem(uint64_t size, uint64_t &addr, uint32_t &rkey) {
 retry:
   if (m_pos_ + size <= RDMA_ALLOCATE_SIZE &&
       m_current_mem_ != 0) { /* local mem is enough */
+    // std::cout << "Alloc success " << std::endl;
+    // printf("alloc success\n");
     addr = m_current_mem_ + m_pos_;
     rkey = m_rkey_;
     m_pos_ += size;
@@ -24,7 +26,7 @@ retry:
   rdma_mem_t rdma_mem;
   rdma_mem.addr = m_current_mem_;
   rdma_mem.rkey = m_rkey_;
-  m_used_mem_.push_back(rdma_mem);
+  // m_used_mem_.push_back(rdma_mem);
 
   /* 2. allocate and register the new mem from remote */
   /* Another optimization is to move this remote memory registration to the

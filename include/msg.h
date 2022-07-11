@@ -12,7 +12,7 @@ namespace kv {
 #define MAX_SERVER_WORKER 4
 #define RESOLVE_TIMEOUT_MS 5000
 #define RDMA_TIMEOUT_US 10000000  // 10s
-#define MAX_REMOTE_SIZE (1UL << 25)
+#define MAX_REMOTE_SIZE (1UL << 20)
 
 #define TIME_NOW (std::chrono::high_resolution_clock::now())
 #define TIME_DURATION_US(START, END)                                      \

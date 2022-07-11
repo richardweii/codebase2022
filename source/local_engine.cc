@@ -1,6 +1,7 @@
 #include "assert.h"
 #include "atomic"
 #include "kv_engine.h"
+#include <iostream>
 
 namespace kv {
 
@@ -46,19 +47,21 @@ bool LocalEngine::write(const std::string key, const std::string value) {
   uint32_t rkey;
 
   int index = std::hash<std::string>()(key) & (SHARDING_NUM - 1);
-
   m_mutex_[index].lock();
   bool found = false;
-  auto it = m_map_[index].find(key);
-  if (it != m_map_[index].end()) {
+
+  /* Use the corresponding shard hash map to look for key. */
+  hash_map_slot *it = m_hash_map[index].find(key);
+
+  if (it) {
     /* Reuse the old addr. In this case, the new value size should be the same
      * with old one. TODO: Solve the situation that the new value size is larger
      * than the old  one */
-    assert(it->second.size >= value.size());
-    remote_addr = it->second.remote_addr;
-    rkey = it->second.rkey;
+    remote_addr = it->internal_value.remote_addr;
+    rkey = it->internal_value.rkey;
     found = true;
   } else {
+    /* Not written yet, get the memory first. */
     if (m_rdma_mem_pool_->get_mem(value.size(), remote_addr, rkey)) {
       m_mutex_[index].unlock();
       return false;
@@ -79,12 +82,21 @@ bool LocalEngine::write(const std::string key, const std::string value) {
   // printf("write key: %s, value: %s, %lld %d\n", key.c_str(), value.c_str(),
   //        remote_addr, rkey);
   if (found) return true; /* no need to update hash map */
+
+  /* Update the hash info. */
   internal_value.remote_addr = remote_addr;
   internal_value.rkey = rkey;
   internal_value.size = value.size();
+
   /* Optimization: To support concurrent insertion */
   m_mutex_[index].lock();
-  m_map_[index][key] = internal_value;
+
+  /* Fetch a new slot from slot_array, do not need to new. */
+  hash_map_slot *new_slot = &hash_slot_array[slot_cnt.fetch_add(1)];
+
+  /* Update the hash_map. */
+  m_hash_map[index].insert(key, internal_value, new_slot);
+  
   m_mutex_[index].unlock();
   return true;
 }
@@ -99,12 +111,12 @@ bool LocalEngine::read(const std::string key, std::string &value) {
   int index = std::hash<std::string>()(key) & (SHARDING_NUM - 1);
   internal_value_t inter_val;
   m_mutex_[index].lock();
-  auto it = m_map_[index].find(key);
-  if (it == m_map_[index].end()) {
+  hash_map_slot *it = m_hash_map[index].find(key);
+  if (!it) {
     m_mutex_[index].unlock();
     return false;
   }
-  inter_val = it->second;
+  inter_val = it->internal_value;
   m_mutex_[index].unlock();
   value.resize(inter_val.size, '0');
   if (m_rdma_conn_->remote_read((void *)value.c_str(), inter_val.size,
