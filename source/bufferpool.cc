@@ -93,15 +93,15 @@ DataBlock *BufferPool::GetNewDataBlock() {
   return &datablocks_[frame_id];
 }
 
-bool BufferPool::replacement(Key key, FrameId &fid) {
+bool BufferPool::replacement(Slice key, FrameId &fid) {
   // lookup
   uint64_t read_addr;
   uint32_t read_rkey;
   bool found = false;
   int ret;
-  ret = connection_manager_->Lookup(*key, read_addr, read_rkey, found);
+  ret = connection_manager_->Lookup(key, read_addr, read_rkey, found);
   if (!found) {
-    LOG_DEBUG("Cannot find %s at remote.", key->c_str());
+    LOG_DEBUG("Cannot find %s at remote.", key.data());
     return found;
   }
 
@@ -118,8 +118,7 @@ bool BufferPool::replacement(Key key, FrameId &fid) {
   LOG_DEBUG("Request new datablock for replace block %d", datablocks_[frame_id].GetId());
   ret = connection_manager_->Alloc(shard_, write_addr, write_rkey, kDataBlockSize);
   LOG_ASSERT(ret == 0, "Alloc Failed.");
-  ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr,
-                                         write_rkey);
+  ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr, write_rkey);
   LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
 
   // erase old
@@ -130,8 +129,7 @@ bool BufferPool::replacement(Key key, FrameId &fid) {
   WriteUnlockTable();
 
   // fetch
-  ret = connection_manager_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr,
-                                        read_rkey);
+  ret = connection_manager_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr, read_rkey);
   LOG_ASSERT(ret == 0, "Remote Read Datablock Failed.");
   LOG_DEBUG("Read Block %d", datablocks_[frame_id].GetId());
   // insert new
@@ -220,31 +218,32 @@ FrameId BufferPool::pop() {
   return ret;
 }
 
-Value BufferPool::Read(Key key, Ptr<Filter> filter, CacheEntry &entry) {
+bool BufferPool::Read(Slice key, std::string &value, Ptr<Filter> filter, CacheEntry &entry) {
   std::lock_guard<std::mutex> guard(mutex_);
 
-  Value value;
   for (auto &kv : block_table_) {
     FrameId fid = kv.second;
 
     BlockHandle *handle = handles_[fid];
-    if ((value = handle->Read(key, filter, entry)) != nullptr) {
+    if (handle->Read(key, value, filter, entry)) {
       renew(fid);
-      return value;
+      return true;
     }
   }
 
   FrameId fid;
+  // TODO: replacement can return off of entry, aviod additional lookup
   bool found = replacement(key, fid);
   if (!found) {
-    return nullptr;
+    return false;
   }
-  value = handles_[fid]->Read(key, filter, entry);
-  LOG_ASSERT(value != nullptr, "Fetched invalid datablock.")
-  return value;
+
+  bool succ = handles_[fid]->Read(key, value, filter, entry);
+  LOG_ASSERT(succ, "Fetched invalid datablock.")
+  return true;
 }
 
-bool BufferPool::Modify(Key key, Value val, Ptr<Filter> filter, CacheEntry &entry) {
+bool BufferPool::Modify(Slice key, Slice value, Ptr<Filter> filter, CacheEntry &entry) {
   std::lock_guard<std::mutex> guard(mutex_);
 
   for (auto &kv : block_table_) {
@@ -252,7 +251,7 @@ bool BufferPool::Modify(Key key, Value val, Ptr<Filter> filter, CacheEntry &entr
     FrameId fid = kv.second;
 
     BlockHandle *handle = handles_[fid];
-    if (handle->Modify(key, val, filter, entry)) {
+    if (handle->Modify(key, value, filter, entry)) {
       renew(fid);
       return true;
     }
@@ -264,15 +263,14 @@ bool BufferPool::Modify(Key key, Value val, Ptr<Filter> filter, CacheEntry &entr
     return false;
   }
 
-  bool succ = handles_[fid]->Modify(key, val, filter, entry);
+  bool succ = handles_[fid]->Modify(key, value, filter, entry);
   LOG_ASSERT(succ, "Fetched invalid datablock.")
-
   return true;
 }
 
-bool BufferPool::Fetch(Key key, BlockId id) {
-  LOG_DEBUG("Fetch block %d for key %s", id, key->c_str());
+bool BufferPool::Fetch(Slice key, BlockId id) {
   std::lock_guard<std::mutex> lg(mutex_);
+  LOG_DEBUG("Fetch block %d for key %s", id, key.data());
 
   if (block_table_.count(id)) {
     LOG_DEBUG("Other has fetched the block.");

@@ -10,6 +10,7 @@
 #include "util/filter.h"
 #include "util/hash.h"
 #include "util/logging.h"
+#include "util/slice.h"
 
 #define MAX_VALUE_SIZE 4096
 
@@ -28,7 +29,6 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   LOG_INFO("Create %d pool, each pool with %lu datablock, %lu MB filter data, %lu MB cache", kPoolShardNum,
            buffer_pool_size, filter_bits / 8 / 1024 / 1024, cache_size / 1024 / 1024);
 
-
   int nr_devices_;
   ibv_ctxs_ = rdma_get_devices(&nr_devices_);
   if (!ibv_ctxs_) {
@@ -44,7 +44,7 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   }
 
   connection_manager_ = new ConnectionManager(pd_);
-  connection_manager_->Init(addr, port, 4, 4);
+  connection_manager_->Init(addr, port, kRPCWorkerNum, kOneSideWorkerNum);
 
   for (int i = 0; i < kPoolShardNum; i++) {
     pool_[i] = new Pool(buffer_pool_size, filter_bits, cache_size, i, connection_manager_);
@@ -86,8 +86,7 @@ bool LocalEngine::alive() { return true; }
 bool LocalEngine::write(const std::string key, const std::string value) {
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  return pool_[index]->Write(Key(new std::string(key)), Value(new std::string(std::move(value))),
-                             NewBloomFilterPolicy());
+  return pool_[index]->Write(Slice(key), Slice(value), NewBloomFilterPolicy());
 }
 
 /**
@@ -99,12 +98,7 @@ bool LocalEngine::write(const std::string key, const std::string value) {
 bool LocalEngine::read(const std::string key, std::string &value) {
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  Value val = pool_[index]->Read(Key(new std::string(key)), NewBloomFilterPolicy());
-  if (val != nullptr) {
-    value = *val;
-    return true;
-  }
-  return false;
+  return pool_[index]->Read(Slice(key), value, NewBloomFilterPolicy());
 }
 
 }  // namespace kv

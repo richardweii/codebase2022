@@ -39,11 +39,11 @@ class Pool NOCOPYABLE {
     }
   }
 
-  Value Read(Key key, Ptr<Filter> filter);
-  bool Write(Key key, Value val, Ptr<Filter> filter);
+  bool Read(Slice key, std::string &val, Ptr<Filter> filter);
+  bool Write(Slice key, Slice val, Ptr<Filter> filter);
 
  private:
-  void insertIntoMemtable(Key key, Value val, Ptr<Filter> filter);
+  void insertIntoMemtable(Slice key, Slice val, Ptr<Filter> filter);
   char *filter_data_;
   int filter_length_;
 
@@ -73,7 +73,7 @@ class RemotePool NOCOPYABLE {
   MemoryAccess AccessDataBlock(BlockId id) const;
 
   // Lookup the key in the pool
-  BlockId Lookup(Key key, Ptr<Filter> filter) const;
+  BlockId Lookup(Slice key, Ptr<Filter> filter) const;
 
  private:
   FrameId findBlock(BlockId id) const;
@@ -81,14 +81,14 @@ class RemotePool NOCOPYABLE {
     constexpr int ratio = kRemoteMrSize / kDataBlockSize;
     int index = id / ratio;
     int off = id % ratio;
-    assert(index < datablocks_.size());
+    assert(index < (int)datablocks_.size());
     return &datablocks_[index]->data[off];
   }
 
   ibv_mr *getMr(FrameId id) const {
     constexpr int ratio = kRemoteMrSize / kDataBlockSize;
     int index = id / ratio;
-    assert(index < mr_.size());
+    assert(index < (int)mr_.size());
     return mr_[index];
   }
 

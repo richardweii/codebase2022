@@ -1,8 +1,10 @@
 #include "block.h"
+#include <cassert>
 #include <cstddef>
 #include <string>
 #include "config.h"
 #include "util/logging.h"
+#include "util/slice.h"
 
 namespace kv {
 
@@ -11,37 +13,32 @@ BlockHandle::BlockHandle(DataBlock *datablock) : datablock_(datablock) {
   filter_data_ = datablock_->Data() + kDataSize;
 }
 
-Value BlockHandle::Read(Key key, Ptr<Filter> filter, CacheEntry &entry) const {
+bool BlockHandle::Read(Slice key, std::string &value, Ptr<Filter> filter, CacheEntry &entry) const {
+  assert(key.size() == kKeyLength);
   int index;
-  if (find(key, filter, &index)) {
+  if (Find(key, filter, &index)) {
     LOG_ASSERT(index < kItemNum, "Out of bounds.");
     entry.id = this->GetBlockId();
     entry.off = index;
-    return Read(index);
+    return Read(index, value);
   }
-  return nullptr;
+  return false;
 }
 
-Value BlockHandle::Read(size_t off) const {
+bool BlockHandle::Read(size_t off, std::string &value) const {
   LOG_ASSERT(off < EntryNum(), "Out of range.");
   Lock(off);
-  Value val(new std::string(items_[off].value, kValueLength));
-  Unlock(off);
-  return val;
-}
-
-bool BlockHandle::Modify(size_t off, Value value) {
-  LOG_ASSERT(off < EntryNum(), "Out of range.");
-  LOG_ASSERT(value->size() == kValueLength, "Invalid Value %s", value->c_str());
-  Lock(off);
-  memcpy(items_[off].value, value->c_str(), value->size());
+  value.resize(kValueLength);
+  memcpy((char *)value.c_str(), items_[off].value, kValueLength);
   Unlock(off);
   return true;
 }
 
-bool BlockHandle::Modify(Key key, Value value, Ptr<Filter> filter, CacheEntry &entry) {
+bool BlockHandle::Modify(Slice key, Slice value, Ptr<Filter> filter, CacheEntry &entry) {
+  assert(key.size() == kKeyLength);
+  assert(value.size() == kValueLength);
   int index;
-  if (find(key, filter, &index)) {
+  if (Find(key, filter, &index)) {
     entry.id = this->GetBlockId();
     entry.off = index;
     return Modify(index, value);
@@ -49,9 +46,18 @@ bool BlockHandle::Modify(Key key, Value value, Ptr<Filter> filter, CacheEntry &e
   return false;
 }
 
-bool BlockHandle::find(Key key, Ptr<Filter> filter, int *index) const {
+bool BlockHandle::Modify(size_t off, Slice value) {
+  LOG_ASSERT(off < EntryNum(), "Out of range.");
+  LOG_ASSERT(value.size() == kValueLength, "Invalid Value %s", value.data());
+  Lock(off);
+  memcpy(items_[off].value, value.data(), value.size());
+  Unlock(off);
+  return true;
+}
+
+bool BlockHandle::Find(Slice key, Ptr<Filter> filter, int *index) const {
   // filter
-  if (!filter->KeyMayMatch(Slice(*key), Slice(filter_data_, (this->EntryNum() * kBloomFilterBitsPerKey + 7) / 8))) {
+  if (!filter->KeyMayMatch(key, Slice(filter_data_, (this->EntryNum() * kBloomFilterBitsPerKey + 7) / 8))) {
     return false;
   }
   // search
@@ -62,11 +68,11 @@ bool BlockHandle::find(Key key, Ptr<Filter> filter, int *index) const {
   return res != -1;
 }
 
-int BlockHandle::binarySearch(Key key) const {
+int BlockHandle::binarySearch(Slice key) const {
   int left = 0, right = EntryNum();
   while (left <= right) {
     int mid = left + (right - left) / 2;
-    int cmp = strncmp(items_[mid].key, key->c_str(), key->size());
+    int cmp = strncmp(items_[mid].key, key.data(), key.size());
     if (cmp == 0) {
       return mid;
     } else if (cmp < 0) {

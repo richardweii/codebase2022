@@ -18,34 +18,31 @@
 namespace kv {
 
 class MemTable NOCOPYABLE {
-  struct InternalKeyHash {
-    size_t operator()(const Key &key) const { return Hash(key->c_str(), key->size(), 0x1237423); }
-  };
-
-  struct InternalKeyEqual {
-    bool operator()(const Key &a, const Key &b) const { return *a == *b; }
-  };
-
  public:
   MemTable(int cap = kItemNum) : cap_(cap) {}
-
-  bool Insert(Key key, Value value) {
+  bool Insert(Slice key, Slice value) {
     LOG_ASSERT(count_ < cap_, "Insert too many items to memtable, need build a block.");
-    if (!table_.count(key)) {
+    Key k(key);
+    if (!table_.count(k)) {
       count_++;
     }
-    table_[key] = value;
+    table_[std::move(k)] = Value(value);
     return true;
   }
 
   bool Full() const { return count_ >= cap_; }
 
-  Value Read(Key key) {
-    if (table_.count(key)) {
-      return table_[key];
+  bool Read(Slice key, std::string &value) {
+    Key k(key);
+    if (table_.count(k)) {
+      value.resize(kValueLength);
+      memcpy((char *)value.c_str(), table_[std::move(k)].data(), kValueLength);
+      return true;
     }
-    return nullptr;
+    return false;
   }
+
+  bool Exist(Slice key) { return table_.count(Key(key)); }
 
   DataBlock *BuildDataBlock(DataBlock *datablock);
 
@@ -55,7 +52,7 @@ class MemTable NOCOPYABLE {
   }
 
  private:
-  std::unordered_map<Key, Value, InternalKeyHash, InternalKeyEqual> table_;
+  std::unordered_map<Key, Value, Key::InternalHash, Key::InternalEqual> table_;
   int count_ = 0;
   int cap_;
 };

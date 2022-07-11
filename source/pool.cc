@@ -17,7 +17,7 @@ namespace kv {
 Pool::Pool(size_t buffer_pool_size, size_t filter_bits, size_t cache_size, uint8_t shard,
            ConnectionManager *conn_manager) {
   buffer_pool_ = new BufferPool(buffer_pool_size, shard, conn_manager);
-  filter_length_ = (filter_bits + 7)/ 8;
+  filter_length_ = (filter_bits + 7) / 8;
   filter_data_ = new char[filter_length_];
   memtable_ = new MemTable();
   cache_ = NewLRUCache(cache_size);
@@ -30,18 +30,17 @@ Pool::~Pool() {
   delete[] filter_data_;
 }
 
-Value Pool::Read(Key key, Ptr<Filter> filter) {
+bool Pool::Read(Slice key, std::string &val, Ptr<Filter> filter) {
   latch_.RLock();
   defer { latch_.RUnlock(); };
-  Value val;
-  if (!filter->KeyMayMatch(Slice(key->c_str(), key->size()), Slice(filter_data_, filter_length_))) {
-    return nullptr;
+  if (!filter->KeyMayMatch(key, Slice(filter_data_, filter_length_))) {
+    return false;
   }
-  if ((val = memtable_->Read(key)) != nullptr) {
-    return val;
+  if (memtable_->Read(key, val)) {
+    return true;
   }
 
-  auto cache_handle = cache_->Lookup(Slice(key->c_str(), key->size()));
+  auto cache_handle = cache_->Lookup(key);
   if (cache_handle != nullptr) {
     auto entry = (CacheEntry *)cache_->Value(cache_handle);
     defer { cache_->Release(cache_handle); };
@@ -49,33 +48,34 @@ Value Pool::Read(Key key, Ptr<Filter> filter) {
     buffer_pool_->ReadLockTable();
     if (buffer_pool_->HasBlock(entry->id)) {
       BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
-      val = handle->Read(entry->off);
+      handle->Read(entry->off, val);
       buffer_pool_->ReadUnlockTable();
-      return val;
+      return true;
     } else {
       // cache invalid, need fetch the datablock
       buffer_pool_->ReadUnlockTable();
       buffer_pool_->Fetch(key, entry->id);
       BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
-      LOG_ASSERT(handle->GetBlockId() == entry->id, "Invalid handle. expected %d, got %d", handle->GetBlockId(), entry->id);
-      val = handle->Read(entry->off);
-      return val;
+      LOG_ASSERT(handle->GetBlockId() == entry->id, "Invalid handle. expected %d, got %d", handle->GetBlockId(),
+                 entry->id);
+      handle->Read(entry->off, val);
+      return true;
     }
   } else {
     // cache miss
     CacheEntry *entry = new CacheEntry();
-    val = buffer_pool_->Read(key, filter, *entry);
-    if (val != nullptr) {
-      auto handle = cache_->Insert(Slice(key->c_str(), key->size()), entry, sizeof(CacheEntry), CacheDeleter);
+    auto succ = buffer_pool_->Read(key, val, filter, *entry);
+    if (succ) {
+      auto handle = cache_->Insert(key, entry, sizeof(CacheEntry), CacheDeleter);
       cache_->Release(handle);
     } else {
       delete entry;
     }
-    return val;
+    return true;
   }
 }
 
-void Pool::insertIntoMemtable(Key key, Value val, Ptr<Filter> filter) {
+void Pool::insertIntoMemtable(Slice key, Slice val, Ptr<Filter> filter) {
   if (memtable_->Full()) {
     DataBlock *block = buffer_pool_->GetNewDataBlock();
     // LOG_DEBUG("memtable is full, get new block %d", block->GetId());
@@ -83,24 +83,23 @@ void Pool::insertIntoMemtable(Key key, Value val, Ptr<Filter> filter) {
     memtable_->Reset();
   }
   memtable_->Insert(key, val);
-  Slice s(key->c_str(), key->size());
-  filter->AddFilter(s, this->filter_length_ * 8, filter_data_);
+  filter->AddFilter(key, this->filter_length_ * 8, filter_data_);
 }
 
-bool Pool::Write(Key key, Value val, Ptr<Filter> filter) {
+bool Pool::Write(Slice key, Slice val, Ptr<Filter> filter) {
   latch_.WLock();
   defer { latch_.WUnlock(); };
-  if (!filter->KeyMayMatch(Slice(key->c_str(), key->size()), Slice(filter_data_, filter_length_))) {
+  if (!filter->KeyMayMatch(key, Slice(filter_data_, filter_length_))) {
     insertIntoMemtable(key, val, filter);
     return true;
   }
 
-  if (memtable_->Read(key) != nullptr) {
+  if (memtable_->Exist(key)) {
     memtable_->Insert(key, val);
     return true;
   }
 
-  auto cache_handle = cache_->Lookup(Slice(key->c_str(), key->size()));
+  auto cache_handle = cache_->Lookup(key);
   bool ret = false;
   if (cache_handle != nullptr) {
     auto entry = (CacheEntry *)cache_->Value(cache_handle);
@@ -109,7 +108,7 @@ bool Pool::Write(Key key, Value val, Ptr<Filter> filter) {
     if (buffer_pool_->HasBlock(entry->id)) {
       BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
       ret = handle->Modify(entry->off, val);
-      LOG_ASSERT(ret, "Invalid cache entry %s.", key->c_str());
+      LOG_ASSERT(ret, "Invalid cache entry %s.", key.data());
       return true;
     } else {
       // cache invalid, need fetch the datablock
@@ -117,7 +116,7 @@ bool Pool::Write(Key key, Value val, Ptr<Filter> filter) {
       BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
       LOG_ASSERT(handle->GetBlockId() == entry->id, "Invalid handle.");
       ret = handle->Modify(entry->off, val);
-      LOG_ASSERT(ret, "Invalid cache entry %s.", key->c_str());
+      LOG_ASSERT(ret, "Invalid cache entry %s.", key.data());
       return true;
     }
   } else {
@@ -126,7 +125,7 @@ bool Pool::Write(Key key, Value val, Ptr<Filter> filter) {
     ret = buffer_pool_->Modify(key, val, filter, *entry);
     if (ret) {
       // in archive
-      auto handle = cache_->Insert(Slice(key->c_str(), key->size()), entry, sizeof(CacheEntry), CacheDeleter);
+      auto handle = cache_->Insert(key, entry, sizeof(CacheEntry), CacheDeleter);
       cache_->Release(handle);
     } else {
       insertIntoMemtable(key, val, filter);
@@ -137,7 +136,7 @@ bool Pool::Write(Key key, Value val, Ptr<Filter> filter) {
 }
 
 FrameId RemotePool::findBlock(BlockId id) const {
-  for (int i = 0; i < handles_.size(); i++) {
+  for (size_t i = 0; i < handles_.size(); i++) {
     if (handles_[i]->GetBlockId() == id) {
       return i;
     }
@@ -176,7 +175,7 @@ RemotePool::MemoryAccess RemotePool::AllocDataBlock() {
   for (int i = 0; i < num; i++) {
     handles_.emplace_back(new BlockHandle(&datablocks_.back()->data[i]));
   }
-  for (FrameId id = cur + 1; id < handles_.size(); id++) {
+  for (FrameId id = cur + 1; id < (FrameId)handles_.size(); id++) {
     free_list_.push_back(id);
   }
   auto mr = ibv_reg_mr(pd_, datablocks_.back(), kRemoteMrSize, RDMA_MR_FLAG);
@@ -198,12 +197,11 @@ RemotePool::MemoryAccess RemotePool::AccessDataBlock(BlockId id) const {
   return {(uint64_t)getDataBlock(fid), getMr(fid)->rkey};
 }
 
-BlockId RemotePool::Lookup(Key key, Ptr<Filter> filter) const {
+BlockId RemotePool::Lookup(Slice key, Ptr<Filter> filter) const {
   latch_.RLock();
   defer { latch_.RUnlock(); };
-  CacheEntry tmp;  // uesless, just for satisfying the interface
   for (auto &handle : handles_) {
-    if (handle->Read(key, filter, tmp) != nullptr) {
+    if (handle->Find(key, filter)) {
       return handle->GetBlockId();
     }
   }

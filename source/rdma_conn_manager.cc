@@ -74,7 +74,7 @@ int ConnectionManager::Free(uint8_t shard,BlockId id) {
   return ret;
 }
 
-int ConnectionManager::Lookup(std::string key, uint64_t &addr, uint32_t &rkey, bool &found) {
+int ConnectionManager::Lookup(Slice key, uint64_t &addr, uint32_t &rkey, bool &found) {
     RDMAConnection *conn = rpc_conn_queue_->dequeue();
   assert(conn != nullptr);
   int ret = conn->Lookup(key, addr, rkey, found);
