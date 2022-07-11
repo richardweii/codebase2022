@@ -42,34 +42,32 @@ bool Pool::Read(Slice key, std::string &val, Ptr<Filter> filter) {
 
   auto cache_handle = cache_->Lookup(key);
   if (cache_handle != nullptr) {
-    auto entry = (CacheEntry *)cache_->Value(cache_handle);
+    auto &entry = cache_->Value(cache_handle);
     defer { cache_->Release(cache_handle); };
 
     buffer_pool_->ReadLockTable();
-    if (buffer_pool_->HasBlock(entry->id)) {
-      BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
-      handle->Read(entry->off, val);
+    if (buffer_pool_->HasBlock(entry.id)) {
+      BlockHandle *handle = buffer_pool_->GetHandle(entry.id);
+      handle->Read(entry.off, val);
       buffer_pool_->ReadUnlockTable();
       return true;
     } else {
       // cache invalid, need fetch the datablock
       buffer_pool_->ReadUnlockTable();
-      buffer_pool_->Fetch(key, entry->id);
-      BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
-      LOG_ASSERT(handle->GetBlockId() == entry->id, "Invalid handle. expected %d, got %d", handle->GetBlockId(),
-                 entry->id);
-      handle->Read(entry->off, val);
+      buffer_pool_->Fetch(key, entry.id);
+      BlockHandle *handle = buffer_pool_->GetHandle(entry.id);
+      LOG_ASSERT(handle->GetBlockId() == entry.id, "Invalid handle. expected %d, got %d", handle->GetBlockId(),
+                 entry.id);
+      handle->Read(entry.off, val);
       return true;
     }
   } else {
     // cache miss
-    CacheEntry *entry = new CacheEntry();
-    auto succ = buffer_pool_->Read(key, val, filter, *entry);
+    CacheEntry entry;
+    auto succ = buffer_pool_->Read(key, val, filter, entry);
     if (succ) {
-      auto handle = cache_->Insert(key, entry, sizeof(CacheEntry), CacheDeleter);
+      auto handle = cache_->Insert(key, std::move(entry));
       cache_->Release(handle);
-    } else {
-      delete entry;
     }
     return true;
   }
@@ -102,34 +100,33 @@ bool Pool::Write(Slice key, Slice val, Ptr<Filter> filter) {
   auto cache_handle = cache_->Lookup(key);
   bool ret = false;
   if (cache_handle != nullptr) {
-    auto entry = (CacheEntry *)cache_->Value(cache_handle);
+    auto &entry = cache_->Value(cache_handle);
     defer { cache_->Release(cache_handle); };
 
-    if (buffer_pool_->HasBlock(entry->id)) {
-      BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
-      ret = handle->Modify(entry->off, val);
+    if (buffer_pool_->HasBlock(entry.id)) {
+      BlockHandle *handle = buffer_pool_->GetHandle(entry.id);
+      ret = handle->Modify(entry.off, val);
       LOG_ASSERT(ret, "Invalid cache entry %s.", key.data());
       return true;
     } else {
       // cache invalid, need fetch the datablock
-      buffer_pool_->Fetch(key, entry->id);
-      BlockHandle *handle = buffer_pool_->GetHandle(entry->id);
-      LOG_ASSERT(handle->GetBlockId() == entry->id, "Invalid handle.");
-      ret = handle->Modify(entry->off, val);
+      buffer_pool_->Fetch(key, entry.id);
+      BlockHandle *handle = buffer_pool_->GetHandle(entry.id);
+      LOG_ASSERT(handle->GetBlockId() == entry.id, "Invalid handle.");
+      ret = handle->Modify(entry.off, val);
       LOG_ASSERT(ret, "Invalid cache entry %s.", key.data());
       return true;
     }
   } else {
     // cache miss
-    CacheEntry *entry = new CacheEntry();
-    ret = buffer_pool_->Modify(key, val, filter, *entry);
+    CacheEntry entry;
+    ret = buffer_pool_->Modify(key, val, filter, entry);
     if (ret) {
       // in archive
-      auto handle = cache_->Insert(key, entry, sizeof(CacheEntry), CacheDeleter);
+      auto handle = cache_->Insert(key, std::move(entry));
       cache_->Release(handle);
     } else {
       insertIntoMemtable(key, val, filter);
-      delete entry;
     }
     return true;
   }

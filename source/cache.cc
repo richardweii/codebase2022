@@ -5,10 +5,12 @@
 #include "cache.h"
 
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
 
+#include "config.h"
 #include "util/hash.h"
 
 namespace kv {
@@ -39,24 +41,21 @@ namespace {
 // An entry is a variable length heap-allocated structure.  Entries
 // are kept in a circular doubly linked list ordered by access time.
 struct LRUHandle {
-  void *value;
-  void (*deleter)(const Slice &, void *value);
+  CacheEntry value;
   LRUHandle *next_hash;
   LRUHandle *next;
   LRUHandle *prev;
-  size_t charge;
-  size_t key_length;
-  bool in_cache;     // Whether entry is in the cache.
-  uint32_t refs;     // References, including cache reference, if present.
-  uint32_t hash;     // Hash of key(); used for fast sharding and comparisons
-  char key_data[1];  // Beginning of key
+  uint32_t hash;              // Hash of key(); used for fast sharding and comparisons
+  uint8_t refs;               // References, including cache reference, if present.
+  char key_data[kKeyLength];  // Beginning of key
+  bool in_cache;              // Whether entry is in the cache.
 
   Slice key() const {
     // next is only equal to this if the LRU handle is the list head of an
     // empty list. List heads never have meaningful keys.
     assert(next != this);
 
-    return Slice(key_data, key_length);
+    return Slice(key_data, kKeyLength);
   }
 };
 
@@ -153,8 +152,7 @@ class LRUCache {
   void SetCapacity(size_t capacity) { capacity_ = capacity; }
 
   // Like Cache methods, but with an extra "hash" parameter.
-  Cache::Handle *Insert(const Slice &key, uint32_t hash, void *value, size_t charge,
-                        void (*deleter)(const Slice &key, void *value));
+  Cache::Handle *Insert(const Slice &key, uint32_t hash, CacheEntry &&value);
   Cache::Handle *Lookup(const Slice &key, uint32_t hash);
   void Release(Cache::Handle *handle);
   void Erase(const Slice &key, uint32_t hash);
@@ -222,8 +220,7 @@ void LRUCache::Unref(LRUHandle *e) {
   e->refs--;
   if (e->refs == 0) {  // Deallocate.
     assert(!e->in_cache);
-    (*e->deleter)(e->key(), e->value);
-    free(e);
+    delete e;
   } else if (e->in_cache && e->refs == 1) {
     // No longer in use; move to lru_ list.
     LRU_Remove(e);
@@ -258,15 +255,11 @@ void LRUCache::Release(Cache::Handle *handle) {
   Unref(reinterpret_cast<LRUHandle *>(handle));
 }
 
-Cache::Handle *LRUCache::Insert(const Slice &key, uint32_t hash, void *value, size_t charge,
-                                void (*deleter)(const Slice &key, void *value)) {
+Cache::Handle *LRUCache::Insert(const Slice &key, uint32_t hash, CacheEntry &&value) {
   std::lock_guard<std::mutex> l(mutex_);
 
-  LRUHandle *e = reinterpret_cast<LRUHandle *>(malloc(sizeof(LRUHandle) - 1 + key.size()));
+  LRUHandle *e = new LRUHandle();
   e->value = value;
-  e->deleter = deleter;
-  e->charge = charge;
-  e->key_length = key.size();
   e->hash = hash;
   e->in_cache = false;
   e->refs = 1;  // for the returned handle.
@@ -276,7 +269,7 @@ Cache::Handle *LRUCache::Insert(const Slice &key, uint32_t hash, void *value, si
     e->refs++;  // for the cache's reference.
     e->in_cache = true;
     LRU_Append(&in_use_, e);
-    usage_ += charge;
+    usage_ += sizeof(LRUHandle);
     FinishErase(table_.Insert(e));
   } else {  // don't cache. (capacity_==0 is supported and turns off caching.)
     // next is read by key() in an assert, so it must be initialized
@@ -301,7 +294,7 @@ bool LRUCache::FinishErase(LRUHandle *e) {
     assert(e->in_cache);
     LRU_Remove(e);
     e->in_cache = false;
-    usage_ -= e->charge;
+    usage_ -= sizeof(LRUHandle);
     Unref(e);
   }
   return e != nullptr;
@@ -332,10 +325,9 @@ class ShardedLRUCache : public Cache {
     }
   }
   ~ShardedLRUCache() override {}
-  Handle *Insert(const Slice &key, void *value, size_t charge,
-                 void (*deleter)(const Slice &key, void *value)) override {
+  Handle *Insert(const Slice &key, CacheEntry &&value) override {
     const uint32_t hash = HashSlice(key);
-    return shard_[Shard(hash)].Insert(key, hash, value, charge, deleter);
+    return shard_[Shard(hash)].Insert(key, hash, std::move(value));
   }
   Handle *Lookup(const Slice &key) override {
     const uint32_t hash = HashSlice(key);
@@ -349,7 +341,7 @@ class ShardedLRUCache : public Cache {
     const uint32_t hash = HashSlice(key);
     shard_[Shard(hash)].Erase(key, hash);
   }
-  void *Value(Handle *handle) override { return reinterpret_cast<LRUHandle *>(handle)->value; }
+  CacheEntry &Value(Handle *handle) override { return reinterpret_cast<LRUHandle *>(handle)->value; }
 
   size_t TotalCharge() const override {
     size_t total = 0;

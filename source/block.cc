@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <string>
 #include "config.h"
+#include "cache.h"
 #include "util/logging.h"
 #include "util/slice.h"
 
@@ -83,10 +84,4 @@ int BlockHandle::binarySearch(Slice key) const {
   }
   return -1;
 }
-
-void CacheDeleter(const Slice &key, void *value) {
-  CacheEntry *entry = (CacheEntry *)value;
-  delete entry;
-}
-
 }  // namespace kv

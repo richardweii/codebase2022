@@ -18,12 +18,16 @@
 
 #include <cstdint>
 
+#include "config.h"
 #include "util/nocopy.h"
 #include "util/slice.h"
 
 namespace kv {
-class Cache;
-Cache *NewLRUCache(size_t capacity);
+
+struct CacheEntry {
+  uint32_t off;
+  BlockId id;
+};
 
 class Cache NOCOPYABLE {
  public:
@@ -41,11 +45,7 @@ class Cache NOCOPYABLE {
   // Returns a handle that corresponds to the mapping.  The caller
   // must call this->Release(handle) when the returned mapping is no
   // longer needed.
-  //
-  // When the inserted entry is no longer needed, the key and
-  // value will be passed to "deleter".
-  virtual Handle *Insert(const Slice &key, void *value, size_t charge,
-                         void (*deleter)(const Slice &key, void *value)) = 0;
+  virtual Handle *Insert(const Slice &key, CacheEntry &&value) = 0;
 
   // If the cache has no mapping for "key", returns nullptr.
   //
@@ -63,7 +63,7 @@ class Cache NOCOPYABLE {
   // successful Lookup().
   // REQUIRES: handle must not have been released yet.
   // REQUIRES: handle must have been returned by a method on *this.
-  virtual void *Value(Handle *handle) = 0;
+  virtual CacheEntry &Value(Handle *handle) = 0;
 
   // If the cache contains entry for key, erase it.  Note that the
   // underlying entry will be kept around until all existing handles
@@ -74,5 +74,7 @@ class Cache NOCOPYABLE {
   // cache.
   virtual size_t TotalCharge() const = 0;
 };
+
+Cache *NewLRUCache(size_t capacity);
 
 }  // namespace kv

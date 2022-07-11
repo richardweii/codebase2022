@@ -104,12 +104,4 @@ class BlockHandle {
   Item *items_ = nullptr;
   char *filter_data_ = nullptr;
 };
-
-struct CacheEntry {
-  uint32_t off;
-  BlockId id;
-};
-
-void CacheDeleter(const Slice &key, void *value);
-
 }  // namespace kv
