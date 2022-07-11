@@ -371,6 +371,20 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
         LOG_DEBUG("Work %d Response Free msg, blockid %d", num, free_req->id);
         break;
       }
+      case MSG_FETCH: {
+        cmd_msg->notify = NOTIFY_IDLE;
+        FetchRequest *fetch_req = (FetchRequest *)request;
+        FetchResponse *fetch_resp = (FetchResponse *)cmd_resp;
+        LOG_DEBUG("Work %d fetch msg,, shard %d, block %d", num, fetch_req->shard, fetch_req->id);
+        auto access = pool_[fetch_req->shard]->AccessDataBlock(fetch_req->id);
+        fetch_resp->addr = access.data;
+        fetch_resp->rkey = access.key;
+        fetch_resp->status = RES_OK;
+        remote_write(work_info, (uint64_t)cmd_resp, resp_mr->lkey, sizeof(CmdMsgRespBlock), work_info->remote_addr_,
+                     work_info->remote_rkey_);
+        LOG_DEBUG("Work %d Response Fetch msg, blockid %d", num, fetch_req->id);
+        break;
+      }
       default:
         LOG_FATAL("Invalid Message.");
     }

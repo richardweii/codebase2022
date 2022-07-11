@@ -9,6 +9,7 @@
 #include "config.h"
 #include "rdma_conn_manager.h"
 #include "util/defer.h"
+#include "util/filter.h"
 #include "util/logging.h"
 
 namespace kv {
@@ -277,10 +278,53 @@ bool BufferPool::Fetch(Slice key, BlockId id) {
     return true;
   }
 
-  FrameId fid;
-  bool found = replacement(key, fid);
-  LOG_ASSERT(datablocks_[fid].GetId() == id, "Unmatched block id.");
-  LOG_ASSERT(found, "Invalid key in cache.");
+  // lookup
+  uint64_t read_addr;
+  uint32_t read_rkey;
+  int ret;
+  ret = connection_manager_->Fetch(shard_, id, read_addr, read_rkey);
+  assert(ret == 0);
+
+  // replacement
+  FrameId frame_id;
+  frame_id = pop();
+  if (frame_id == INVALID_FRAME_ID) {
+    return false;
+  }
+
+  // write back victim
+  uint64_t write_addr;
+  uint32_t write_rkey;
+  LOG_DEBUG("Request new datablock for replace block %d", datablocks_[frame_id].GetId());
+  ret = connection_manager_->Alloc(shard_, write_addr, write_rkey, kDataBlockSize);
+  LOG_ASSERT(ret == 0, "Alloc Failed.");
+  ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr, write_rkey);
+  LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
+
+  // erase old
+  WriteLockTable();
+  ret = block_table_.erase(datablocks_[frame_id].GetId());
+  datablocks_[frame_id].Free();
+  assert(ret == 1);
+  WriteUnlockTable();
+
+  // fetch
+  ret = connection_manager_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr, read_rkey);
+  LOG_ASSERT(ret == 0, "Remote Read Datablock Failed.");
+  LOG_DEBUG("Read Block %d", datablocks_[frame_id].GetId());
+  // insert new
+  WriteLockTable();
+  block_table_[datablocks_[frame_id].GetId()] = frame_id;
+  WriteUnlockTable();
+
+  // LRU update
+  renew(frame_id);
+
+  connection_manager_->Free(shard_, datablocks_[frame_id].GetId());
+  LOG_DEBUG("Replacement finish.");
+
+  LOG_ASSERT(datablocks_[frame_id].GetId() == id, "Unmatched block id.");
+  LOG_ASSERT(handles_[frame_id]->Find(key, NewBloomFilterPolicy()), "Invalid key in cache.");
   LOG_ASSERT(HasBlock(id), "Failed to fetch block %d", id);
   return true;
 }

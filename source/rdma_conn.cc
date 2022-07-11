@@ -328,6 +328,46 @@ int RDMAConnection::AllocDataBlock(uint8_t shard, uint64_t &addr, uint32_t &rkey
   return 0;
 }
 
+int RDMAConnection::Fetch(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey) {
+  memset(cmd_msg_, 0, sizeof(CmdMsgBlock));
+  memset(cmd_resp_, 0, sizeof(CmdMsgRespBlock));
+  cmd_resp_->notify = NOTIFY_IDLE;
+  FetchRequest *request = (FetchRequest *)cmd_msg_;
+  request->type = MSG_FETCH;
+  request->id = id;
+  request->shard = shard;
+  request->rid = ConnectionManager::GetRequestId();
+  LOG_DEBUG("Connection %d Fetch block %d, shard %d, rid %d", conn_id_, id, shard, request->rid);
+  cmd_msg_->notify = NOTIFY_WORK;
+
+  /* send a request to sever */
+  int ret = RDMAWrite((uint64_t)cmd_msg_, msg_mr_->lkey, sizeof(CmdMsgBlock), server_cmd_msg_, server_cmd_rkey_);
+  if (ret) {
+    LOG_ERROR("fail to send requests\n");
+    return ret;
+  }
+
+  /* wait for response */
+  auto start = TIME_NOW;
+  while (cmd_resp_->notify == NOTIFY_IDLE) {
+    if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
+      LOG_ERROR("wait for request completion timeout\n");
+      return -1;
+    }
+  }
+  FetchResponse *resp_msg = (FetchResponse *)cmd_resp_;
+  if (resp_msg->status != RES_OK) {
+    LOG_ERROR("fetch remote block fail\n");
+    return -1;
+  }
+  addr = resp_msg->addr;
+  rkey = resp_msg->rkey;
+  // LOG_ERROR("receive response: addr: %ld, key: %d\n", resp_msg->addr,
+  //  resp_msg->rkey);
+  LOG_DEBUG("Connection %d Fetch block %d successfully, shard %d", conn_id_, id, shard);
+  return 0;
+}
+
 int RDMAConnection::Ping() {
   memset(cmd_msg_, 0, sizeof(CmdMsgBlock));
   memset(cmd_resp_, 0, sizeof(CmdMsgRespBlock));

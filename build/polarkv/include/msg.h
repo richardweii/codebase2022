@@ -19,7 +19,7 @@ namespace kv {
 #define TIME_NOW (std::chrono::high_resolution_clock::now())
 #define TIME_DURATION_US(START, END) (std::chrono::duration_cast<std::chrono::microseconds>((END) - (START)).count())
 
-enum MsgType { MSG_PING, MSG_ALLOC, MSG_LOOKUP, MSG_FREE, MSG_STOP };
+enum MsgType { MSG_PING, MSG_ALLOC, MSG_LOOKUP, MSG_FREE, MSG_STOP, MSG_FETCH };
 
 enum ResStatus { RES_OK, RES_FAIL };
 
@@ -91,5 +91,17 @@ CHECK_RDMA_MSG_SIZE(FreeRequest);
 
 struct FreeResponse : public ResponseMsg {};
 CHECK_RDMA_MSG_SIZE(FreeResponse);
+
+struct FetchRequest : public RequestsMsg {
+  uint8_t shard;
+  BlockId id;
+};
+CHECK_RDMA_MSG_SIZE(FetchRequest);
+
+struct FetchResponse : public ResponseMsg {
+  uint64_t addr;
+  uint32_t rkey;
+};
+CHECK_RDMA_MSG_SIZE(FetchResponse);
 
 }  // namespace kv

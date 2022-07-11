@@ -70,6 +70,8 @@ class ConnectionManager NOCOPYABLE {
 
   int Alloc(uint8_t shard, uint64_t &addr, uint32_t &rkey, uint64_t size);
 
+  int Fetch(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey);
+
   int Lookup(Slice key, uint64_t &addr, uint32_t &rkey, bool &found);
 
   int Free(uint8_t shard, BlockId id);

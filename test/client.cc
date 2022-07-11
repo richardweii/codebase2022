@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
@@ -15,7 +16,7 @@ using namespace std;
 
 constexpr int key_num = kKeyNum;
 constexpr int write_thread = 4;
-constexpr int read_thread = 4;
+constexpr int read_thread = 8;
 
 int main() {
   LocalEngine *local_engine = new LocalEngine();
@@ -29,11 +30,13 @@ int main() {
 
   std::vector<std::thread> threads;
   for (int i = 0; i < write_thread; i++) {
-    threads.emplace_back([=]() {
-      for (int j = 0; j < op_per_thread; j++) {
-        local_engine->write(keys[j + i * op_per_thread], values[j + i * op_per_thread]);
-      }
-    });
+    threads.emplace_back(
+        [=](const std::vector<std::string> &keys, const std::vector<std::string> &values) {
+          for (int j = 0; j < op_per_thread; j++) {
+            local_engine->write(keys[j + i * op_per_thread], values[j + i * op_per_thread]);
+          }
+        },
+        keys, values);
   }
 
   for (auto &th : threads) {
@@ -44,14 +47,17 @@ int main() {
 
   LOG_INFO(" ============= start read ================");
   for (int i = 0; i < read_thread; i++) {
-    threads.emplace_back([=]() {
-      for (int j = 0; j < key_num; j++) {
-        std::string value;
-        bool found = local_engine->read(keys[j], value);
-        EXPECT(found, "Read %s failed.", keys[j].c_str());
-        ASSERT(found && value == values[j], "Unexpected value %s ", value.c_str());
-      }
-    });
+    threads.emplace_back(
+        [=](const std::vector<std::string> &keys, const std::vector<std::string> &values) {
+          sleep(i);
+          for (int j = 0; j < key_num; j++) {
+            std::string value;
+            bool found = local_engine->read(keys[j], value);
+            EXPECT(found, "Read %s failed.", keys[j].c_str());
+            ASSERT(found && value == values[j], "Unexpected value %s ", value.c_str());
+          }
+        },
+        keys, values);
   }
 
   for (auto &th : threads) {

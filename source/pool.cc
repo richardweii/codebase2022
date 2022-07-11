@@ -52,6 +52,7 @@ bool Pool::Read(Slice key, std::string &val, Ptr<Filter> filter) {
       buffer_pool_->ReadUnlockTable();
       return true;
     } else {
+      LOG_INFO("Cache Hit But Invalid.");
       // cache invalid, need fetch the datablock
       buffer_pool_->ReadUnlockTable();
       buffer_pool_->Fetch(key, entry.id);

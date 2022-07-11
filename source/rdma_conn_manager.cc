@@ -50,6 +50,14 @@ int ConnectionManager::Alloc(uint8_t shard, uint64_t &addr, uint32_t &rkey, uint
   return ret;
 }
 
+int ConnectionManager::Fetch(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey) {
+  RDMAConnection *conn = rpc_conn_queue_->dequeue();
+  assert(conn != nullptr);
+  int ret = conn->Fetch(shard, id, addr, rkey);
+  rpc_conn_queue_->enqueue(conn);
+  return ret;
+}
+
 int ConnectionManager::RemoteRead(void *ptr, uint32_t lkey, uint32_t size, uint64_t remote_addr, uint32_t rkey) {
   RDMAConnection *conn = one_sided_conn_queue_->dequeue();
   assert(conn != nullptr);
@@ -66,7 +74,7 @@ int ConnectionManager::RemoteWrite(void *ptr, uint32_t lkey, uint32_t size, uint
   return ret;
 }
 
-int ConnectionManager::Free(uint8_t shard,BlockId id) {
+int ConnectionManager::Free(uint8_t shard, BlockId id) {
   RDMAConnection *conn = rpc_conn_queue_->dequeue();
   assert(conn != nullptr);
   int ret = conn->Free(shard, id);
@@ -75,7 +83,7 @@ int ConnectionManager::Free(uint8_t shard,BlockId id) {
 }
 
 int ConnectionManager::Lookup(Slice key, uint64_t &addr, uint32_t &rkey, bool &found) {
-    RDMAConnection *conn = rpc_conn_queue_->dequeue();
+  RDMAConnection *conn = rpc_conn_queue_->dequeue();
   assert(conn != nullptr);
   int ret = conn->Lookup(key, addr, rkey, found);
   rpc_conn_queue_->enqueue(conn);

@@ -51,6 +51,7 @@ class RDMAConnection NOCOPYABLE {
   // Allocate a datablock at the remote
   int AllocDataBlock(uint8_t shard, uint64_t &addr, uint32_t &rkey);
 
+  int Fetch(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey);
   // lookup a entry at the remote
   int Lookup(Slice key, uint64_t &addr, uint32_t &rkey, bool &found);
 
