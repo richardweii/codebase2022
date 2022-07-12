@@ -7,6 +7,7 @@
 #include "kv_engine.h"
 #include "pool.h"
 #include "rdma_conn_manager.h"
+#include "stat.h"
 #include "util/filter.h"
 #include "util/hash.h"
 #include "util/logging.h"
@@ -68,6 +69,12 @@ void LocalEngine::stop() {
   }
   assert(ret == 0);
   rdma_free_devices(ibv_ctxs_);
+  LOG_INFO(" ========== Performance Statistics ============");
+  LOG_INFO(" Total read times %ld, write times %ld ", stat::read_times.load(), stat::write_times.load());
+  LOG_INFO(" Access to local %ld times ", stat::local_access.load());
+  LOG_INFO(" Remote lookup failed %ld times", stat::remote_miss.load());
+  LOG_INFO(" Replacement times %ld, Fetch times %ld ", stat::replacement.load(), stat::fetch.load());
+  LOG_INFO(" Cache hit %ld, invalid %ld", stat::cache_hit.load(), stat::cache_invalid.load());
   return;
 };
 
@@ -84,6 +91,7 @@ bool LocalEngine::alive() { return true; }
  * @return {bool} true for success
  */
 bool LocalEngine::write(const std::string key, const std::string value) {
+  stat::write_times.fetch_add(1, std::memory_order_relaxed);
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   return pool_[index]->Write(Slice(key), Slice(value), NewBloomFilterPolicy());
@@ -96,6 +104,7 @@ bool LocalEngine::write(const std::string key, const std::string value) {
  * @return {bool}  true for success
  */
 bool LocalEngine::read(const std::string key, std::string &value) {
+  stat::read_times.fetch_add(1, std::memory_order_relaxed);
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   return pool_[index]->Read(Slice(key), value, NewBloomFilterPolicy());

@@ -1,6 +1,4 @@
 .vscode
-!build/
 build/*
-!build/polarkv/
 .DS_Store
 .cache/

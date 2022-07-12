@@ -16,7 +16,7 @@ using namespace std;
 
 constexpr int key_num = kKeyNum;
 constexpr int write_thread = 4;
-constexpr int read_thread = 8;
+constexpr int read_thread = 16;
 
 int main() {
   LocalEngine *local_engine = new LocalEngine();
@@ -49,7 +49,6 @@ int main() {
   for (int i = 0; i < read_thread; i++) {
     threads.emplace_back(
         [=](const std::vector<std::string> &keys, const std::vector<std::string> &values) {
-          sleep(i);
           for (int j = 0; j < key_num; j++) {
             std::string value;
             bool found = local_engine->read(keys[j], value);

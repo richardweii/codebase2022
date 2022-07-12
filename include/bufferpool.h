@@ -13,6 +13,7 @@
 #include "block.h"
 #include "config.h"
 #include "rdma_conn_manager.h"
+#include "util/logging.h"
 #include "util/nocopy.h"
 #include "util/rwlock.h"
 #include "util/slice.h"
@@ -55,6 +56,7 @@ class BufferPool NOCOPYABLE {
   // not thread-safe, need protect block_table_
   BlockHandle *GetHandle(BlockId id) const {
     if (block_table_.count(id) == 0) {
+      LOG_ERROR("Invalid block id %d, need refetch", id);
       return nullptr;
     }
     return handles_.at(block_table_.at(id));

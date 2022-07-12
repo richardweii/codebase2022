@@ -8,6 +8,7 @@
 #include "block.h"
 #include "config.h"
 #include "rdma_conn_manager.h"
+#include "stat.h"
 #include "util/defer.h"
 #include "util/filter.h"
 #include "util/logging.h"
@@ -16,7 +17,7 @@ namespace kv {
 
 static std::atomic<BlockId> blockId(1);
 
-BlockId getGetBlockId() { return blockId.fetch_add(1); }
+BlockId getGetBlockId() { return blockId.fetch_add(1, std::memory_order_relaxed); }
 
 BufferPool::BufferPool(size_t size, uint8_t shard, ConnectionManager *conn_manager) {
   shard_ = shard;
@@ -102,6 +103,7 @@ bool BufferPool::replacement(Slice key, FrameId &fid) {
   int ret;
   ret = connection_manager_->Lookup(key, read_addr, read_rkey, found);
   if (!found) {
+    stat::remote_miss.fetch_add(1, std::memory_order_relaxed);
     LOG_DEBUG("Cannot find %s at remote.", key.data());
     return found;
   }
@@ -112,6 +114,8 @@ bool BufferPool::replacement(Slice key, FrameId &fid) {
   if (frame_id == INVALID_FRAME_ID) {
     return false;
   }
+
+  stat::replacement.fetch_add(1, std::memory_order_relaxed);
 
   // write back victim
   uint64_t write_addr;
@@ -228,6 +232,7 @@ bool BufferPool::Read(Slice key, std::string &value, Ptr<Filter> filter, CacheEn
     BlockHandle *handle = handles_[fid];
     if (handle->Read(key, value, filter, entry)) {
       renew(fid);
+      stat::local_access.fetch_add(1);
       return true;
     }
   }
@@ -253,6 +258,7 @@ bool BufferPool::Modify(Slice key, Slice value, Ptr<Filter> filter, CacheEntry &
 
     BlockHandle *handle = handles_[fid];
     if (handle->Modify(key, value, filter, entry)) {
+      stat::local_access.fetch_add(1);
       renew(fid);
       return true;
     }
@@ -278,6 +284,7 @@ bool BufferPool::Fetch(Slice key, BlockId id) {
     return true;
   }
 
+  stat::fetch.fetch_add(1, std::memory_order_relaxed);
   // lookup
   uint64_t read_addr;
   uint32_t read_rkey;

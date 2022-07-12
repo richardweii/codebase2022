@@ -8,6 +8,7 @@
 #include "config.h"
 #include "memtable.h"
 #include "rdma_conn_manager.h"
+#include "stat.h"
 #include "util/defer.h"
 #include "util/filter.h"
 #include "util/logging.h"
@@ -50,16 +51,24 @@ bool Pool::Read(Slice key, std::string &val, Ptr<Filter> filter) {
       BlockHandle *handle = buffer_pool_->GetHandle(entry.id);
       handle->Read(entry.off, val);
       buffer_pool_->ReadUnlockTable();
+      stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
       return true;
     } else {
-      LOG_INFO("Cache Hit But Invalid.");
-      // cache invalid, need fetch the datablock
+    // cache invalid, need fetch the datablock
+    retry:
       buffer_pool_->ReadUnlockTable();
       buffer_pool_->Fetch(key, entry.id);
+      buffer_pool_->ReadLockTable();
       BlockHandle *handle = buffer_pool_->GetHandle(entry.id);
+      if (handle == nullptr) {
+        // the block fetched have been evicted
+        goto retry;
+      }
       LOG_ASSERT(handle->GetBlockId() == entry.id, "Invalid handle. expected %d, got %d", handle->GetBlockId(),
                  entry.id);
+      stat::cache_invalid.fetch_add(1, std::memory_order_relaxed);
       handle->Read(entry.off, val);
+      buffer_pool_->ReadUnlockTable();
       return true;
     }
   } else {
@@ -108,6 +117,7 @@ bool Pool::Write(Slice key, Slice val, Ptr<Filter> filter) {
       BlockHandle *handle = buffer_pool_->GetHandle(entry.id);
       ret = handle->Modify(entry.off, val);
       LOG_ASSERT(ret, "Invalid cache entry %s.", key.data());
+      stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
       return true;
     } else {
       // cache invalid, need fetch the datablock
@@ -116,6 +126,7 @@ bool Pool::Write(Slice key, Slice val, Ptr<Filter> filter) {
       LOG_ASSERT(handle->GetBlockId() == entry.id, "Invalid handle.");
       ret = handle->Modify(entry.off, val);
       LOG_ASSERT(ret, "Invalid cache entry %s.", key.data());
+      stat::cache_invalid.fetch_add(1, std::memory_order_relaxed);
       return true;
     }
   } else {

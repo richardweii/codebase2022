@@ -82,7 +82,7 @@ class ConnectionManager NOCOPYABLE {
 
   static uint32_t GetRequestId() {
     static std::atomic_uint32_t rid(1);
-    return rid.fetch_add(1);
+    return rid.fetch_add(1, std::memory_order_relaxed);
   }
 
  private:
