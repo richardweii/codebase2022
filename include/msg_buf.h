@@ -1,0 +1,83 @@
+#pragma once
+#include <infiniband/verbs.h>
+#include <atomic>
+#include <cassert>
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
+#include <thread>
+#include "logging.h"
+#include "msg.h"
+
+namespace kv {
+
+#define RDMA_MSG_CAP 16
+
+class MsgBuffer {
+ public:
+  MsgBuffer(ibv_pd *pd_);
+  ~MsgBuffer() {
+    if (mr_ != nullptr) {
+      auto ret = ibv_dereg_mr(mr_);
+      if (ret != 0) {
+        perror("ibv_dereg_mr failed :");
+        LOG_ERROR("Failed to dereg mr");
+      }
+    }
+  }
+
+  bool Init() {
+    std::memset(msg_, 0, sizeof(MessageBlock) * RDMA_MSG_CAP);
+    mr_ = ibv_reg_mr(pd_, msg_, sizeof(MessageBlock) * RDMA_MSG_CAP,
+                     IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
+    if (mr_ == nullptr) {
+      perror("ibv_reg_mr failed : ");
+      LOG_ERROR("Failed to registrate mr for MsgBuffer.");
+      return false;
+    }
+    return true;
+  }
+
+  MessageBlock *Message(int index) {
+    LOG_ASSERT(index < size_, "index %d out of size %zu", index, size_);
+    return &msg_[index];
+  }
+
+  MessageBlock *AllocMessage(int retry_times = 10) {
+    while (retry_times-- > 0) {
+      for (int i = 0; i < (int)size_; i++) {
+        bool tmp = false;
+        if (in_use_[i].compare_exchange_weak(tmp, true)) {
+          return &msg_[i];
+        }
+      }
+      std::this_thread::yield();
+    }
+    return nullptr;
+  }
+
+  void FreeMessage(MessageBlock *msg) {
+    int off = MessageIndex(msg);
+    assert(in_use_[off].load());
+    in_use_[off].store(false);
+  }
+
+  int MessageIndex(MessageBlock *msg) {
+    return msg - msg_;
+  }
+
+  uint32_t Rkey() const { return mr_->rkey; }
+
+  MessageBlock *Data() { return msg_; }
+
+  size_t Size() const { return size_; }
+
+ private:
+  size_t size_;
+  ibv_pd *pd_;
+  ibv_mr *mr_;
+  MessageBlock msg_[RDMA_MSG_CAP];
+  std::atomic<bool> in_use_[RDMA_MSG_CAP];
+};
+
+}  // namespace kv
