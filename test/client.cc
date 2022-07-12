@@ -26,14 +26,13 @@ int main() {
   auto values = genValue(key_num);
 
   LOG_INFO(" ============= start write ================");
-  auto op_per_thread = key_num / write_thread;
 
   std::vector<std::thread> threads;
   for (int i = 0; i < write_thread; i++) {
     threads.emplace_back(
         [=](const std::vector<std::string> &keys, const std::vector<std::string> &values) {
-          for (int j = 0; j < op_per_thread; j++) {
-            local_engine->write(keys[j + i * op_per_thread], values[j + i * op_per_thread]);
+          for (int j = 0; j < key_num; j++) {
+            local_engine->write(keys[j], values[j]);
           }
         },
         keys, values);

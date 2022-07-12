@@ -14,5 +14,7 @@ extern std::atomic_int64_t read_times;
 extern std::atomic_int64_t write_times;
 extern std::atomic_int64_t local_access;
 extern std::atomic_int64_t remote_miss;
+extern std::atomic_int64_t insert_num;
+extern std::atomic_int64_t block_num;
 }  // namespace stat
 }  // namespace kv

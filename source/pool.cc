@@ -1,5 +1,6 @@
 #include "pool.h"
 #include <infiniband/verbs.h>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include "block.h"
@@ -84,7 +85,9 @@ bool Pool::Read(Slice key, std::string &val, Ptr<Filter> filter) {
 }
 
 void Pool::insertIntoMemtable(Slice key, Slice val, Ptr<Filter> filter) {
+  stat::insert_num.fetch_add(1, std::memory_order_relaxed);
   if (memtable_->Full()) {
+    stat::block_num.fetch_add(1, std::memory_order_relaxed);
     DataBlock *block = buffer_pool_->GetNewDataBlock();
     // LOG_DEBUG("memtable is full, get new block %d", block->GetId());
     memtable_->BuildDataBlock(block);

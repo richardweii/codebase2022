@@ -1,3 +1,4 @@
+#include <cstring>
 #include "config.h"
 #include "kv_engine.h"
 #include "msg.h"
@@ -309,11 +310,11 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
     LOG_DEBUG("Work %d Receive Message %d", num, request->rid);
     switch (request->type) {
       case MSG_PING: {
-        cmd_msg->notify = NOTIFY_IDLE;
         PingMsg *ping = (PingMsg *)request;
         LOG_DEBUG("Client addr %lx rkey %x", ping->resp_addr, ping->resp_rkey);
         work_info->remote_addr_ = ping->resp_addr;
         work_info->remote_rkey_ = ping->resp_rkey;
+        memset(cmd_msg, 0, sizeof(CmdMsgBlock));
         break;
       }
       case MSG_STOP: {
@@ -321,7 +322,6 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
         break;
       }
       case MSG_ALLOC: {
-        cmd_msg->notify = NOTIFY_IDLE;
         AllocRequest *alloc_req = (AllocRequest *)request;
         AllocResponse *alloc_resp = (AllocResponse *)cmd_resp;
         LOG_DEBUG("Work %d Alloc msg, shard %d:", num, alloc_req->shard);
@@ -330,13 +330,13 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
         alloc_resp->addr = access.data;
         alloc_resp->rkey = access.key;
         alloc_resp->status = RES_OK;
+        memset(cmd_msg, 0, sizeof(CmdMsgBlock));
         remote_write(work_info, (uint64_t)cmd_resp, resp_mr->lkey, sizeof(CmdMsgRespBlock), work_info->remote_addr_,
                      work_info->remote_rkey_);
         LOG_DEBUG("Work %d Response Alloc msg...", num);
         break;
       }
       case MSG_LOOKUP: {
-        cmd_msg->notify = NOTIFY_IDLE;
         LookupRequest *lookup_req = (LookupRequest *)request;
         LookupResponse *lookup_resp = (LookupResponse *)cmd_resp;
         Slice key(lookup_req->key, kKeyLength);
@@ -353,26 +353,26 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
           lookup_resp->rkey = access.key;
           lookup_resp->status = RES_OK;
         }
+        memset(cmd_msg, 0, sizeof(CmdMsgBlock));
         remote_write(work_info, (uint64_t)cmd_resp, resp_mr->lkey, sizeof(CmdMsgRespBlock), work_info->remote_addr_,
                      work_info->remote_rkey_);
         LOG_DEBUG("Work %d Response Lookup %s msg, blockid %d", num, key.data(), id);
         break;
       }
       case MSG_FREE: {
-        cmd_msg->notify = NOTIFY_IDLE;
         FreeRequest *free_req = (FreeRequest *)request;
         FreeResponse *free_resp = (FreeResponse *)cmd_resp;
         LOG_DEBUG("Work %d Free msg, shard %d block %d:", num, free_req->shard, free_req->id);
         auto ret = pool_[free_req->shard]->FreeDataBlock(free_req->id);
         LOG_ASSERT(ret, "Failed to free block %d", free_req->id);
         free_resp->status = RES_OK;
+        memset(cmd_msg, 0, sizeof(CmdMsgBlock));
         remote_write(work_info, (uint64_t)cmd_resp, resp_mr->lkey, sizeof(CmdMsgRespBlock), work_info->remote_addr_,
                      work_info->remote_rkey_);
         LOG_DEBUG("Work %d Response Free msg, blockid %d", num, free_req->id);
         break;
       }
       case MSG_FETCH: {
-        cmd_msg->notify = NOTIFY_IDLE;
         FetchRequest *fetch_req = (FetchRequest *)request;
         FetchResponse *fetch_resp = (FetchResponse *)cmd_resp;
         LOG_DEBUG("Work %d fetch msg,, shard %d, block %d", num, fetch_req->shard, fetch_req->id);
@@ -380,6 +380,7 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
         fetch_resp->addr = access.data;
         fetch_resp->rkey = access.key;
         fetch_resp->status = RES_OK;
+        memset(cmd_msg, 0, sizeof(CmdMsgBlock));
         remote_write(work_info, (uint64_t)cmd_resp, resp_mr->lkey, sizeof(CmdMsgRespBlock), work_info->remote_addr_,
                      work_info->remote_rkey_);
         LOG_DEBUG("Work %d Response Fetch msg, blockid %d", num, fetch_req->id);

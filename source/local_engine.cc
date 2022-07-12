@@ -70,11 +70,13 @@ void LocalEngine::stop() {
   assert(ret == 0);
   rdma_free_devices(ibv_ctxs_);
   LOG_INFO(" ========== Performance Statistics ============");
-  LOG_INFO(" Total read times %ld, write times %ld ", stat::read_times.load(), stat::write_times.load());
+  LOG_INFO(" Total read %ld times, write %ld times", stat::read_times.load(), stat::write_times.load());
+  LOG_INFO(" Unique insert %ld  times", stat::insert_num.load());
+  LOG_INFO(" Total block num %ld", stat::block_num.load());
   LOG_INFO(" Access to local %ld times ", stat::local_access.load());
   LOG_INFO(" Remote lookup failed %ld times", stat::remote_miss.load());
-  LOG_INFO(" Replacement times %ld, Fetch times %ld ", stat::replacement.load(), stat::fetch.load());
-  LOG_INFO(" Cache hit %ld, invalid %ld", stat::cache_hit.load(), stat::cache_invalid.load());
+  LOG_INFO(" Replacement %ld times, Fetch %ld times ", stat::replacement.load(), stat::fetch.load());
+  LOG_INFO(" Cache hit %ld times, invalid %ld times", stat::cache_hit.load(), stat::cache_invalid.load());
   return;
 };
 
