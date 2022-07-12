@@ -2,7 +2,7 @@
 
 #include <sys/time.h>
 #include <time.h>
-#include <unistd.h>
+// #include <unistd.h>
 
 #define GET_TIME                                                                                             \
   struct timeval tv;                                                                                         \
@@ -37,7 +37,7 @@ extern LOG_LEVEL level;
   do {                                                                                                        \
     GET_TIME                                                                                                  \
     if (level >= LOG_LEVEL_FATAL)                                                                             \
-      DEBUG("\033[;31m[FATAL] %s [Thread:%d] %s:%d: " format "\n\033[0m", TIME, gettid(), __FILE__, __LINE__, \
+      DEBUG("\033[;31m[FATAL] %s  %s:%d: " format "\n\033[0m", TIME, __FILE__, __LINE__, \
             ##__VA_ARGS__);                                                                                   \
     exit(1);                                                                                                  \
   } while (0)
@@ -46,7 +46,7 @@ extern LOG_LEVEL level;
   do {                                                                                                        \
     GET_TIME                                                                                                  \
     if (level >= LOG_LEVEL_ERROR)                                                                             \
-      DEBUG("\033[;31m[ERROR] %s [Thread:%d] %s:%d: " format "\n\033[0m", TIME, gettid(), __FILE__, __LINE__, \
+      DEBUG("\033[;31m[ERROR] %s  %s:%d: " format "\n\033[0m", TIME, __FILE__, __LINE__, \
             ##__VA_ARGS__);                                                                                   \
   } while (0)
 
@@ -54,19 +54,19 @@ extern LOG_LEVEL level;
   do {                                                                                              \
     GET_TIME                                                                                        \
     if (level >= LOG_LEVEL_INFO)                                                                    \
-      DEBUG("\033[;34m[INFO]  %s [Thread:%d]: " format "\n\033[0m", TIME, gettid(), ##__VA_ARGS__); \
+      DEBUG("\033[;34m[INFO]  %s : " format "\n\033[0m", TIME, ##__VA_ARGS__); \
   } while (0)
 
 #define LOG_DEBUG(format, ...)                                                                      \
   do {                                                                                              \
     GET_TIME                                                                                        \
     if (level >= LOG_LEVEL_DEBUG)                                                                   \
-      DEBUG("\033[;33m[DEBUG] %s [Thread:%d]: " format "\n\033[0m", TIME, gettid(), ##__VA_ARGS__); \
+      DEBUG("\033[;33m[DEBUG] %s : " format "\n\033[0m", TIME, ##__VA_ARGS__); \
   } while (0)
 
 #define LOG_ASSERT(condition, format, ...)                                                                    \
   if (!(condition)) {                                                                                         \
-    DEBUG("\033[;31m [Thread:%d] Assertion Failed! %s:%d: " format "\n\033[0m", gettid(), __FILE__, __LINE__, \
+    DEBUG("\033[;31m  Assertion Failed! %s:%d: " format "\n\033[0m", __FILE__, __LINE__, \
           ##__VA_ARGS__);                                                                                     \
     exit(1);                                                                                                  \
   }
