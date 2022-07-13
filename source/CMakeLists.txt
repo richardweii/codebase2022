@@ -1,7 +1,7 @@
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-set(BASE_SOURCE
-    local_engine.cc remote_engine.cc rdma_conn_manager.cc rdma_conn.cc rdma_mem_pool.cc)
+file(GLOB BASE_SOURCE ${PROJECT_SOURCE_DIR}/source/*.cc)
+message("${BASE_SOURCE}")
 
 add_library(polarkv STATIC ${BASE_SOURCE})
 

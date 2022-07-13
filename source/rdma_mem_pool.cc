@@ -1,4 +1,6 @@
 #include "rdma_mem_pool.h"
+#include "logging.h"
+#include "msg.h"
 
 namespace kv {
 
@@ -26,15 +28,28 @@ retry:
   rdma_mem_t rdma_mem;
   rdma_mem.addr = m_current_mem_;
   rdma_mem.rkey = m_rkey_;
-  // m_used_mem_.push_back(rdma_mem);
+  m_used_mem_.push_back(rdma_mem);
 
   /* 2. allocate and register the new mem from remote */
   /* Another optimization is to move this remote memory registration to the
    * backgroud instead of using it in the critical path */
-  int ret = m_rdma_conn_->register_remote_memory(m_current_mem_, m_rkey_,
-                                                 RDMA_ALLOCATE_SIZE);
-  // printf("allocate mem %lld %ld\n", m_current_mem_, m_rkey_);
+  AllocRequest req;
+  req.type = MSG_ALLOC;
+  req.size = RDMA_ALLOCATE_SIZE;
+
+  AllocResponse resp;
+  auto ret = client_->RPC(&req, resp, true);
   if (ret) return -1;
+  
+  if (resp.status == RES_FAIL) {
+    LOG_ERROR("allocate memory failed.");
+    return -1;
+  }
+
+  m_current_mem_ = resp.addr;
+  m_rkey_ = resp.reky;
+
+  // printf("allocate mem %lld %ld\n", m_current_mem_, m_rkey_);
   m_pos_ = 0;
   /* 3. try to allocate again */
   goto retry;

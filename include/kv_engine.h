@@ -13,8 +13,10 @@
 #include <atomic>
 #include "kv_engine.h"
 #include "msg.h"
-#include "rdma_conn_manager.h"
+#include "rdma_client.h"
+#include "rdma_manager.h"
 #include "rdma_mem_pool.h"
+#include "rdma_server.h"
 #include "string"
 #include "thread"
 #include "unordered_map"
@@ -69,8 +71,7 @@ class hash_map_t {
   }
 
   /* Insert into the head of the list. */
-  void insert(const std::string &key, internal_value_t internal_value,
-              hash_map_slot *new_slot) {
+  void insert(const std::string &key, internal_value_t internal_value, hash_map_slot *new_slot) {
     int index = std::hash<std::string>()(key) & (BUCKET_NUM - 1);
     memcpy(new_slot->key, key.c_str(), 16);
     new_slot->internal_value = internal_value;
@@ -109,28 +110,21 @@ class LocalEngine : public Engine {
   bool read(const std::string key, std::string &value);
 
  private:
-  kv::ConnectionManager *m_rdma_conn_;
+  kv::RDMAClient *client_;
   /* NOTE: should use some concurrent data structure, and also should take the
    * extra memory overhead into consideration */
   hash_map_slot hash_slot_array[16 * 12000000];
   hash_map_t m_hash_map[SHARDING_NUM]; /* Hash Map with sharding. */
-  std::atomic<int> slot_cnt{0}; /* Used to fetch the slot from hash_slot_array. */
+  std::atomic<int> slot_cnt{0};        /* Used to fetch the slot from hash_slot_array. */
   std::mutex m_mutex_[SHARDING_NUM];
   RDMAMemPool *m_rdma_mem_pool_;
+  ibv_mr *mr_;
+  char local_buf_[128];
 };
 
 /* Remote-side engine */
 class RemoteEngine : public Engine {
  public:
-  struct WorkerInfo {
-    CmdMsgBlock *cmd_msg;
-    CmdMsgRespBlock *cmd_resp_msg;
-    struct ibv_mr *msg_mr;
-    struct ibv_mr *resp_mr;
-    rdma_cm_id *cm_id;
-    struct ibv_cq *cq;
-  };
-
   ~RemoteEngine(){};
 
   bool start(const std::string addr, const std::string port) override;
@@ -138,29 +132,15 @@ class RemoteEngine : public Engine {
   bool alive() override;
 
  private:
-  void handle_connection();
-
-  int create_connection(struct rdma_cm_id *cm_id);
-
   struct ibv_mr *rdma_register_memory(void *ptr, uint64_t size);
 
-  int remote_write(WorkerInfo *work_info, uint64_t local_addr, uint32_t lkey,
-                   uint32_t length, uint64_t remote_addr, uint32_t rkey);
+  int remote_write(uint64_t local_addr, uint32_t lkey, uint32_t length, uint64_t remote_addr, uint32_t rkey);
 
-  int allocate_and_register_memory(uint64_t &addr, uint32_t &rkey,
-                                   uint64_t size);
+  int allocate_and_register_memory(uint64_t &addr, uint32_t &rkey, uint64_t size);
 
-  void worker(WorkerInfo *work_info, uint32_t num);
+  kv::RDMAServer *server_;
 
-  struct rdma_event_channel *m_cm_channel_;
-  struct rdma_cm_id *m_listen_id_;
-  struct ibv_pd *m_pd_;
-  struct ibv_context *m_context_;
   bool m_stop_;
-  std::thread *m_conn_handler_;
-  WorkerInfo **m_worker_info_;
-  uint32_t m_worker_num_;
-  std::thread **m_worker_threads_;
 };
 
 }  // namespace kv

@@ -1,7 +1,9 @@
+#include <cstring>
+#include <iostream>
 #include "assert.h"
 #include "atomic"
 #include "kv_engine.h"
-#include <iostream>
+#include "rdma_client.h"
 
 namespace kv {
 
@@ -12,10 +14,10 @@ namespace kv {
  * @return {bool} true for success
  */
 bool LocalEngine::start(const std::string addr, const std::string port) {
-  m_rdma_conn_ = new ConnectionManager();
-  if (m_rdma_conn_ == nullptr) return -1;
-  if (m_rdma_conn_->init(addr, port, 4, 20)) return false;
-  m_rdma_mem_pool_ = new RDMAMemPool(m_rdma_conn_);
+  client_ = new RDMAClient();
+  if (client_ == nullptr) return -1;
+  if (!client_->Init(addr, port)) return false;
+  m_rdma_mem_pool_ = new RDMAMemPool(client_);
   if (m_rdma_mem_pool_) return true;
   return false;
 }
@@ -41,7 +43,7 @@ bool LocalEngine::alive() { return true; }
  * @return {bool} true for success
  */
 bool LocalEngine::write(const std::string key, const std::string value) {
-  assert(m_rdma_conn_ != nullptr);
+  assert(client_ != nullptr);
   internal_value_t internal_value;
   uint64_t remote_addr;
   uint32_t rkey;
@@ -75,9 +77,9 @@ bool LocalEngine::write(const std::string key, const std::string value) {
    * could be done in the background instead of the critical path. */
   /* Also, we can batch some KV pairs together, writing them to remote in one
    * RDMA write in the background */
-
-  int ret = m_rdma_conn_->remote_write((void *)value.c_str(), value.size(),
-                                       remote_addr, rkey);
+  memset(local_buf_, 0, 128);
+  memcpy(local_buf_, value.c_str(), value.size());
+  int ret = client_->RemoteWrite(local_buf_, mr_->lkey, value.size(), remote_addr, rkey);
   if (ret) return false;
   // printf("write key: %s, value: %s, %lld %d\n", key.c_str(), value.c_str(),
   //        remote_addr, rkey);
@@ -96,7 +98,7 @@ bool LocalEngine::write(const std::string key, const std::string value) {
 
   /* Update the hash_map. */
   m_hash_map[index].insert(key, internal_value, new_slot);
-  
+
   m_mutex_[index].unlock();
   return true;
 }
@@ -118,12 +120,9 @@ bool LocalEngine::read(const std::string key, std::string &value) {
   }
   inter_val = it->internal_value;
   m_mutex_[index].unlock();
+  if (client_->RemoteRead(local_buf_, mr_->lkey, inter_val.size, inter_val.remote_addr, inter_val.rkey)) return false;
   value.resize(inter_val.size, '0');
-  if (m_rdma_conn_->remote_read((void *)value.c_str(), inter_val.size,
-                                inter_val.remote_addr, inter_val.rkey))
-    return false;
-  // printf("read key: %s, value: %s, size:%d, %lld %d\n", key.c_str(),
-  //        value.c_str(), value.size(), inter_val.remote_addr, inter_val.rkey);
+  memcpy((char *)value.c_str(), local_buf_, inter_val.size);
   return true;
 }
 

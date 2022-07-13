@@ -19,7 +19,7 @@
 namespace kv {
 
 /* RDMA connection */
-class RDMAConnection  {
+class RDMAConnection {
  public:
   RDMAConnection(ibv_pd *pd, int id) : pd_(pd), conn_id_(id) {}
   ~RDMAConnection() {
@@ -35,17 +35,17 @@ class RDMAConnection  {
     rdma_destroy_event_channel(cm_channel_);
   };
   int Init(const std::string ip, const std::string port);
-  
-  int RemoteRead(void *ptr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey);
 
-  int RemoteWrite(void *ptr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey);
+  int RemoteRead(void *ptr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey) {
+    return rdma((uint64_t)ptr, lkey, size, remote_addr, rkey, true);
+  }
+
+  int RemoteWrite(void *ptr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey) {
+    return rdma((uint64_t)ptr, lkey, size, remote_addr, rkey, false);
+  }
 
  private:
-  struct ibv_mr *registerMemory(void *ptr, uint64_t size);
-
-  int RDMARead(uint64_t local_addr, uint32_t lkey, uint64_t length, uint64_t remote_addr, uint32_t rkey);
-
-  int RDMAWrite(uint64_t local_addr, uint32_t lkey, uint64_t length, uint64_t remote_addr, uint32_t rkey);
+  int rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey, bool read);
 
   struct ibv_comp_channel *comp_chan_;
   struct rdma_event_channel *cm_channel_;

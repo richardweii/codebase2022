@@ -1,4 +1,6 @@
 #include "rdma_conn.h"
+#include <infiniband/verbs.h>
+#include "config.h"
 #include "logging.h"
 
 namespace kv {
@@ -112,4 +114,62 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
   return 0;
 }
 
+int RDMAConnection::rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey,
+                         bool read) {
+  struct ibv_sge sge;
+  sge.addr = (uintptr_t)local_addr;
+  sge.length = size;
+  sge.lkey = lkey;
+
+  struct ibv_send_wr send_wr = {};
+  struct ibv_send_wr *bad_send_wr;
+  send_wr.wr_id = 0;
+  send_wr.num_sge = 1;
+  send_wr.next = NULL;
+  send_wr.opcode = read ? IBV_WR_RDMA_READ : IBV_WR_RDMA_WRITE;
+  send_wr.sg_list = &sge;
+  send_wr.send_flags = IBV_SEND_SIGNALED;
+  send_wr.wr.rdma.remote_addr = remote_addr;
+  send_wr.wr.rdma.rkey = rkey;
+  if (ibv_post_send(cm_id_->qp, &send_wr, &bad_send_wr)) {
+    perror("ibv_post_send fail");
+    return -1;
+  }
+
+  // LOG_ERROR("remote write %ld %d\n", remote_addr, rkey);
+
+  auto start = TIME_NOW;
+  int ret = -1;
+  struct ibv_wc wc;
+  while (true) {
+    if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
+      LOG_ERROR("rdma_remote_write timeout\n");
+      return -1;
+    }
+    int rc = ibv_poll_cq(cq_, 1, &wc);
+    if (rc > 0) {
+      if (IBV_WC_SUCCESS == wc.status) {
+        // Break out as operation completed successfully
+        // LOG_ERROR("Break out as operation completed successfully\n");
+        ret = 0;
+        break;
+      } else if (IBV_WC_WR_FLUSH_ERR == wc.status) {
+        perror("cmd_send IBV_WC_WR_FLUSH_ERR");
+        break;
+      } else if (IBV_WC_RNR_RETRY_EXC_ERR == wc.status) {
+        perror("cmd_send IBV_WC_RNR_RETRY_EXC_ERR");
+        break;
+      } else {
+        perror("cmd_send ibv_poll_cq status error");
+        break;
+      }
+    } else if (0 == rc) {
+      continue;
+    } else {
+      perror("ibv_poll_cq fail");
+      break;
+    }
+  }
+  return ret;
+}
 }  // namespace kv

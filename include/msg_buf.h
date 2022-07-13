@@ -15,7 +15,7 @@ namespace kv {
 
 class MsgBuffer {
  public:
-  MsgBuffer(ibv_pd *pd_);
+  MsgBuffer(ibv_pd *pd) : pd_(pd) {}
   ~MsgBuffer() {
     if (mr_ != nullptr) {
       auto ret = ibv_dereg_mr(mr_);
@@ -38,11 +38,6 @@ class MsgBuffer {
     return true;
   }
 
-  MessageBlock *Message(int index) {
-    LOG_ASSERT(index < size_, "index %d out of size %zu", index, size_);
-    return &msg_[index];
-  }
-
   MessageBlock *AllocMessage(int retry_times = 10) {
     while (retry_times-- > 0) {
       for (int i = 0; i < (int)size_; i++) {
@@ -58,22 +53,23 @@ class MsgBuffer {
 
   void FreeMessage(MessageBlock *msg) {
     int off = MessageIndex(msg);
+    memset(msg, 0, sizeof(MessageBlock));
     assert(in_use_[off].load());
     in_use_[off].store(false);
   }
 
-  int MessageIndex(MessageBlock *msg) {
-    return msg - msg_;
-  }
+  int MessageIndex(MessageBlock *msg) { return msg - msg_; }
 
   uint32_t Rkey() const { return mr_->rkey; }
+
+  uint32_t Lkey() const { return mr_->lkey; }
 
   MessageBlock *Data() { return msg_; }
 
   size_t Size() const { return size_; }
 
  private:
-  size_t size_;
+  size_t size_ = RDMA_MSG_CAP;
   ibv_pd *pd_;
   ibv_mr *mr_;
   MessageBlock msg_[RDMA_MSG_CAP];

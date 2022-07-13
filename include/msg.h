@@ -36,6 +36,7 @@ struct MessageBlock {
 };
 
 struct RequestsMsg {
+  uint32_t rid;
   uint8_t type;
 };
 
@@ -52,6 +53,23 @@ CHECK_RDMA_MSG_SIZE(PingRequest);
 
 struct PingResponse : public ResponseMsg {};
 CHECK_RDMA_MSG_SIZE(PingResponse);
+
+struct StopRequesst : public RequestsMsg {};
+CHECK_RDMA_MSG_SIZE(StopRequesst);
+
+struct StopResponse : public ResponseMsg {};
+CHECK_RDMA_MSG_SIZE(StopResponse);
+
+struct AllocRequest : public RequestsMsg {
+  uint64_t size;
+};
+CHECK_RDMA_MSG_SIZE(AllocRequest);
+
+struct AllocResponse : public ResponseMsg {
+  uint64_t addr;
+  uint32_t reky;
+};
+CHECK_RDMA_MSG_SIZE(AllocResponse);
 
 // used for test
 struct DummyRequest : public RequestsMsg {
