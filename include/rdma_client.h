@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include "msg.h"
 #include "rdma_manager.h"
 
@@ -35,7 +36,7 @@ class RDMAClient : public RDMAManager {
   }
 
   template <typename Req, typename Resp>
-  int RPC(Req *req, Resp &resp, bool sync = false);
+  int RPC(Req *req, Resp &resp, bool sync = kRDMASync);
 
   int RemoteRead(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey);
 

@@ -18,6 +18,7 @@ namespace kv {
 
 constexpr int kRPCWorkerNum = 4;
 constexpr int kRDMABatchNum = 4;
+constexpr bool kRDMASync = false;
 constexpr int kOneSideWorkerNum = 16;
 
 constexpr int kPoolHashSeed = 0x89ea7d2f;
