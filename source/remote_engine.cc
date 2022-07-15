@@ -80,6 +80,8 @@ bool RemoteEngine::start(const std::string addr, const std::string port) {
     }
   }
 
+  this->bloom_filter_ = NewBloomFilterPolicy();
+
   return true;
 }
 
@@ -343,7 +345,7 @@ void RemoteEngine::worker(WorkerInfo *work_info, uint32_t num) {
         uint32_t hash = Hash(key.data(), kKeyLength, kPoolHashSeed);
         int index = Shard(hash);
         LOG_DEBUG("Work %d Lookup msg, key %s, shard %d", num, key.data(), index);
-        BlockId id = pool_[index]->Lookup(key, NewBloomFilterPolicy());
+        BlockId id = pool_[index]->Lookup(key, this->bloom_filter_);
         if (id == INVALID_BLOCK_ID) {
           lookup_resp->status = RES_FAIL;
           LOG_DEBUG("Failed to find key %s", key.data());

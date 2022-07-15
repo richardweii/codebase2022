@@ -86,6 +86,7 @@ class BufferPool NOCOPYABLE {
   std::list<FrameId> free_list_;
   size_t pool_size_;
   std::mutex mutex_;
+  std::shared_ptr<Filter> bloom_filter_;
 
   /**
    * LRU 实现

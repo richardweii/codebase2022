@@ -51,6 +51,9 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
     pool_[i] = new Pool(buffer_pool_size, filter_bits, cache_size, i, connection_manager_);
     pool_[i]->Init();
   }
+
+  this->bloom_filter_ = NewBloomFilterPolicy();
+
   return true;
 }
 
@@ -96,7 +99,7 @@ bool LocalEngine::write(const std::string key, const std::string value) {
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  return pool_[index]->Write(Slice(key), Slice(value), NewBloomFilterPolicy());
+  return pool_[index]->Write(Slice(key), Slice(value), this->bloom_filter_);
 }
 
 /**
@@ -109,7 +112,7 @@ bool LocalEngine::read(const std::string key, std::string &value) {
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  return pool_[index]->Read(Slice(key), value, NewBloomFilterPolicy());
+  return pool_[index]->Read(Slice(key), value, this->bloom_filter_);
 }
 
 }  // namespace kv

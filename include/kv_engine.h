@@ -59,6 +59,7 @@ class LocalEngine : public Engine {
   struct ibv_context **ibv_ctxs_;
   ibv_pd *pd_;
   ConnectionManager *connection_manager_;
+  std::shared_ptr<Filter> bloom_filter_;
 };
 
 /* Remote-side engine */
@@ -105,6 +106,7 @@ class RemoteEngine : public Engine {
   uint32_t worker_num_;
   std::thread **worker_threads_;
   RemotePool *pool_[kPoolShardNum];
+  std::shared_ptr<Filter> bloom_filter_;
 };
 
 }  // namespace kv

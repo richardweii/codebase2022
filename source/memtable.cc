@@ -32,7 +32,7 @@ DataBlock *MemTable::BuildDataBlock(DataBlock *datablock) {
     builder.Put(std::move(kv.first), std::move(kv.second));
   }
 
-  builder.Finish(NewBloomFilterPolicy());
+  builder.Finish(this->bloom_filter_);
   return datablock;
 }
 }  // namespace kv

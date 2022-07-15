@@ -44,6 +44,7 @@ bool BufferPool::Init() {
     return false;
   }
   mr_ = mr;
+  this->bloom_filter_ = NewBloomFilterPolicy();
   return true;
 }
 
@@ -331,7 +332,7 @@ bool BufferPool::Fetch(Slice key, BlockId id) {
   LOG_DEBUG("Replacement finish.");
 
   LOG_ASSERT(datablocks_[frame_id].GetId() == id, "Unmatched block id.");
-  LOG_ASSERT(handles_[frame_id]->Find(key, NewBloomFilterPolicy()), "Invalid key in cache.");
+  LOG_ASSERT(handles_[frame_id]->Find(key, this->bloom_filter_), "Invalid key in cache.");
   LOG_ASSERT(HasBlock(id), "Failed to fetch block %d", id);
   return true;
 }
