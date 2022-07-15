@@ -60,11 +60,6 @@ class RemoteEngine : public Engine {
   void handler(RPCTask *task);
 
   kv::RDMAServer *server_;
-
-  struct rdma_event_channel *cm_channel_;
-  struct rdma_cm_id *listen_id_;
-  struct ibv_pd *pd_;
-  struct ibv_context *context_;
   volatile bool stop_;
   RemotePool *pool_[kPoolShardNum];
   Filter* bloom_filter_;

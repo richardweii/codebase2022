@@ -2,20 +2,18 @@
 #include <rdma/rdma_cma.h>
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include "assert.h"
+#include "atomic"
 #include "config.h"
 #include "kv_engine.h"
 #include "pool.h"
+#include "rdma_client.h"
 #include "stat.h"
 #include "util/filter.h"
 #include "util/hash.h"
 #include "util/logging.h"
 #include "util/slice.h"
-#include <cstring>
-#include "assert.h"
-#include "atomic"
-#include "kv_engine.h"
-#include "rdma_client.h"
 
 namespace kv {
 
@@ -26,11 +24,21 @@ namespace kv {
  * @return {bool} true for success
  */
 bool LocalEngine::start(const std::string addr, const std::string port) {
+  constexpr size_t buffer_pool_size = kLocalDataSize / kPoolShardNum / kDataBlockSize;
+  constexpr size_t filter_bits = 10 * kKeyNum / kPoolShardNum;
+  constexpr size_t cache_size = kCacheSize / kPoolShardNum;
+  LOG_INFO("Create %d pool, each pool with %lu datablock, %lu MB filter data, %lu MB cache", kPoolShardNum,
+           buffer_pool_size, filter_bits / 8 / 1024 / 1024, cache_size / 1024 / 1024);
+
   bloom_filter_ = NewBloomFilterPolicy();
   client_ = new RDMAClient();
-  if (client_ == nullptr) return -1;
   if (!client_->Init(addr, port)) return false;
   client_->Start();
+
+  for (int i = 0; i < kPoolShardNum; i++) {
+    pool_[i] = new Pool(buffer_pool_size, filter_bits, cache_size, i, client_);
+    pool_[i]->Init();
+  }
   return true;
 }
 
@@ -39,6 +47,7 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
  * @return {void}
  */
 void LocalEngine::stop() {
+  client_->Stop();
   delete client_;
   for (int i = 0; i < kPoolShardNum; i++) {
     delete pool_[i];
@@ -58,7 +67,7 @@ void LocalEngine::stop() {
  * @description: get engine alive state
  * @return {bool}  true for alive
  */
-bool LocalEngine::alive() { return true; }
+bool LocalEngine::alive() { return client_->Alive(); }
 
 /**
  * @description: put a key-value pair to engine

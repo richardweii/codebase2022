@@ -21,9 +21,15 @@ namespace kv {
  */
 bool RemoteEngine::start(const std::string addr, const std::string port) {
   stop_ = false;
+  bloom_filter_ = NewBloomFilterPolicy();
   server_ = new RDMAServer(std::bind(&RemoteEngine::handler, this, std::placeholders::_1));
   auto succ = server_->Init(addr, port);
   assert(succ);
+
+  for (int i = 0; i < kPoolShardNum; i++) {
+    pool_[i] = new RemotePool(server_->Pd(), i);
+  }
+  
   server_->Start();
   return true;
 }
@@ -33,7 +39,7 @@ bool RemoteEngine::start(const std::string addr, const std::string port) {
  * @return {bool}  true for alive
  */
 bool RemoteEngine::alive() {  // TODO
-  return !stop_;
+  return server_->Alive();
 }
 
 /**
@@ -41,8 +47,7 @@ bool RemoteEngine::alive() {  // TODO
  * @return {void}
  */
 void RemoteEngine::stop() {
-  stop_ = true;
-  // TODO: release resources
+  server_->Stop();
 }
 
 void RemoteEngine::handler(RPCTask *task) {

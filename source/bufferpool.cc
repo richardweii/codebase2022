@@ -155,6 +155,7 @@ bool BufferPool::lookup(Slice slice, uint64_t &addr, uint32_t &rkey) {
 bool BufferPool::free(uint8_t shard, BlockId id) {
   FreeRequest req;
   req.type = MSG_FREE;
+  req.id = id;
   req.rid = getRid();
   req.shard = shard;
   req.sync = false;

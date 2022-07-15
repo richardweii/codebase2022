@@ -165,7 +165,7 @@ RemotePool::MemoryAccess RemotePool::AllocDataBlock() {
   if (!free_list_.empty()) {
     FrameId fid = free_list_.front();
     free_list_.pop_front();
-    static_assert(sizeof(DataBlock *) == sizeof(uint64_t), "Pointer should be 8 bytes.");
+    static_assert(sizeof(void *) == sizeof(uint64_t), "Pointer should be 8 bytes.");
     return {(uint64_t)getDataBlock(fid), getMr(fid)->rkey};
   }
 

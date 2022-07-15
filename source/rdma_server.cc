@@ -3,9 +3,9 @@
 #include <cstring>
 #include <thread>
 #include "config.h"
-#include "util/logging.h"
 #include "msg.h"
 #include "msg_buf.h"
+#include "util/logging.h"
 
 namespace kv {
 
@@ -183,7 +183,10 @@ void RDMAServer::worker() {
     RPCTask *task = nullptr;
     {
       std::unique_lock<std::mutex> lock(task_mutex_);
-      task_cv_.wait(lock, [&]() -> bool { return !tasks_.empty(); });
+      task_cv_.wait(lock, [&]() -> bool { return !tasks_.empty() || stop_; });
+      if (stop_) {
+        break;
+      }
       task = tasks_.front();
       tasks_.pop();
     }
@@ -205,6 +208,7 @@ void RDMAServer::worker() {
         resp.status = RES_OK;
         task->SetResponse(resp, true);
         stop_ = true;
+        task_cv_.notify_all();
         break;
       }
       case CMD_TEST: {
