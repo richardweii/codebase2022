@@ -1,3 +1,4 @@
+#include <infiniband/verbs.h>
 #include <cstring>
 #include <iostream>
 #include "assert.h"
@@ -17,7 +18,9 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   client_ = new RDMAClient();
   if (client_ == nullptr) return -1;
   if (!client_->Init(addr, port)) return false;
+  mr_ = ibv_reg_mr(client_->Pd(), local_buf_, 128, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
   m_rdma_mem_pool_ = new RDMAMemPool(client_);
+  client_->Start();
   if (m_rdma_mem_pool_) return true;
   return false;
 }

@@ -1,5 +1,9 @@
 #include <cassert>
+#include <cstdint>
+#include <functional>
 #include "kv_engine.h"
+#include "logging.h"
+#include "msg.h"
 #include "rdma_server.h"
 
 #define MEM_ALIGN_SIZE 4096
@@ -14,7 +18,7 @@ namespace kv {
  */
 bool RemoteEngine::start(const std::string addr, const std::string port) {
   m_stop_ = false;
-  server_ = new RDMAServer();
+  server_ = new RDMAServer(std::bind(&RemoteEngine::handler, this, std::placeholders::_1));
   auto succ = server_->Init(addr, port);
   assert(succ);
   server_->Start();
@@ -64,4 +68,29 @@ int RemoteEngine::allocate_and_register_memory(uint64_t &addr, uint32_t &rkey, u
   // TODO: save this memory info for later delete
   return 0;
 }
+
+void RemoteEngine::handler(RPCTask *task) {
+  switch (task->RequestType()) {
+    case MSG_ALLOC: {
+      LOG_INFO("Alloc msg");
+      AllocRequest *req = task->GetRequest<AllocRequest>();
+      uint64_t addr;
+      uint32_t rkey;
+      auto ret = allocate_and_register_memory(addr, rkey, req->size);
+      LOG_ASSERT(ret == 0, "failed");
+      AllocResponse resp;
+      resp.addr = addr;
+      resp.reky = rkey;
+      resp.status = RES_OK;
+      task->SetResponse(resp, true);
+    }
+    case MSG_FREE:
+    case MSG_LOOKUP:
+    case MSG_FETCH:
+      break;
+    default:
+      LOG_ERROR("Invalid RPC.");
+  }
+}
+
 }  // namespace kv

@@ -9,11 +9,11 @@ class RDMAClient : public RDMAManager {
   bool Init(std::string ip, std::string port) override;
 
   void Start() override {
-    PingRequest req;
-    req.type = MSG_PING;
+    PingCmd req;
+    req.type = CMD_PING;
     req.addr = (uint64_t)msg_buffer_->Data();
     req.rkey = msg_buffer_->Rkey();
-
+    req.sync = true;
     PingResponse resp;
     RPC(&req, resp, true);
     if (resp.status == RES_FAIL) {
@@ -23,8 +23,8 @@ class RDMAClient : public RDMAManager {
 
   void Stop() override {
     stop_ = true;
-    StopRequesst req;
-    req.type = MSG_STOP;
+    StopCmd req;
+    req.type = CMD_STOP;
 
     StopResponse resp;
     RPC(&req, resp, true);
@@ -47,11 +47,12 @@ class RDMAClient : public RDMAManager {
 template <typename Req, typename Resp>
 int RDMAClient::RPC(Req *req, Resp &resp, bool sync) {
   MessageBlock *msg = msg_buffer_->AllocMessage();
+  // LOG_INFO("Alloc msg %d", msg_buffer_->MessageIndex(msg));
   msg->req_block.notify = PREPARED;
   msg->resp_block.notify = PROCESS;
   memcpy(msg->req_block.message, req, sizeof(Req));
   remoteWrite(cm_id_->qp, (uint64_t)msg, msg_buffer_->Lkey(), sizeof(MessageBlock),
-              remote_addr_ + msg_buffer_->MessageIndex(msg) * sizeof(MessageBlock), remote_rkey_, sync);
+              remote_addr_ + msg_buffer_->MessageAddrOff(msg), remote_rkey_, sync);
 
   /* wait for response */
   auto start = TIME_NOW;
@@ -65,6 +66,7 @@ int RDMAClient::RPC(Req *req, Resp &resp, bool sync) {
   ResponseMsg *resp_msg = (ResponseMsg *)msg->resp_block.message;
   memcpy(&resp, resp_msg, sizeof(Resp));
   msg_buffer_->FreeMessage(msg);
+  // LOG_INFO("Free msg %d", msg_buffer_->MessageIndex(msg));
   return 0;
 }
 }  // namespace kv

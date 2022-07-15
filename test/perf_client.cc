@@ -13,8 +13,8 @@
 
 using namespace kv;
 
-constexpr int thread_num = 4;
-constexpr int op_per_thread_num = 1 << 10;
+constexpr int thread_num = 8;
+constexpr int op_per_thread_num = 1 << 15;
 
 std::atomic_uint64_t rid_counter{};
 
@@ -25,7 +25,7 @@ int main(int argc, const char **argv) {
     LOG_INFO("Sync %d", sync);
   }
   RDMAClient *client = new RDMAClient();
-  client->Init("172.16.5.129", "12345");
+  client->Init("192.168.200.22", "12345");
   client->Start();
 
   std::vector<std::thread> threads;
@@ -37,18 +37,18 @@ int main(int argc, const char **argv) {
       for (int j = 0; j < op_per_thread_num; j++) {
         DummyRequest req;
         req.sync = sync;
-        req.rid = rid_counter.fetch_add(1); 
+        req.rid = rid_counter.fetch_add(1);
         memset(req.msg, 0, 16);
         auto a = std::to_string(j);
         memcpy(req.msg, a.c_str(), a.size());
-        req.type = MSG_ALLOC;
+        req.type = CMD_TEST;
 
         DummyResponse resp;
         int ret = client->RPC(&req, resp, req.sync);
 
         std::string res = resp.resp;
 
-        LOG_ASSERT(a == res, "rid %d, expected %s, got %s",req.rid, a.c_str(), res.c_str());
+        LOG_ASSERT(a == res, "rid %d, expected %s, got %s", req.rid, a.c_str(), res.c_str());
       }
       LOG_INFO("Finish!");
     });
@@ -62,8 +62,8 @@ int main(int argc, const char **argv) {
   auto time_delta = time_end - time_now;
   auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
 
-  std::cout << "Latency : " << count / op_per_thread_num / thread_num << "us" << std::endl;
-  std::cout << "Ops : " << 1000.0 * op_per_thread_num / thread_num / count << "kps" << std::endl;
+  std::cout << "Latency : " << 1.0 * count / op_per_thread_num  / thread_num << "us" << std::endl;
+  std::cout << "Ops : " << 1000.0 * op_per_thread_num * thread_num / count << "kps" << std::endl;
 
   client->Stop();
 }

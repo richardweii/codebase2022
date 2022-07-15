@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <thread>
@@ -38,12 +39,11 @@ class MsgBuffer {
     return true;
   }
 
-  MessageBlock *AllocMessage(int retry_times = 10) {
-    while (retry_times-- > 0) {
+  MessageBlock *AllocMessage() {
+    while (true) {
       for (int i = 0; i < (int)size_; i++) {
         bool tmp = false;
         if (in_use_[i].compare_exchange_weak(tmp, true)) {
-          LOG_INFO("msg %d", i);
           return &msg_[i];
         }
       }
@@ -60,6 +60,10 @@ class MsgBuffer {
   }
 
   int MessageIndex(MessageBlock *msg) { return msg - msg_; }
+
+  uint64_t MessageAddrOff(MessageBlock *msg) {
+    return (uint64_t)msg - (uint64_t)msg_;
+  }
 
   uint32_t Rkey() const { return mr_->rkey; }
 

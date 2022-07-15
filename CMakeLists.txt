@@ -4,7 +4,8 @@ project(POLAR_CONTEST)
 set(CMAKE_BUILD_TYPE "Debug")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(RDMA_LIB "-lrdmacm -libverbs -libumad -lpci -lefa")
+set(RDMA_LIB "-lrdmacm -libverbs -libumad -lpci")
+# set(RDMA_LIB "-lrdmacm -libverbs -libumad -lpci -lefa")
 set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS "-pthread -ldl -lrt ${RDMA_LIB} -${CMAKE_CXX_FLAGS}")
 

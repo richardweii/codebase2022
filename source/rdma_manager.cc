@@ -38,7 +38,7 @@ bool RDMAManager::remoteWrite(ibv_qp *qp, uint64_t addr, uint32_t lkey, size_t l
     send_wr->next = NULL;
     send_wr->opcode = IBV_WR_RDMA_WRITE;
     send_wr->sg_list = sge;
-    send_wr->send_flags = IBV_SEND_SIGNALED;
+    send_wr->send_flags = 0;
     send_wr->wr.rdma.remote_addr = remote_addr;
     send_wr->wr.rdma.rkey = rkey;
     if (!send_batch_.empty()) {
@@ -69,39 +69,39 @@ void RDMAManager::rdmaRoutine() {
 bool RDMAManager::postSend(ibv_qp *qp) {
   LOG_ASSERT(send_batch_.size() > 0, "nothign to send.");
   ibv_send_wr *bad_send_wr;
-  if (ibv_post_send(qp, send_batch_.front().wr, &bad_send_wr)) {
+  int rc;
+  send_batch_.back().wr->send_flags = IBV_SEND_SIGNALED;
+  if ((rc = ibv_post_send(qp, send_batch_.front().wr, &bad_send_wr)) != 0) {
     perror("ibv_post_send fail");
-    LOG_ERROR("ibv_post_send fail.");
+    LOG_ERROR("ibv_post_send fail. ret %d", rc);
     return false;
   }
 
   // printf("remote write %ld %d\n", remote_addr, rkey);
   bool ret = false;
   auto start = TIME_NOW;
-  ibv_wc wc[send_batch_.size()];
+  ibv_wc wc;
   while (true) {
     if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
       LOG_ERROR("rdma_remote_write timeout\n");
       return ret;
     }
-    int rc = ibv_poll_cq(cq_, RDMA_MSG_CAP, wc);
+    int rc = ibv_poll_cq(cq_, RDMA_MSG_CAP, &wc);
     if (rc > 0) {
       assert(rc = send_batch_.size());
-      // for (int i = 0; i < rc; i++) {
-      if (IBV_WC_SUCCESS == wc[0].status) {
+      if (IBV_WC_SUCCESS == wc.status) {
         ret = true;
-      } else if (IBV_WC_WR_FLUSH_ERR == wc[0].status) {
+      } else if (IBV_WC_WR_FLUSH_ERR == wc.status) {
         perror("cmd_send IBV_WC_WR_FLUSH_ERR");
         goto end;
-      } else if (IBV_WC_RNR_RETRY_EXC_ERR == wc[0].status) {
+      } else if (IBV_WC_RNR_RETRY_EXC_ERR == wc.status) {
         perror("cmd_send IBV_WC_RNR_RETRY_EXC_ERR");
         goto end;
       } else {
         perror("cmd_send ibv_poll_cq status error");
-        LOG_ERROR("rc %d, no %d, status %s, send batch size %zu", rc, 0, ibv_wc_status_str(wc[0].status), send_batch_.size());
+        LOG_ERROR("rc %d, status %s, send batch size %zu", rc, ibv_wc_status_str(wc.status), send_batch_.size());
         goto end;
       }
-      // }
       break;
     } else if (0 == rc) {
       continue;

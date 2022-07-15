@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <functional>
 #include "rdma_manager.h"
 
 namespace kv {
@@ -8,7 +9,8 @@ class RDMAServer : public RDMAManager {
  public:
   friend class RPCTask;
   ~RDMAServer() { delete poller_; }
-  RDMAServer() = default;
+  using Handler = std::function<void(RPCTask *task)>;
+  RDMAServer(Handler &&handler) : handler_(std::move(handler)){};
 
   void Start() override { handleConnection(); }
 
@@ -33,7 +35,7 @@ class RDMAServer : public RDMAManager {
   std::mutex task_mutex_;
   std::condition_variable task_cv_;
   std::queue<RPCTask *> tasks_;
-
+  Handler handler_;
   std::vector<std::thread> workers_;
   std::thread *poller_ = nullptr;
   rdma_cm_id *listen_id_ = nullptr;
@@ -55,7 +57,8 @@ class RPCTask {
     memcpy(&msg_->resp_block, &resp, sizeof(resp));
     msg_->resp_block.notify = DONE;
     server_->remoteWrite(server_->cm_id_->qp, (uint64_t)msg_, server_->msg_buffer_->Lkey(), sizeof(MessageBlock),
-                         server_->remote_addr_, server_->remote_rkey_, sync);
+                         server_->remote_addr_ + server_->msg_buffer_->MessageAddrOff(msg_), server_->remote_rkey_,
+                         sync);
   }
 
  private:

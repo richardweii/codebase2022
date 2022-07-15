@@ -132,6 +132,9 @@ class RemoteEngine : public Engine {
   bool alive() override;
 
  private:
+
+  void handler(RPCTask *task);
+
   struct ibv_mr *rdma_register_memory(void *ptr, uint64_t size);
 
   int remote_write(uint64_t local_addr, uint32_t lkey, uint32_t length, uint64_t remote_addr, uint32_t rkey);

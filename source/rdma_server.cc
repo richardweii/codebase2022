@@ -119,7 +119,7 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
   }
 
   struct ibv_qp_init_attr qp_attr = {};
-  qp_attr.cap.max_send_wr = 1;
+  qp_attr.cap.max_send_wr = RDMA_MSG_CAP;
   qp_attr.cap.max_send_sge = 1;
   qp_attr.cap.max_recv_wr = 1;
   qp_attr.cap.max_recv_sge = 1;
@@ -186,10 +186,28 @@ void RDMAServer::worker() {
       task = tasks_.front();
       tasks_.pop();
     }
-    // handle the task
+    task_cv_.notify_one();
     switch (task->RequestType()) {
-      case MSG_ALLOC: {
-        LOG_DEBUG("Alloc message.");
+      case CMD_PING: {
+        LOG_DEBUG("Ping message.");
+        PingCmd *req = task->GetRequest<PingCmd>();
+        this->remote_addr_ = req->addr;
+        this->remote_rkey_ = req->rkey;
+        PingResponse resp;
+        resp.status = RES_OK;
+        task->SetResponse(resp, true);
+        break;
+      }
+      case CMD_STOP: {
+        LOG_DEBUG("Stop message.");
+        StopResponse resp;
+        resp.status = RES_OK;
+        task->SetResponse(resp, true);
+        stop_ = true;
+        break;
+      }
+      case CMD_TEST: {
+        LOG_DEBUG("Test message.");
         DummyRequest *req = task->GetRequest<DummyRequest>();
         LOG_DEBUG("Recv %s", req->msg);
         LOG_DEBUG("Msg index %d, rid %d", this->msg_buffer_->MessageIndex((MessageBlock *)req), req->rid);
@@ -201,38 +219,8 @@ void RDMAServer::worker() {
         task->SetResponse(resp, req->sync);
         break;
       }
-      case MSG_FREE:
-        LOG_DEBUG("Free message.");
-
-        break;
-      case MSG_PING: {
-        LOG_DEBUG("Ping message.");
-        PingRequest *req = task->GetRequest<PingRequest>();
-        this->remote_addr_ = req->addr;
-        this->remote_rkey_ = req->rkey;
-        PingResponse resp;
-        resp.status = RES_OK;
-        task->SetResponse(resp);
-        break;
-      }
-      case MSG_STOP: {
-        LOG_DEBUG("Stop message.");
-        StopResponse resp;
-        resp.status = RES_OK;
-        task->SetResponse(resp, true);
-        stop_ = true;
-        break;
-      }
-      case MSG_LOOKUP:
-        LOG_DEBUG("Lookup message.");
-
-        break;
-      case MSG_FETCH:
-        LOG_DEBUG("Fetch message.");
-
-        break;
       default:
-        LOG_ERROR("Invalid RPC...");
+        handler_(task);
     }
 
     delete task;
