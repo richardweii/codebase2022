@@ -45,7 +45,7 @@ constexpr int kRemoteMrSize = 64 * 1024 * 1024;
 // constexpr int kRemoteMrSize = 16 * 1024;
 
 template <typename Tp>
-using Ptr = std::shared_ptr<Tp>;
+using Ptr = Tp*;
 
 using BlockId = int32_t;
 
