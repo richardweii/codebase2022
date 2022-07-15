@@ -57,6 +57,6 @@ class Filter {
 // ignores trailing spaces, it would be incorrect to use a
 // Filter (like NewBloomFilterPolicy) that does not ignore
 // trailing spaces in keys.
-std::shared_ptr<Filter> NewBloomFilterPolicy(int bits_per_key = 10);
+Filter* NewBloomFilterPolicy(int bits_per_key = 10);
 
 }  // namespace kv

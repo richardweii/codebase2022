@@ -84,8 +84,8 @@ class BloomFilter : public Filter {
   size_t k_;
 };
 
-std::shared_ptr<Filter> NewBloomFilterPolicy(int bits_per_key) {
-  return std::shared_ptr<Filter>(new BloomFilter(bits_per_key));
+Filter* NewBloomFilterPolicy(int bits_per_key) {
+  return (new BloomFilter(bits_per_key));
 }
 
 }  // namespace kv

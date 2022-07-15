@@ -60,6 +60,8 @@ bool RemoteEngine::start(const std::string addr, const std::string port) {
   sin.sin_family = AF_INET;
   sin.sin_port = htons(stoi(port));
   sin.sin_addr.s_addr = INADDR_ANY;
+  
+  this->bloom_filter_ = NewBloomFilterPolicy();
 
   if (rdma_bind_addr(listen_id_, (struct sockaddr *)&sin)) {
     perror("rdma_bind_addr fail");
@@ -80,7 +82,6 @@ bool RemoteEngine::start(const std::string addr, const std::string port) {
     }
   }
 
-  this->bloom_filter_ = NewBloomFilterPolicy();
 
   return true;
 }

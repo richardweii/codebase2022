@@ -57,7 +57,7 @@ class MemTable NOCOPYABLE {
   std::unordered_map<Key, Value, Key::InternalHash, Key::InternalEqual> table_;
   int count_ = 0;
   int cap_;
-  std::shared_ptr<Filter> bloom_filter_;
+  Filter* bloom_filter_;
 };
 
 }  // namespace kv
