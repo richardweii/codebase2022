@@ -1,11 +1,25 @@
 include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(${PROJECT_SOURCE_DIR}/include/util)
 
-add_executable(server server.cc)
-target_link_libraries(server polarkv rdmacm ibverbs ibumad pci efa)
+add_executable(
+    rdma_client
+    client.cc
+)
+target_link_libraries(rdma_client polarkv rdmacm ibverbs ibumad pci)
 
-add_executable(client client.cc)
-target_link_libraries(client polarkv rdmacm ibverbs ibumad pci efa)
+add_executable(
+    rdma_server
+    server.cc
+)
+target_link_libraries(rdma_server polarkv rdmacm ibverbs ibumad pci)
 
-add_executable(test_bloom test_bloom.cc)
-target_link_libraries(test_bloom polarkv)
+add_executable(
+    perf_client
+    perf_client.cc
+)
+target_link_libraries(perf_client polarkv rdmacm ibverbs ibumad pci)
+
+add_executable(
+    msg_buf
+    msg_buf.cc
+)
+target_link_libraries(msg_buf polarkv rdmacm ibverbs ibumad pci)

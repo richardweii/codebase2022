@@ -12,7 +12,7 @@
 #include <vector>
 #include "block.h"
 #include "config.h"
-#include "rdma_conn_manager.h"
+#include "rdma_client.h"
 #include "util/logging.h"
 #include "util/nocopy.h"
 #include "util/rwlock.h"
@@ -22,7 +22,7 @@ namespace kv {
 
 class BufferPool NOCOPYABLE {
  public:
-  BufferPool(size_t size, uint8_t shard, ConnectionManager *conn_manager);
+  BufferPool(size_t size, uint8_t shard, RDMAClient *client);
   ~BufferPool() {
     auto ret = ibv_dereg_mr(mr_);
     delete[] datablocks_;
@@ -68,13 +68,21 @@ class BufferPool NOCOPYABLE {
   void WriteUnlockTable() { table_latch_.WUnlock(); };
 
  private:
+  bool alloc(uint8_t shard, uint64_t &addr, uint32_t &rkey);
+
+  bool fetch(uint8_t shard, BlockId id, uint64_t &addr, uint32_t&rkey);
+
+  bool lookup(Slice slice, uint64_t &addr, uint32_t &rkey);
+
+  bool free(uint8_t shard, BlockId id);
+
   // write back one datablock for fetching another one from remote if the block holding the key exists.
   bool replacement(Slice key, FrameId &fid);
 
   DataBlock *datablocks_ = nullptr;
   std::vector<BlockHandle *> handles_;
 
-  ConnectionManager *connection_manager_;
+  RDMAClient *client_;
   ibv_pd *pd_ = nullptr;
   ibv_mr *mr_ = nullptr;  // one mr
 

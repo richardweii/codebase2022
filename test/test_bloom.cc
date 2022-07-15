@@ -3,7 +3,7 @@
 #include "block_builder.h"
 #include "config.h"
 #include "memtable.h"
-#include "slice.h"
+#include "util/slice.h"
 #include "test.h"
 #include "util/filter.h"
 

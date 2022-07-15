@@ -6,24 +6,13 @@
 #include <cstdint>
 #include "config.h"
 
+#include <cstdint>
 namespace kv {
 
-#define NOTIFY_WORK 0xFF
-#define NOTIFY_IDLE 0x00
 #define MAX_MSG_SIZE 32
-#define MAX_SERVER_WORKER 4
-#define RESOLVE_TIMEOUT_MS 5000
-#define RDMA_TIMEOUT_US 10000000  // 10s
-#define MAX_REMOTE_SIZE (1UL << 25)
-
-#define TIME_NOW (std::chrono::high_resolution_clock::now())
-#define TIME_DURATION_US(START, END) (std::chrono::duration_cast<std::chrono::microseconds>((END) - (START)).count())
-
-enum MsgType { MSG_PING, MSG_ALLOC, MSG_LOOKUP, MSG_FREE, MSG_STOP, MSG_FETCH };
-
-enum ResStatus { RES_OK, RES_FAIL };
-
-#define CHECK_RDMA_MSG_SIZE(T) static_assert(sizeof(T) < MAX_MSG_SIZE, #T " msg size is too big!")
+#define MAX_REQUEST_SIZE 32
+#define MAX_RESPONSE_SIZE 32
+#define CHECK_RDMA_MSG_SIZE(T) static_assert(sizeof(T) < MAX_MSG_SIZE - 1, #T " msg size is too big!")
 
 struct PData {
   uint64_t buf_addr;
@@ -31,38 +20,56 @@ struct PData {
   uint32_t size;
 };
 
-struct CmdMsgBlock {
-  uint8_t rsvd1[MAX_MSG_SIZE - 1];
+enum MsgType { CMD_PING, CMD_STOP, CMD_TEST, MSG_ALLOC, MSG_FREE, MSG_LOOKUP, MSG_FETCH };
+
+enum ResStatus { RES_OK, RES_FAIL };
+
+enum MsgState { IDLE = 0, PREPARED = 0x11, PROCESS = 0x33, DONE = 0x77 };
+
+struct RequestBlock {
+  uint8_t message[MAX_REQUEST_SIZE - 1];
   volatile uint8_t notify;
 };
 
-struct CmdMsgRespBlock {
-  uint8_t rsvd1[MAX_MSG_SIZE - 1];
+struct ResponseBlock {
+  uint8_t message[MAX_RESPONSE_SIZE - 1];
   volatile uint8_t notify;
+};
+
+struct MessageBlock {
+  RequestBlock req_block;
+  ResponseBlock resp_block;
 };
 
 struct RequestsMsg {
-  uint8_t type;
   uint32_t rid;
+  uint8_t type;
+  bool sync;
 };
-CHECK_RDMA_MSG_SIZE(RequestsMsg);
 
 struct ResponseMsg {
   uint8_t status;
 };
-CHECK_RDMA_MSG_SIZE(ResponseMsg);
 
-struct PingMsg : RequestsMsg {
-  uint64_t resp_addr;
-  uint32_t resp_rkey;
+// user defined message
+struct PingCmd : public RequestsMsg {
+  uint64_t addr;
+  uint32_t rkey;
 };
-CHECK_RDMA_MSG_SIZE(PingMsg);
+CHECK_RDMA_MSG_SIZE(PingCmd);
 
-struct StopMsg : RequestsMsg {};
-CHECK_RDMA_MSG_SIZE(StopMsg);
+struct PingResponse : public ResponseMsg {};
+CHECK_RDMA_MSG_SIZE(PingResponse);
+
+struct StopCmd : public RequestsMsg {};
+CHECK_RDMA_MSG_SIZE(StopCmd);
+
+struct StopResponse : public ResponseMsg {};
+CHECK_RDMA_MSG_SIZE(StopResponse);
 
 struct AllocRequest : public RequestsMsg {
   uint8_t shard;
+  uint64_t size;
 };
 CHECK_RDMA_MSG_SIZE(AllocRequest);
 
@@ -103,5 +110,17 @@ struct FetchResponse : public ResponseMsg {
   uint32_t rkey;
 };
 CHECK_RDMA_MSG_SIZE(FetchResponse);
+
+
+// for test
+struct DummyRequest : public RequestsMsg {
+  char msg[16];
+};
+CHECK_RDMA_MSG_SIZE(DummyRequest);
+
+struct DummyResponse : public ResponseMsg {
+  char resp[16];
+};
+CHECK_RDMA_MSG_SIZE(DummyResponse);
 
 }  // namespace kv

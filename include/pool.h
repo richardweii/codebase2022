@@ -13,7 +13,7 @@
 #include "cache.h"
 #include "config.h"
 #include "memtable.h"
-#include "rdma_conn_manager.h"
+#include "rdma_client.h"
 #include "util/filter.h"
 #include "util/logging.h"
 #include "util/nocopy.h"
@@ -30,7 +30,7 @@ class Pool NOCOPYABLE {
    * @param filter_bits bloom filter bits num 10 * key
    * @param cache_size cache data size
    */
-  Pool(size_t buffer_pool_size, size_t filter_bits, size_t cache_size, uint8_t shard, ConnectionManager *conn_manager);
+  Pool(size_t buffer_pool_size, size_t filter_bits, size_t cache_size, uint8_t shard,  RDMAClient *client);
   ~Pool();
 
   void Init() {
@@ -48,6 +48,7 @@ class Pool NOCOPYABLE {
   int filter_length_;
 
   MemTable *memtable_;
+  RDMAClient *client_;
   Cache *cache_;
   BufferPool *buffer_pool_;
   Latch latch_;

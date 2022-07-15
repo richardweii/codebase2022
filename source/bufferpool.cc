@@ -4,10 +4,11 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <mutex>
 #include "block.h"
 #include "config.h"
-#include "rdma_conn_manager.h"
+#include "msg.h"
 #include "stat.h"
 #include "util/defer.h"
 #include "util/filter.h"
@@ -16,10 +17,12 @@
 namespace kv {
 
 static std::atomic<BlockId> blockId(1);
+static std::atomic<uint32_t> rid_counter(1);
 
 BlockId getGetBlockId() { return blockId.fetch_add(1, std::memory_order_relaxed); }
+uint32_t getRid() { return rid_counter.fetch_add(1, std::memory_order_relaxed); }
 
-BufferPool::BufferPool(size_t size, uint8_t shard, ConnectionManager *conn_manager) {
+BufferPool::BufferPool(size_t size, uint8_t shard, RDMAClient *client) {
   shard_ = shard;
   pool_size_ = size;
   datablocks_ = new DataBlock[size];
@@ -27,8 +30,8 @@ BufferPool::BufferPool(size_t size, uint8_t shard, ConnectionManager *conn_manag
   for (size_t i = 0; i < size; i++) {
     handles_.emplace_back(new BlockHandle(&datablocks_[i]));
   }
-  connection_manager_ = conn_manager;
-  pd_ = conn_manager->Pd();
+  client_ = client;
+  pd_ = client->Pd();
   // Initially, every page is in the free list.
   for (size_t i = 0; i < pool_size_; ++i) {
     free_list_.emplace_back(static_cast<int>(i));
@@ -51,6 +54,7 @@ bool BufferPool::Init() {
 DataBlock *BufferPool::GetNewDataBlock() {
   std::lock_guard<std::mutex> guard(mutex_);
   int ret;
+  bool succ;
 
   FrameId frame_id;
   if (!free_list_.empty()) {
@@ -73,11 +77,11 @@ DataBlock *BufferPool::GetNewDataBlock() {
     uint64_t addr;
     uint32_t rkey;
     LOG_DEBUG("Request new datablock from remote...");
-    ret = connection_manager_->Alloc(shard_, addr, rkey, kDataBlockSize);
+    succ = alloc(shard_, addr, rkey);
     LOG_DEBUG("addr %lx, rkey %x", addr, rkey);
 
-    LOG_ASSERT(ret == 0, "Alloc Failed.");
-    ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, addr, rkey);
+    LOG_ASSERT(succ, "Alloc Failed.");
+    ret = client_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, addr, rkey);
     LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
     LOG_DEBUG("Get new datablock from remote successfully...");
   }
@@ -96,13 +100,80 @@ DataBlock *BufferPool::GetNewDataBlock() {
   return &datablocks_[frame_id];
 }
 
+bool BufferPool::alloc(uint8_t shard, uint64_t &addr, uint32_t &rkey) {
+  AllocRequest req;
+  req.shard = shard;
+  req.size = kDataBlockSize;
+  req.type = MSG_ALLOC;
+  req.rid = getRid();
+  req.sync = false;
+
+  AllocResponse resp;
+  auto ret = client_->RPC(&req, resp);
+  assert(ret == 0);
+  assert(resp.status == RES_OK);
+  addr = resp.addr;
+  rkey = resp.rkey;
+  return true;
+}
+
+bool BufferPool::fetch(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey) {
+  FetchRequest req;
+  req.shard = shard;
+  req.type = MSG_FETCH;
+  req.id = id;
+  req.rid = getRid();
+  req.sync = false;
+
+  FetchResponse resp;
+  auto ret = client_->RPC(&req, resp);
+  assert(ret == 0);
+  assert(resp.status == RES_OK);
+  addr = resp.addr;
+  rkey = resp.rkey;
+  return true;
+}
+
+bool BufferPool::lookup(Slice slice, uint64_t &addr, uint32_t &rkey) {
+  LookupRequest req;
+  req.type = MSG_LOOKUP;
+  memcpy(req.key, slice.data(), slice.size());
+  req.rid = getRid();
+  req.sync = false;
+
+  LookupResponse resp;
+  auto ret = client_->RPC(&req, resp);
+  assert(ret == 0);
+  if (resp.status == RES_OK) {
+    addr = resp.addr;
+    rkey = resp.rkey;
+    return true;
+  }
+  return false;
+}
+
+bool BufferPool::free(uint8_t shard, BlockId id) {
+  FreeRequest req;
+  req.type = MSG_FREE;
+  req.rid = getRid();
+  req.shard = shard;
+  req.sync = false;
+
+  FreeResponse resp;
+  auto ret = client_->RPC(&req, resp);
+  assert(ret == 0);
+  assert(resp.status == RES_OK);
+  return true;
+}
+
 bool BufferPool::replacement(Slice key, FrameId &fid) {
   // lookup
   uint64_t read_addr;
   uint32_t read_rkey;
   bool found = false;
   int ret;
-  ret = connection_manager_->Lookup(key, read_addr, read_rkey, found);
+  bool succ;
+  found = lookup(key, read_addr, read_rkey);
   if (!found) {
     stat::remote_miss.fetch_add(1, std::memory_order_relaxed);
     LOG_DEBUG("Cannot find %s at remote.", key.data());
@@ -122,9 +193,9 @@ bool BufferPool::replacement(Slice key, FrameId &fid) {
   uint64_t write_addr;
   uint32_t write_rkey;
   LOG_DEBUG("Request new datablock for replace block %d", datablocks_[frame_id].GetId());
-  ret = connection_manager_->Alloc(shard_, write_addr, write_rkey, kDataBlockSize);
-  LOG_ASSERT(ret == 0, "Alloc Failed.");
-  ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr, write_rkey);
+  succ = alloc(shard_, write_addr, write_rkey);
+  LOG_ASSERT(succ, "Alloc Failed.");
+  ret = client_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr, write_rkey);
   LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
 
   // erase old
@@ -135,7 +206,7 @@ bool BufferPool::replacement(Slice key, FrameId &fid) {
   WriteUnlockTable();
 
   // fetch
-  ret = connection_manager_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr, read_rkey);
+  ret = client_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr, read_rkey);
   LOG_ASSERT(ret == 0, "Remote Read Datablock Failed.");
   LOG_DEBUG("Read Block %d", datablocks_[frame_id].GetId());
   // insert new
@@ -146,7 +217,7 @@ bool BufferPool::replacement(Slice key, FrameId &fid) {
   // LRU update
   renew(frame_id);
 
-  connection_manager_->Free(shard_, datablocks_[frame_id].GetId());
+  free(shard_, datablocks_[frame_id].GetId());
   LOG_DEBUG("Replacement finish.");
 
   fid = frame_id;
@@ -239,7 +310,6 @@ bool BufferPool::Read(Slice key, std::string &value, Ptr<Filter> filter, CacheEn
   }
 
   FrameId fid;
-  // TODO: replacement can return off of entry, aviod additional lookup
   bool found = replacement(key, fid);
   if (!found) {
     return false;
@@ -290,8 +360,9 @@ bool BufferPool::Fetch(Slice key, BlockId id) {
   uint64_t read_addr;
   uint32_t read_rkey;
   int ret;
-  ret = connection_manager_->Fetch(shard_, id, read_addr, read_rkey);
-  assert(ret == 0);
+  bool succ;
+  succ = fetch(shard_, id, read_addr, read_rkey);
+  assert(succ);
 
   // replacement
   FrameId frame_id;
@@ -304,9 +375,9 @@ bool BufferPool::Fetch(Slice key, BlockId id) {
   uint64_t write_addr;
   uint32_t write_rkey;
   LOG_DEBUG("Request new datablock for replace block %d", datablocks_[frame_id].GetId());
-  ret = connection_manager_->Alloc(shard_, write_addr, write_rkey, kDataBlockSize);
-  LOG_ASSERT(ret == 0, "Alloc Failed.");
-  ret = connection_manager_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr, write_rkey);
+  succ = alloc(shard_, write_addr, write_rkey);
+  LOG_ASSERT(succ, "Alloc Failed.");
+  ret = client_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr, write_rkey);
   LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
 
   // erase old
@@ -317,7 +388,7 @@ bool BufferPool::Fetch(Slice key, BlockId id) {
   WriteUnlockTable();
 
   // fetch
-  ret = connection_manager_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr, read_rkey);
+  ret = client_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr, read_rkey);
   LOG_ASSERT(ret == 0, "Remote Read Datablock Failed.");
   LOG_DEBUG("Read Block %d", datablocks_[frame_id].GetId());
   // insert new
@@ -328,7 +399,7 @@ bool BufferPool::Fetch(Slice key, BlockId id) {
   // LRU update
   renew(frame_id);
 
-  connection_manager_->Free(shard_, datablocks_[frame_id].GetId());
+  free(shard_, datablocks_[frame_id].GetId());
   LOG_DEBUG("Replacement finish.");
 
   LOG_ASSERT(datablocks_[frame_id].GetId() == id, "Unmatched block id.");

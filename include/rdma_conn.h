@@ -20,8 +20,6 @@
 
 namespace kv {
 
-#define RESOLVE_TIMEOUT_MS 5000
-
 /* RDMA connection */
 class RDMAConnection NOCOPYABLE {
  public:
@@ -37,36 +35,19 @@ class RDMAConnection NOCOPYABLE {
     ibv_destroy_comp_channel(comp_chan_);
     rdma_destroy_id(cm_id_);
     rdma_destroy_event_channel(cm_channel_);
-    ibv_dereg_mr(msg_mr_);
-    ibv_dereg_mr(resp_mr_);
-    delete cmd_msg_;
-    delete cmd_resp_;
   };
   int Init(const std::string ip, const std::string port);
 
-  int Ping();
+  int RemoteRead(void *ptr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey) {
+    return rdma((uint64_t)ptr, lkey, size, remote_addr, rkey, true);
+  }
 
-  int Stop();
-
-  // Allocate a datablock at the remote
-  int AllocDataBlock(uint8_t shard, uint64_t &addr, uint32_t &rkey);
-
-  int Fetch(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey);
-  // lookup a entry at the remote
-  int Lookup(Slice key, uint64_t &addr, uint32_t &rkey, bool &found);
-
-  int Free(uint8_t shard, BlockId id);
-
-  int RemoteRead(void *ptr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey);
-
-  int RemoteWrite(void *ptr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey);
+  int RemoteWrite(void *ptr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey) {
+    return rdma((uint64_t)ptr, lkey, size, remote_addr, rkey, false);
+  }
 
  private:
-  struct ibv_mr *registerMemory(void *ptr, uint64_t size);
-
-  int RDMARead(uint64_t local_addr, uint32_t lkey, uint64_t length, uint64_t remote_addr, uint32_t rkey);
-
-  int RDMAWrite(uint64_t local_addr, uint32_t lkey, uint64_t length, uint64_t remote_addr, uint32_t rkey);
+  int rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey, bool read);
 
   struct ibv_comp_channel *comp_chan_;
   struct rdma_event_channel *cm_channel_;
@@ -74,15 +55,7 @@ class RDMAConnection NOCOPYABLE {
   struct ibv_cq *cq_;
   struct rdma_cm_id *cm_id_;
 
-  uint64_t server_cmd_msg_;
-  uint32_t server_cmd_rkey_;
-  uint32_t remote_size_;
   int conn_id_;
-
-  struct CmdMsgBlock *cmd_msg_;
-  struct CmdMsgRespBlock *cmd_resp_;
-  struct ibv_mr *msg_mr_;
-  struct ibv_mr *resp_mr_;
 };
 
 }  // namespace kv

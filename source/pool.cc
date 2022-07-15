@@ -1,24 +1,13 @@
 #include "pool.h"
-#include <infiniband/verbs.h>
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
-#include "block.h"
-#include "bufferpool.h"
-#include "cache.h"
-#include "config.h"
-#include "memtable.h"
-#include "rdma_conn_manager.h"
 #include "stat.h"
 #include "util/defer.h"
-#include "util/filter.h"
-#include "util/logging.h"
+
 
 namespace kv {
 
 Pool::Pool(size_t buffer_pool_size, size_t filter_bits, size_t cache_size, uint8_t shard,
-           ConnectionManager *conn_manager) {
-  buffer_pool_ = new BufferPool(buffer_pool_size, shard, conn_manager);
+           RDMAClient *client) {
+  buffer_pool_ = new BufferPool(buffer_pool_size, shard, client);
   filter_length_ = (filter_bits + 7) / 8;
   filter_data_ = new char[filter_length_];
   memtable_ = new MemTable();
