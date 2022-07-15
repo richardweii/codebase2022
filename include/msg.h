@@ -3,10 +3,10 @@
 #include <cstdint>
 namespace kv {
 
-#define MAX_MSG_SIZE 64
+#define MAX_MSG_SIZE 32
 #define MAX_REQUEST_SIZE 32
 #define MAX_RESPONSE_SIZE 32
-#define CHECK_RDMA_MSG_SIZE(T) static_assert(sizeof(T) < MAX_MSG_SIZE, #T " msg size is too big!")
+#define CHECK_RDMA_MSG_SIZE(T) static_assert(sizeof(T) < MAX_MSG_SIZE - 1, #T " msg size is too big!")
 
 struct PData {
   uint64_t buf_addr;
@@ -38,6 +38,7 @@ struct MessageBlock {
 struct RequestsMsg {
   uint32_t rid;
   uint8_t type;
+  bool sync;
 };
 
 struct ResponseMsg {

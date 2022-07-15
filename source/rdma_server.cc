@@ -189,23 +189,24 @@ void RDMAServer::worker() {
     // handle the task
     switch (task->RequestType()) {
       case MSG_ALLOC: {
-        LOG_INFO("Alloc message.");
+        LOG_DEBUG("Alloc message.");
         DummyRequest *req = task->GetRequest<DummyRequest>();
-        LOG_INFO("Recv %s", req->msg);
+        LOG_DEBUG("Recv %s", req->msg);
+        LOG_DEBUG("Msg index %d, rid %d", this->msg_buffer_->MessageIndex((MessageBlock *)req), req->rid);
         DummyResponse resp;
         memset(resp.resp, 0, 16);
         resp.status = RES_OK;
-        std::string a = "receive a msg";
-        memcpy(resp.resp, a.c_str(), a.size());
-        task->SetResponse(resp);
+        memcpy(resp.resp, req->msg, 16);
+        LOG_DEBUG("Send %s", resp.resp);
+        task->SetResponse(resp, req->sync);
         break;
       }
       case MSG_FREE:
-        LOG_INFO("Free message.");
+        LOG_DEBUG("Free message.");
 
         break;
       case MSG_PING: {
-        LOG_INFO("Ping message.");
+        LOG_DEBUG("Ping message.");
         PingRequest *req = task->GetRequest<PingRequest>();
         this->remote_addr_ = req->addr;
         this->remote_rkey_ = req->rkey;
@@ -215,7 +216,7 @@ void RDMAServer::worker() {
         break;
       }
       case MSG_STOP: {
-        LOG_INFO("Stop message.");
+        LOG_DEBUG("Stop message.");
         StopResponse resp;
         resp.status = RES_OK;
         task->SetResponse(resp, true);
@@ -223,11 +224,11 @@ void RDMAServer::worker() {
         break;
       }
       case MSG_LOOKUP:
-        LOG_INFO("Lookup message.");
+        LOG_DEBUG("Lookup message.");
 
         break;
       case MSG_FETCH:
-        LOG_INFO("Fetch message.");
+        LOG_DEBUG("Fetch message.");
 
         break;
       default:

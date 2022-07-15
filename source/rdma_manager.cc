@@ -2,6 +2,7 @@
 #include <infiniband/verbs.h>
 #include <netdb.h>
 #include <chrono>
+#include <cstddef>
 #include <mutex>
 #include <thread>
 #include "config.h"
@@ -25,13 +26,13 @@ bool RDMAManager::remoteWrite(ibv_qp *qp, uint64_t addr, uint32_t lkey, size_t l
                               uint32_t rkey, bool sync) {
   {
     std::unique_lock<std::mutex> lg(send_mutex_);
-    send_batch_.emplace_back();
-    ibv_sge *sge = send_batch_.back().sge;
+    WR wr;
+    ibv_sge *sge = wr.sge;
     sge->addr = addr;
     sge->length = length;
     sge->lkey = lkey;
 
-    ibv_send_wr *send_wr = send_batch_.back().wr;
+    ibv_send_wr *send_wr = wr.wr;
     send_wr->wr_id = 0;
     send_wr->num_sge = 1;
     send_wr->next = NULL;
@@ -40,6 +41,11 @@ bool RDMAManager::remoteWrite(ibv_qp *qp, uint64_t addr, uint32_t lkey, size_t l
     send_wr->send_flags = IBV_SEND_SIGNALED;
     send_wr->wr.rdma.remote_addr = remote_addr;
     send_wr->wr.rdma.rkey = rkey;
+    if (!send_batch_.empty()) {
+      send_batch_.back().wr->next = wr.wr;
+    }
+    send_batch_.push_back(std::move(wr));
+
     if (sync) {
       postSend(cm_id_->qp);
     }
@@ -81,20 +87,21 @@ bool RDMAManager::postSend(ibv_qp *qp) {
     int rc = ibv_poll_cq(cq_, RDMA_MSG_CAP, wc);
     if (rc > 0) {
       assert(rc = send_batch_.size());
-      for (int i = 0; i < rc; i++) {
-        if (IBV_WC_SUCCESS == wc[i].status) {
-          ret = true;
-        } else if (IBV_WC_WR_FLUSH_ERR == wc[i].status) {
-          perror("cmd_send IBV_WC_WR_FLUSH_ERR");
-          goto end;
-        } else if (IBV_WC_RNR_RETRY_EXC_ERR == wc[i].status) {
-          perror("cmd_send IBV_WC_RNR_RETRY_EXC_ERR");
-          goto end;
-        } else {
-          perror("cmd_send ibv_poll_cq status error");
-          goto end;
-        }
+      // for (int i = 0; i < rc; i++) {
+      if (IBV_WC_SUCCESS == wc[0].status) {
+        ret = true;
+      } else if (IBV_WC_WR_FLUSH_ERR == wc[0].status) {
+        perror("cmd_send IBV_WC_WR_FLUSH_ERR");
+        goto end;
+      } else if (IBV_WC_RNR_RETRY_EXC_ERR == wc[0].status) {
+        perror("cmd_send IBV_WC_RNR_RETRY_EXC_ERR");
+        goto end;
+      } else {
+        perror("cmd_send ibv_poll_cq status error");
+        LOG_ERROR("rc %d, no %d, status %s, send batch size %zu", rc, 0, ibv_wc_status_str(wc[0].status), send_batch_.size());
+        goto end;
       }
+      // }
       break;
     } else if (0 == rc) {
       continue;

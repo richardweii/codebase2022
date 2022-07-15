@@ -43,6 +43,7 @@ class MsgBuffer {
       for (int i = 0; i < (int)size_; i++) {
         bool tmp = false;
         if (in_use_[i].compare_exchange_weak(tmp, true)) {
+          LOG_INFO("msg %d", i);
           return &msg_[i];
         }
       }
@@ -70,10 +71,10 @@ class MsgBuffer {
 
  private:
   size_t size_ = RDMA_MSG_CAP;
-  ibv_pd *pd_;
-  ibv_mr *mr_;
-  MessageBlock msg_[RDMA_MSG_CAP];
-  std::atomic<bool> in_use_[RDMA_MSG_CAP];
+  ibv_pd *pd_ = nullptr;
+  ibv_mr *mr_ = nullptr;
+  MessageBlock msg_[RDMA_MSG_CAP] = {};
+  std::atomic<bool> in_use_[RDMA_MSG_CAP] = {};
 };
 
 }  // namespace kv

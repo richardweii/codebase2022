@@ -77,6 +77,12 @@ class RDMAManager {
       sge = new ibv_sge;
       wr = new ibv_send_wr;
     };
+    WR(WR &&w) {
+      sge = w.sge;
+      wr = w.wr;
+      w.sge = nullptr;
+      w.wr = nullptr;
+    }
     ~WR() {
       delete sge;
       delete wr;

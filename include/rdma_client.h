@@ -48,6 +48,7 @@ template <typename Req, typename Resp>
 int RDMAClient::RPC(Req *req, Resp &resp, bool sync) {
   MessageBlock *msg = msg_buffer_->AllocMessage();
   msg->req_block.notify = PREPARED;
+  msg->resp_block.notify = PROCESS;
   memcpy(msg->req_block.message, req, sizeof(Req));
   remoteWrite(cm_id_->qp, (uint64_t)msg, msg_buffer_->Lkey(), sizeof(MessageBlock),
               remote_addr_ + msg_buffer_->MessageIndex(msg) * sizeof(MessageBlock), remote_rkey_, sync);
@@ -62,7 +63,7 @@ int RDMAClient::RPC(Req *req, Resp &resp, bool sync) {
   }
 
   ResponseMsg *resp_msg = (ResponseMsg *)msg->resp_block.message;
-  memcpy(&resp, msg->resp_block.message, sizeof(Resp));
+  memcpy(&resp, resp_msg, sizeof(Resp));
   msg_buffer_->FreeMessage(msg);
   return 0;
 }
