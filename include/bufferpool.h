@@ -73,9 +73,6 @@ class BufferPool NOCOPYABLE {
   bool fetch(uint8_t shard, BlockId id, uint64_t &addr, uint32_t&rkey);
 
   bool lookup(Slice slice, uint64_t &addr, uint32_t &rkey);
-
-  bool free(uint8_t shard, BlockId id);
-
   // write back one datablock for fetching another one from remote if the block holding the key exists.
   bool replacement(Slice key, FrameId &fid);
 
@@ -90,6 +87,8 @@ class BufferPool NOCOPYABLE {
 
   std::unordered_map<BlockId, FrameId> block_table_;
   Latch table_latch_;
+
+  std::unordered_map<BlockId, MemoryAccess> global_table_;
 
   std::list<FrameId> free_list_;
   size_t pool_size_;
