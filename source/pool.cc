@@ -1,97 +1,57 @@
 #include "pool.h"
+#include <cassert>
+#include <cstdint>
+#include "config.h"
 #include "rdma_manager.h"
 #include "stat.h"
 #include "util/defer.h"
-
+#include "util/logging.h"
 
 namespace kv {
 
-Pool::Pool(size_t buffer_pool_size, size_t filter_bits, size_t cache_size, uint8_t shard,
-           RDMAClient *client) {
+Pool::Pool(size_t buffer_pool_size, size_t filter_bits, uint8_t shard, RDMAClient *client) {
   buffer_pool_ = new BufferPool(buffer_pool_size, shard, client);
   filter_length_ = (filter_bits + 7) / 8;
   filter_data_ = new char[filter_length_];
   memtable_ = new MemTable();
-  cache_ = NewLRUCache(cache_size);
 }
 
 Pool::~Pool() {
   delete buffer_pool_;
   delete memtable_;
-  delete cache_;
-  delete[] filter_data_;
 }
 
-bool Pool::Read(Slice key, std::string &val, Ptr<Filter> filter) {
+bool Pool::Read(Slice key, std::string &val) {
   latch_.RLock();
   defer { latch_.RUnlock(); };
-  if (!filter->KeyMayMatch(key, Slice(filter_data_, filter_length_))) {
+  if (!filter_->KeyMayMatch(key, Slice(filter_data_, filter_length_))) {
     return false;
   }
   if (memtable_->Read(key, val)) {
     return true;
   }
-
-  auto cache_handle = cache_->Lookup(key);
-  if (cache_handle != nullptr) {
-    auto &entry = cache_->Value(cache_handle);
-    defer { cache_->Release(cache_handle); };
-
-    buffer_pool_->ReadLockTable();
-    if (buffer_pool_->HasBlock(entry.id)) {
-      BlockHandle *handle = buffer_pool_->GetHandle(entry.id);
-      handle->Read(entry.off, val);
-      buffer_pool_->ReadUnlockTable();
-      stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
-      return true;
-    } else {
-    // cache invalid, need fetch the datablock
-    retry:
-      buffer_pool_->ReadUnlockTable();
-      buffer_pool_->Fetch(key, entry.id);
-      buffer_pool_->ReadLockTable();
-      BlockHandle *handle = buffer_pool_->GetHandle(entry.id);
-      if (handle == nullptr) {
-        // the block fetched have been evicted
-        goto retry;
-      }
-      LOG_ASSERT(handle->GetBlockId() == entry.id, "Invalid handle. expected %d, got %d", handle->GetBlockId(),
-                 entry.id);
-      stat::cache_invalid.fetch_add(1, std::memory_order_relaxed);
-      handle->Read(entry.off, val);
-      buffer_pool_->ReadUnlockTable();
-      return true;
-    }
-  } else {
-    // cache miss
-    CacheEntry entry;
-    auto succ = buffer_pool_->Read(key, val, filter, entry);
-    if (succ) {
-      auto handle = cache_->Insert(key, std::move(entry));
-      cache_->Release(handle);
-    }
-    return true;
-  }
+  return buffer_pool_->Read(key, val);
 }
 
-void Pool::insertIntoMemtable(Slice key, Slice val, Ptr<Filter> filter) {
+void Pool::insertIntoMemtable(Slice key, Slice val) {
   stat::insert_num.fetch_add(1, std::memory_order_relaxed);
   if (memtable_->Full()) {
     stat::block_num.fetch_add(1, std::memory_order_relaxed);
     DataBlock *block = buffer_pool_->GetNewDataBlock();
     // LOG_DEBUG("memtable is full, get new block %d", block->GetId());
     memtable_->BuildDataBlock(block);
+    buffer_pool_->CreateIndex(block);
     memtable_->Reset();
   }
   memtable_->Insert(key, val);
-  filter->AddFilter(key, this->filter_length_ * 8, filter_data_);
+  filter_->AddFilter(key, this->filter_length_ * 8, filter_data_);
 }
 
-bool Pool::Write(Slice key, Slice val, Ptr<Filter> filter) {
+bool Pool::Write(Slice key, Slice val) {
   latch_.WLock();
   defer { latch_.WUnlock(); };
-  if (!filter->KeyMayMatch(key, Slice(filter_data_, filter_length_))) {
-    insertIntoMemtable(key, val, filter);
+  if (!filter_->KeyMayMatch(key, Slice(filter_data_, filter_length_))) {
+    insertIntoMemtable(key, val);
     return true;
   }
 
@@ -100,41 +60,12 @@ bool Pool::Write(Slice key, Slice val, Ptr<Filter> filter) {
     return true;
   }
 
-  auto cache_handle = cache_->Lookup(key);
-  bool ret = false;
-  if (cache_handle != nullptr) {
-    auto &entry = cache_->Value(cache_handle);
-    defer { cache_->Release(cache_handle); };
-
-    if (buffer_pool_->HasBlock(entry.id)) {
-      BlockHandle *handle = buffer_pool_->GetHandle(entry.id);
-      ret = handle->Modify(entry.off, val);
-      LOG_ASSERT(ret, "Invalid cache entry %s.", key.data());
-      stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
-      return true;
-    } else {
-      // cache invalid, need fetch the datablock
-      buffer_pool_->Fetch(key, entry.id);
-      BlockHandle *handle = buffer_pool_->GetHandle(entry.id);
-      LOG_ASSERT(handle->GetBlockId() == entry.id, "Invalid handle.");
-      ret = handle->Modify(entry.off, val);
-      LOG_ASSERT(ret, "Invalid cache entry %s.", key.data());
-      stat::cache_invalid.fetch_add(1, std::memory_order_relaxed);
-      return true;
-    }
-  } else {
-    // cache miss
-    CacheEntry entry;
-    ret = buffer_pool_->Modify(key, val, filter, entry);
-    if (ret) {
-      // in archive
-      auto handle = cache_->Insert(key, std::move(entry));
-      cache_->Release(handle);
-    } else {
-      insertIntoMemtable(key, val, filter);
-    }
-    return true;
+  // cache miss
+  bool succ = buffer_pool_->Modify(key, val);
+  if (!succ) {
+    insertIntoMemtable(key, val);
   }
+  return true;
 }
 
 FrameId RemotePool::findBlock(BlockId id) const {
@@ -144,20 +75,6 @@ FrameId RemotePool::findBlock(BlockId id) const {
     }
   }
   return INVALID_FRAME_ID;
-}
-
-bool RemotePool::FreeDataBlock(BlockId id) {
-  latch_.WLock();
-  defer { latch_.WUnlock(); };
-  FrameId fid = findBlock(id);
-  if (fid == INVALID_FRAME_ID) {
-    // does not exist
-    LOG_ERROR("The block %d to be freed not exists.", id);
-    return false;
-  }
-  getDataBlock(fid)->Free();
-  free_list_.push_back(fid);
-  return true;
 }
 
 MemoryAccess RemotePool::AllocDataBlock() {
@@ -199,15 +116,29 @@ MemoryAccess RemotePool::AccessDataBlock(BlockId id) const {
   return {(uint64_t)getDataBlock(fid), getMr(fid)->rkey};
 }
 
-BlockId RemotePool::Lookup(Slice key, Ptr<Filter> filter) const {
+BlockId RemotePool::Lookup(Slice key) const {
   latch_.RLock();
   defer { latch_.RUnlock(); };
-  for (auto &handle : handles_) {
-    if (handle->Find(key, filter)) {
-      return handle->GetBlockId();
-    }
+  auto node = hash_table_->Find(key);
+  if (node == nullptr) {
+    return INVALID_BLOCK_ID;
   }
-  return INVALID_BLOCK_ID;
+
+  return handles_[node->GetFrameId()]->GetBlockId();
+}
+
+void RemotePool::CreateIndex(BlockId id) {
+  latch_.WLock();
+  defer { latch_.WUnlock(); };
+  FrameId fid = findBlock(id);
+  assert(fid != INVALID_FRAME_ID);
+  auto handle = handles_[fid];
+  auto count = hash_table_->Count();
+  for (uint32_t i = 0; i < handle->EntryNum(); i++) {
+    hash_table_->Insert(Slice(handle->Read(i)->key, kKeyLength), handle->Read(i), fid);
+  }
+  LOG_ASSERT(hash_table_->Count() - count == kItemNum, "Less than expected entries inserted. expected %d, got %lu",
+             kItemNum, hash_table_->Count() - count);
 }
 
 }  // namespace kv

@@ -140,7 +140,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
 
   if (event->event != RDMA_CM_EVENT_ESTABLISHED) {
     perror("RDMA_CM_EVENT_ESTABLISHED fail");
-    LOG_ERROR("RDMA_CM_EVENT_ESTABLISHED fail");
+    LOG_ERROR("RDMA_CM_EVENT_ESTABLISHED fail , got %s",  rdma_event_str(event->event));
     return false;
   }
 

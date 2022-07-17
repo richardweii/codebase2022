@@ -6,6 +6,7 @@
 #include "assert.h"
 #include "atomic"
 #include "config.h"
+#include "hash_table.h"
 #include "kv_engine.h"
 #include "pool.h"
 #include "rdma_client.h"
@@ -26,17 +27,15 @@ namespace kv {
 bool LocalEngine::start(const std::string addr, const std::string port) {
   constexpr size_t buffer_pool_size = kLocalDataSize / kPoolShardNum / kDataBlockSize;
   constexpr size_t filter_bits = 10 * kKeyNum / kPoolShardNum;
-  constexpr size_t cache_size = kCacheSize / kPoolShardNum;
-  LOG_INFO("Create %d pool, each pool with %lu datablock, %lu MB filter data, %lu MB cache", kPoolShardNum,
-           buffer_pool_size, filter_bits / 8 / 1024 / 1024, cache_size / 1024 / 1024);
+  constexpr size_t index_size = kLocalDataSize / kDataBlockSize * kItemNum * sizeof(HashNode) / 1024 / 1024;
+  LOG_INFO("Create %d pool, each pool with %lu datablock, index size %lu MB", kPoolShardNum, buffer_pool_size, index_size);
 
-  bloom_filter_ = NewBloomFilterPolicy();
   client_ = new RDMAClient();
   if (!client_->Init(addr, port)) return false;
   client_->Start();
 
   for (int i = 0; i < kPoolShardNum; i++) {
-    pool_[i] = new Pool(buffer_pool_size, filter_bits, cache_size, i, client_);
+    pool_[i] = new Pool(buffer_pool_size, filter_bits, i, client_);
     pool_[i]->Init();
   }
   return true;
@@ -79,7 +78,7 @@ bool LocalEngine::write(const std::string key, const std::string value) {
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  return pool_[index]->Write(Slice(key), Slice(value), this->bloom_filter_);
+  return pool_[index]->Write(Slice(key), Slice(value));
 }
 
 /**
@@ -92,7 +91,7 @@ bool LocalEngine::read(const std::string key, std::string &value) {
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  return pool_[index]->Read(Slice(key), value, this->bloom_filter_);
+  return pool_[index]->Read(Slice(key), value);
 }
 
 }  // namespace kv

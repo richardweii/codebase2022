@@ -44,7 +44,7 @@ int main(int argc, const char **argv) {
         req.type = CMD_TEST;
 
         DummyResponse resp;
-        int ret = client->RPC(&req, resp, req.sync);
+        int ret = client->RPC(req, resp, req.sync);
 
         std::string res = resp.resp;
 

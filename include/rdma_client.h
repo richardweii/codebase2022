@@ -17,7 +17,7 @@ class RDMAClient : public RDMAManager {
     req.rkey = msg_buffer_->Rkey();
     req.sync = true;
     PingResponse resp;
-    RPC(&req, resp, true);
+    RPC(req, resp, true);
     if (resp.status == RES_FAIL) {
       LOG_ERROR("Connect to remote failed.");
     }
@@ -29,14 +29,14 @@ class RDMAClient : public RDMAManager {
     req.type = CMD_STOP;
 
     StopResponse resp;
-    RPC(&req, resp, true);
+    RPC(req, resp, true);
     if (resp.status == RES_FAIL) {
       LOG_ERROR("Stop failed.");
     }
   }
 
   template <typename Req, typename Resp>
-  int RPC(Req *req, Resp &resp, bool sync = kRDMASync);
+  int RPC(const Req &req, Resp &resp, bool sync = kRDMASync);
 
   int RemoteRead(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey);
 
@@ -47,12 +47,12 @@ class RDMAClient : public RDMAManager {
 };
 
 template <typename Req, typename Resp>
-int RDMAClient::RPC(Req *req, Resp &resp, bool sync) {
+int RDMAClient::RPC(const Req &req, Resp &resp, bool sync) {
   MessageBlock *msg = msg_buffer_->AllocMessage();
   // LOG_INFO("Alloc msg %d", msg_buffer_->MessageIndex(msg));
   msg->req_block.notify = PREPARED;
   msg->resp_block.notify = PROCESS;
-  memcpy(msg->req_block.message, req, sizeof(Req));
+  memcpy(msg->req_block.message, &req, sizeof(Req));
   remoteWrite(cm_id_->qp, (uint64_t)msg, msg_buffer_->Lkey(), sizeof(MessageBlock),
               remote_addr_ + msg_buffer_->MessageAddrOff(msg), remote_rkey_, sync);
 

@@ -11,28 +11,15 @@ namespace kv {
 
 DataBlock *MemTable::BuildDataBlock(DataBlock *datablock) {
   LOG_ASSERT(count_ <= cap_, "Memtable has too many items.");
-
-  // 先生成有序对
-  std::vector<std::pair<Slice, Slice>> items;
-  for (auto &&kv : table_) {
-    items.emplace_back(kv.first.toSlice(), kv.second.toSlice());
-  }
-
-  auto comp = [&](const std::pair<Slice, Slice> &a, const std::pair<Slice, Slice> &b) -> bool {
-    return ::strncmp(a.first.data(), b.first.data(), a.first.size()) < 0;
-  };
-
-  std::sort(items.begin(), items.end(), comp);
-
-  // 顺序写入到DataBlock
+  // 写入到DataBlock
   BlockBuilder builder(datablock);
   int num = 0;
-  for (auto &&kv : items) {
+  for (auto &&kv : table_) {
     num++;
-    builder.Put(std::move(kv.first), std::move(kv.second));
+    builder.Put(kv.first.toSlice(), kv.second.toSlice());
   }
 
-  builder.Finish(this->bloom_filter_);
+  builder.Finish(nullptr);
   return datablock;
 }
 }  // namespace kv

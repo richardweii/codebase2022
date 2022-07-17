@@ -12,6 +12,7 @@
 #include "bufferpool.h"
 #include "cache.h"
 #include "config.h"
+#include "hash_table.h"
 #include "memtable.h"
 #include "rdma_client.h"
 #include "util/filter.h"
@@ -30,27 +31,28 @@ class Pool NOCOPYABLE {
    * @param filter_bits bloom filter bits num 10 * key
    * @param cache_size cache data size
    */
-  Pool(size_t buffer_pool_size, size_t filter_bits, size_t cache_size, uint8_t shard,  RDMAClient *client);
+  Pool(size_t buffer_pool_size, size_t filter_bits, uint8_t shard, RDMAClient *client);
   ~Pool();
 
   void Init() {
     if (!buffer_pool_->Init()) {
       LOG_ERROR("Init bufferpool failed.");
     }
+    filter_ = NewBloomFilterPolicy();
   }
 
-  bool Read(Slice key, std::string &val, Ptr<Filter> filter);
-  bool Write(Slice key, Slice val, Ptr<Filter> filter);
+  bool Read(Slice key, std::string &val);
+  bool Write(Slice key, Slice val);
 
  private:
-  void insertIntoMemtable(Slice key, Slice val, Ptr<Filter> filter);
+  void insertIntoMemtable(Slice key, Slice val);
   char *filter_data_;
   int filter_length_;
 
   MemTable *memtable_;
   RDMAClient *client_;
-  Cache *cache_;
   BufferPool *buffer_pool_;
+  Filter *filter_;
   Latch latch_;
 };
 
@@ -59,10 +61,16 @@ class RemotePool NOCOPYABLE {
   struct MR {
     DataBlock data[kRemoteMrSize / kDataBlockSize];
   };
-  RemotePool(ibv_pd *pd, uint8_t shard) : pd_(pd), shard_(shard) {}
-  // Free a datablock have been fetched from local node
-  bool FreeDataBlock(BlockId id);
-
+  RemotePool(ibv_pd *pd, uint8_t shard) : pd_(pd), shard_(shard) { hash_table_ = new HashTable(kKeyNum); }
+  ~RemotePool() {
+    delete hash_table_;
+    for (auto &ptr : handles_) {
+      delete ptr;
+    }
+    for (auto &ptr : datablocks_) {
+      delete ptr;
+    }
+  }
   // Allocate a datablock for one side write
   MemoryAccess AllocDataBlock();
 
@@ -70,10 +78,13 @@ class RemotePool NOCOPYABLE {
   MemoryAccess AccessDataBlock(BlockId id) const;
 
   // Lookup the key in the pool
-  BlockId Lookup(Slice key, Ptr<Filter> filter) const;
+  BlockId Lookup(Slice key) const;
+
+  void CreateIndex(BlockId id);
 
  private:
   FrameId findBlock(BlockId id) const;
+
   DataBlock *getDataBlock(FrameId id) const {
     constexpr int ratio = kRemoteMrSize / kDataBlockSize;
     int index = id / ratio;
@@ -91,6 +102,7 @@ class RemotePool NOCOPYABLE {
 
   std::vector<ibv_mr *> mr_;
   std::vector<BlockHandle *> handles_;
+  HashTable *hash_table_;
   std::vector<MR *> datablocks_;
   std::list<FrameId> free_list_;
   ibv_pd *pd_;

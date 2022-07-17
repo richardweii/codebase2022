@@ -43,7 +43,6 @@ class LocalEngine : public Engine {
 
   Pool *pool_[kPoolShardNum];
   RDMAClient *client_;
-  Filter* bloom_filter_;
 };
 
 /* Remote-side engine */

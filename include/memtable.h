@@ -19,9 +19,7 @@ namespace kv {
 
 class MemTable NOCOPYABLE {
  public:
-  MemTable(int cap = kItemNum) : cap_(cap) {
-    this->bloom_filter_ = NewBloomFilterPolicy();
-  }
+  MemTable(int cap = kItemNum) : cap_(cap) {}
   bool Insert(Slice key, Slice value) {
     Key k(key);
     if (!table_.count(k)) {
@@ -57,7 +55,6 @@ class MemTable NOCOPYABLE {
   std::unordered_map<Key, Value, Key::InternalHash, Key::InternalEqual> table_;
   int count_ = 0;
   int cap_;
-  Filter* bloom_filter_;
 };
 
 }  // namespace kv

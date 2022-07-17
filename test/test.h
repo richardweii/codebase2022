@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 #include "config.h"
-#include "kv_engine.h"
 #include "test.h"
 #include "util/logging.h"
 

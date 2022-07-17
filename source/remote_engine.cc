@@ -29,7 +29,7 @@ bool RemoteEngine::start(const std::string addr, const std::string port) {
   for (int i = 0; i < kPoolShardNum; i++) {
     pool_[i] = new RemotePool(server_->Pd(), i);
   }
-  
+
   server_->Start();
   return true;
 }
@@ -46,9 +46,7 @@ bool RemoteEngine::alive() {  // TODO
  * @description: stop local engine service
  * @return {void}
  */
-void RemoteEngine::stop() {
-  server_->Stop();
-}
+void RemoteEngine::stop() { server_->Stop(); }
 
 void RemoteEngine::handler(RPCTask *task) {
   switch (task->RequestType()) {
@@ -72,7 +70,7 @@ void RemoteEngine::handler(RPCTask *task) {
       uint32_t hash = Hash(key.data(), kKeyLength, kPoolHashSeed);
       int index = Shard(hash);
       LOG_DEBUG("Lookup msg, key %s, shard %d", key.data(), index);
-      BlockId id = pool_[index]->Lookup(key, this->bloom_filter_);
+      BlockId id = pool_[index]->Lookup(key);
 
       LookupResponse resp;
       if (id == INVALID_BLOCK_ID) {
@@ -89,31 +87,18 @@ void RemoteEngine::handler(RPCTask *task) {
       LOG_DEBUG("Response Lookup %s msg, blockid %d", key.data(), id);
       break;
     }
-    case MSG_FETCH: {
-      FetchRequest *req = task->GetRequest<FetchRequest>();
-      LOG_DEBUG("Fetch msg,, shard %d, block %d", req->shard, req->id);
-      auto access = pool_[req->shard]->AccessDataBlock(req->id);
+    case MSG_CREATE: {
+      CreateIndexRequest *req = task->GetRequest<CreateIndexRequest>();
+      uint8_t shard = req->shard;
+      BlockId id = req->id;
 
-      FetchResponse resp;
-      resp.addr = access.addr;
-      resp.rkey = access.rkey;
+      CreateIndexResponse resp;
       resp.status = RES_OK;
-
       task->SetResponse(resp);
-      LOG_DEBUG("Response Fetch msg, blockid %d", req->id);
-      break;
-    }
-    case MSG_FREE: {
-      FreeRequest *req = task->GetRequest<FreeRequest>();
-      LOG_DEBUG("Free msg, shard %d block %d:", req->shard, req->id);
-      auto ret = pool_[req->shard]->FreeDataBlock(req->id);
-      LOG_ASSERT(ret, "Failed to free block %d", req->id);
+      LOG_DEBUG("Create Index, shard %d, blockid %d", req->shard, req->id);
 
-      FreeResponse resp;
-      resp.status = RES_OK;
-
-      task->SetResponse(resp);
-      LOG_DEBUG("Response Free msg, blockid %d", req->id);
+      // create index async
+      pool_[shard]->CreateIndex(id);
       break;
     }
     default:

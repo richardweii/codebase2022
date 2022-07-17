@@ -37,9 +37,7 @@ enum DataBlockState {
  */
 class DataBlock NOCOPYABLE {
  public:
-  DataBlock() {
-    static_assert(kDataBlockSize - kDataSize - kFilterSize >= kBlockMetaDataSize, "No space for Meta Data.");
-  }
+  DataBlock() { static_assert(kDataBlockSize - kDataSize >= kBlockMetaDataSize, "No space for Meta Data."); }
 
   char *Data() { return data_; }
 
@@ -66,27 +64,15 @@ class DataBlock NOCOPYABLE {
   char data_[kDataBlockSize];
 };
 
-struct CacheEntry;
+struct Entry {
+  char key[kKeyLength];
+  char value[kValueLength];
+};
 
 class BlockHandle {
  public:
-  struct Item {
-    char key[kKeyLength];
-    char value[kValueLength];
-  };
   BlockHandle(DataBlock *datablock);
-
-  bool Read(Slice key, std::string &value, Ptr<Filter> filter, CacheEntry &entry) const;
-  bool Modify(Slice key, Slice value, Ptr<Filter> filter, CacheEntry &entry);
-
-  bool Read(size_t off, std::string &value) const;
-  bool Modify(size_t off, Slice value);
-
-  void Lock(size_t item_index) const {
-    while (locks_[item_index].test_and_set())
-      ;
-  }
-  void Unlock(size_t item_index) const { locks_[item_index].clear(); }
+  Entry *Read(size_t off) const;
 
   BlockId GetBlockId() const { return datablock_->GetId(); }
 
@@ -94,14 +80,8 @@ class BlockHandle {
 
   uint32_t EntryNum() const { return datablock_->GetEntryNum(); }
 
-  bool Find(Slice key, Ptr<Filter> filter, int *index = nullptr) const;
-
  private:
-  int binarySearch(Slice key) const;
-
-  mutable std::atomic_flag locks_[kItemNum] = {ATOMIC_FLAG_INIT};
   DataBlock *datablock_ = nullptr;
-  Item *items_ = nullptr;
-  char *filter_data_ = nullptr;
+  Entry *items_ = nullptr;
 };
 }  // namespace kv

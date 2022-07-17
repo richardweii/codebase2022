@@ -21,7 +21,6 @@ class BlockBuilder {
   // 向块中插入
   void Put(Slice key, Slice value);
 
-  // 生成尾部的过滤器字段
   void Finish(Ptr<Filter> filter);
 
  private:

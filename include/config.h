@@ -24,26 +24,23 @@ constexpr int kOneSideWorkerNum = 16;
 constexpr int kPoolHashSeed = 0x89ea7d2f;
 
 constexpr int kPoolShardBits = 5;
-// constexpr int kPoolShardBits = 1;
+// constexpr int kPoolShardBits = 1;   // for test
 constexpr int kPoolShardNum = 1 << kPoolShardBits;
+
+constexpr int kKeyLength = 16;
+constexpr int kValueLength = 128;
+
+constexpr int kDataBlockSize = 16 * 1024;  // 16KB
+// constexpr int kDataBlockSize = 2 * 1024;  // for test
+constexpr int kItemNum = kDataBlockSize / (kKeyLength + kValueLength);
+constexpr int kDataSize = kItemNum * (kKeyLength + kValueLength);
+
+constexpr size_t kLocalDataSize = (size_t)6 * 1024 * 1024 * 1024;  // local data
+constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                  // 16 * 12M key
 
 // for test
 // constexpr size_t kLocalDataSize = (size_t)4 * 16 * 1024;  // 128KB = 16 * 8
 // constexpr size_t kKeyNum = 16 * 100;                      // 16 * 12 * 32K key
-// constexpr size_t kCacheSize = 2 * 16 * 1024;                  // 32KB cache
-
-constexpr size_t kLocalDataSize = (size_t)4 * 1024 * 1024 * 1024;  // 4GB local data
-constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                  // 16 * 12M key
-constexpr size_t kCacheSize = (size_t)2 * 1024 * 1024 * 1024;      // 2GB cache
-
-constexpr int kKeyLength = 16;
-constexpr int kValueLength = 128;
-constexpr int kBloomFilterBitsPerKey = 10;
-constexpr int kDataBlockSize = 32 * 1024 * 1024;  // 4MB
-// constexpr int kDataBlockSize = 2 * 1024;  // 16KB
-constexpr int kItemNum = kDataBlockSize * 8 / (kKeyLength * 8 + kValueLength * 8 + kBloomFilterBitsPerKey);
-constexpr int kDataSize = kItemNum * (kKeyLength + kValueLength);
-constexpr int kFilterSize = (kItemNum * kBloomFilterBitsPerKey + 7) / 8;
 
 constexpr int kAlign = 8;  // kAlign show be powers of 2, say 2, 4 ,8, 16, 32, ...
 inline constexpr int roundUp(unsigned int nBytes) { return ((nBytes) + (kAlign - 1)) & ~(kAlign - 1); }
