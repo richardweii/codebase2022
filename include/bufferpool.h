@@ -23,6 +23,36 @@ namespace kv {
 
 class BufferPool NOCOPYABLE {
  public:
+  class BufferPoolHashHandler : public HashHandler {
+   public:
+    BufferPoolHashHandler(BufferPool *buffer_pool) : buffer_pool_(buffer_pool){};
+    Slice GetKey(uint64_t data_handle) override {
+      BlockId bid = data_handle >> 32;
+      int off = data_handle << 32 >> 32;
+
+      LOG_ASSERT(buffer_pool_->block_table_.count(bid) == 1, "invalid block id %d", bid);
+      FrameId fid = buffer_pool_->block_table_[bid];
+      auto handle = buffer_pool_->handles_[fid];
+      return Slice(handle->Read(off)->key, kKeyLength);
+    };
+
+    FrameId GetFrameId(uint64_t data_handle) {
+      BlockId bid = data_handle >> 32;
+      LOG_ASSERT(buffer_pool_->block_table_.count(bid) == 1, "invalid block id %d", bid);
+      FrameId fid = buffer_pool_->block_table_[bid];
+      return fid;
+    };
+
+    Entry *GetEntry(uint64_t data_handle) {
+      FrameId fid = GetFrameId(data_handle);
+      int off = data_handle << 32 >> 32;
+      auto handle = buffer_pool_->handles_[fid];
+      return handle->Read(off);
+    }
+
+    BufferPool *buffer_pool_;
+  };
+
   BufferPool(size_t size, uint8_t shard, RDMAClient *client);
   ~BufferPool() {
     auto ret = ibv_dereg_mr(mr_);
@@ -35,6 +65,7 @@ class BufferPool NOCOPYABLE {
       delete kv.second;
     }
     delete hash_table_;
+    delete handler_;
   }
 
   // init local memory regestration
@@ -49,7 +80,7 @@ class BufferPool NOCOPYABLE {
   // modify the value if the key exists
   bool Modify(Slice key, Slice value);
 
-  void CreateIndex(DataBlock *block) { 
+  void CreateIndex(DataBlock *block) {
     std::lock_guard<std::mutex> guard(mutex_);
     FrameId fid = block_table_[block->GetId()];
     assert(fid != INVALID_FRAME_ID);
@@ -57,7 +88,7 @@ class BufferPool NOCOPYABLE {
   }
 
  private:
-  bool alloc(uint8_t shard, uint64_t &addr, uint32_t &rkey);
+  bool alloc(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey);
 
   bool lookup(Slice slice, uint64_t &addr, uint32_t &rkey);
   // write back one datablock for fetching another one from remote if the block holding the key exists.
@@ -76,6 +107,7 @@ class BufferPool NOCOPYABLE {
   ibv_pd *pd_ = nullptr;
   ibv_mr *mr_ = nullptr;  // one mr
 
+  BufferPoolHashHandler *handler_;
   uint8_t shard_;
 
   HashTable *hash_table_;

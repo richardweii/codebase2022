@@ -1,4 +1,5 @@
 #pragma once
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include "config.h"
@@ -13,36 +14,37 @@ constexpr static const unsigned long PrimeList[] = {
     393241ul,    786433ul,    1572869ul,   3145739ul,    6291469ul,    12582917ul,  25165843ul, 50331653ul, 100663319ul,
     201326611ul, 402653189ul, 805306457ul, 1610612741ul, 3221225473ul, 4294967291ul};
 
+constexpr static uint64_t INVALID_HANDLE = ~0;
+
+class HashHandler {
+ public:
+  virtual ~HashHandler(){};
+  virtual Slice GetKey(uint64_t data_handle) = 0;
+};
+
 class HashNode {
  public:
   friend class HashTable;
   HashNode() = default;
-  HashNode(void *data, FrameId id = INVALID_FRAME_ID) : data_(data), fid_(id){};
+  HashNode(uint64_t data_handle) : data_handle_(data_handle){};
 
   HashNode *Next() const { return next_; }
   void SetNext(HashNode *next) { next_ = next; }
 
-  bool IsValid() const { return data_ != nullptr; }
+  bool IsValid() const { return data_handle_ != INVALID_HANDLE; }
 
-  template <typename Tp>
-  Tp *GetEntry() const {
-    return reinterpret_cast<Tp *>(data_);
-  }
-  void SetEntry(void *data) { data_ = data; }
-
-  FrameId GetFrameId() const { return fid_; }
+  uint64_t Handle() const { return data_handle_; }
 
  private:
   HashNode *next_ = nullptr;
-  void *data_ = nullptr;  // first K bytes must be key data
-  FrameId fid_;
+  uint64_t data_handle_ = INVALID_HANDLE;
 };
 
 class HashTable {
  public:
   static uint32_t Hash(Slice key) { return kv::Hash(key.data(), key.size(), hash_seed_); }
 
-  HashTable(size_t size) : size_(size) {
+  HashTable(size_t size, HashHandler *handler) : handler_(handler), size_(size) {
     int logn = 0;
     while (size >= 2) {
       size /= 2;
@@ -76,7 +78,7 @@ class HashTable {
     }
 
     while (slot != nullptr) {
-      if (key == Slice((const char *)slot->data_, key.size())) {
+      if (key == handler_->GetKey(slot->data_handle_)) {
         return slot;
       }
       slot = slot->next_;
@@ -84,20 +86,19 @@ class HashTable {
     return nullptr;
   }
 
-  void Insert(Slice key, void *data, FrameId id = INVALID_FRAME_ID) {
+  void Insert(Slice key, uint64_t data_handle) {
     uint32_t index = Hash(key) % size_;
     HashNode *slot = &slots_[index];
 
     if (!slot->IsValid()) {
-      slot->data_ = data;
-      slot->fid_ = id;
+      slot->data_handle_ = data_handle;
       count_++;
       return;
     }
 
     // find
     while (slot != nullptr) {
-      if (key == Slice((const char *)slot->data_, key.size())) {
+      if (key == handler_->GetKey(slot->data_handle_)) {
         // duplicate
         return;
       }
@@ -106,7 +107,7 @@ class HashTable {
 
     // insert into head
     slot = slots_[index].next_;
-    slots_[index].next_ = new HashNode(data, id);
+    slots_[index].next_ = new HashNode(data_handle);
     slots_[index].next_->next_ = slot;
     count_++;
   }
@@ -120,15 +121,14 @@ class HashTable {
     }
 
     // head
-    if (key == Slice((const char *)slot->data_, key.size())) {
+    if (key == handler_->GetKey(slot->data_handle_)) {
       if (slot->next_ != nullptr) {
         HashNode *tmp = slot->next_;
         *slot = *slot->next_;
         delete tmp;
       } else {
-        slot->data_ = nullptr;
+        slot->data_handle_ = INVALID_HANDLE;
         slot->next_ = nullptr;
-        slot->fid_ = INVALID_FRAME_ID;
       }
       count_--;
       return true;
@@ -137,7 +137,7 @@ class HashTable {
     // find
     HashNode *front = slot;
     while (slot != nullptr) {
-      if (key == Slice((const char *)slot->data_, key.size())) {
+      if (key == handler_->GetKey(slot->data_handle_)) {
         front->next_ = slot->next_;
         delete slot;
         count_--;
@@ -155,6 +155,7 @@ class HashTable {
 
  private:
   constexpr static uint32_t hash_seed_ = 0xf6ec23d9;
+  HashHandler *handler_;
   HashNode *slots_ = nullptr;
   size_t count_ = 0;
   size_t size_ = 0;

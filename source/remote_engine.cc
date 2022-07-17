@@ -53,7 +53,7 @@ void RemoteEngine::handler(RPCTask *task) {
     case MSG_ALLOC: {
       AllocRequest *req = task->GetRequest<AllocRequest>();
       LOG_DEBUG("Alloc msg, shard %d:", req->shard);
-      auto access = pool_[req->shard]->AllocDataBlock();
+      auto access = pool_[req->shard]->AllocDataBlock(req->bid);
       LOG_DEBUG("Alloc successfully, prepare response.");
 
       AllocResponse resp;

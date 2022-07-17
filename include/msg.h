@@ -68,8 +68,9 @@ struct StopResponse : public ResponseMsg {};
 CHECK_RDMA_MSG_SIZE(StopResponse);
 
 struct AllocRequest : public RequestsMsg {
-  uint8_t shard;
   uint64_t size;
+  BlockId bid;
+  uint8_t shard;
 };
 CHECK_RDMA_MSG_SIZE(AllocRequest);
 

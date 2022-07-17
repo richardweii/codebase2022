@@ -69,21 +69,20 @@ bool Pool::Write(Slice key, Slice val) {
 }
 
 FrameId RemotePool::findBlock(BlockId id) const {
-  for (size_t i = 0; i < handles_.size(); i++) {
-    if (handles_[i]->GetBlockId() == id) {
-      return i;
-    }
+  if (block_table_.count(id)) {
+    return block_table_.at(id);
   }
   return INVALID_FRAME_ID;
 }
 
-MemoryAccess RemotePool::AllocDataBlock() {
+MemoryAccess RemotePool::AllocDataBlock(BlockId bid) {
   latch_.WLock();
   defer { latch_.WUnlock(); };
   if (!free_list_.empty()) {
     FrameId fid = free_list_.front();
     free_list_.pop_front();
     static_assert(sizeof(void *) == sizeof(uint64_t), "Pointer should be 8 bytes.");
+    block_table_[bid] = fid;
     return {(uint64_t)getDataBlock(fid), getMr(fid)->rkey};
   }
 
@@ -101,6 +100,7 @@ MemoryAccess RemotePool::AllocDataBlock() {
   LOG_ASSERT(mr != nullptr, "Registrate new datablock failed.");
   mr_.push_back(mr);
   LOG_DEBUG("Registrate %d datablock", num);
+  block_table_[bid] = cur;
   return {(uint64_t)datablocks_.back()->data, mr_.back()->rkey};
 }
 
@@ -124,7 +124,7 @@ BlockId RemotePool::Lookup(Slice key) const {
     return INVALID_BLOCK_ID;
   }
 
-  return handles_[node->GetFrameId()]->GetBlockId();
+  return handles_[handler_->GetFrameId(node->Handle())]->GetBlockId();
 }
 
 void RemotePool::CreateIndex(BlockId id) {
@@ -135,7 +135,8 @@ void RemotePool::CreateIndex(BlockId id) {
   auto handle = handles_[fid];
   auto count = hash_table_->Count();
   for (uint32_t i = 0; i < handle->EntryNum(); i++) {
-    hash_table_->Insert(Slice(handle->Read(i)->key, kKeyLength), handle->Read(i), fid);
+    uint64_t data_handle = (uint64_t)id << 32 | i;
+    hash_table_->Insert(Slice(handle->Read(i)->key, kKeyLength), data_handle);
   }
   LOG_ASSERT(hash_table_->Count() - count == kItemNum, "Less than expected entries inserted. expected %d, got %lu",
              kItemNum, hash_table_->Count() - count);

@@ -31,7 +31,8 @@ BufferPool::BufferPool(size_t size, uint8_t shard, RDMAClient *client) {
   for (size_t i = 0; i < size; i++) {
     handles_.emplace_back(new BlockHandle(&datablocks_[i]));
   }
-  hash_table_ = new HashTable(size * kItemNum);
+  handler_ = new BufferPoolHashHandler(this);
+  hash_table_ = new HashTable(size * kItemNum, handler_);
   client_ = client;
   pd_ = client->Pd();
   // Initially, every page is in the free list.
@@ -77,7 +78,7 @@ DataBlock *BufferPool::GetNewDataBlock() {
     bool alloced = false;
     if (!global_table_.count(old_bid)) {
       LOG_DEBUG("Request new datablock from remote...");
-      succ = alloc(shard_, addr, rkey);
+      succ = alloc(shard_, old_bid, addr, rkey);
       LOG_DEBUG("write block %d to addr %lx, rkey %x", old_bid, addr, rkey);
       global_table_[old_bid].addr = addr;
       global_table_[old_bid].rkey = rkey;
@@ -109,11 +110,12 @@ DataBlock *BufferPool::GetNewDataBlock() {
   return &datablocks_[frame_id];
 }
 
-bool BufferPool::alloc(uint8_t shard, uint64_t &addr, uint32_t &rkey) {
+bool BufferPool::alloc(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey) {
   AllocRequest req;
   req.shard = shard;
   req.size = kDataBlockSize;
   req.type = MSG_ALLOC;
+  req.bid = id;
   req.rid = getRid();
   req.sync = false;
 
@@ -192,7 +194,7 @@ bool BufferPool::replacement(Slice key, FrameId &fid) {
   bool alloced = false;
   if (!global_table_.count(victim)) {
     LOG_DEBUG("Request new datablock for replace block %d", victim);
-    succ = alloc(shard_, write_addr, write_rkey);
+    succ = alloc(shard_, victim, write_addr, write_rkey);
     LOG_ASSERT(succ, "Alloc Failed.");
     global_table_[victim].addr = write_addr;
     global_table_[victim].rkey = write_rkey;
@@ -308,8 +310,8 @@ bool BufferPool::Read(Slice key, std::string &value) {
 
   auto node = hash_table_->Find(key);
   if (node != nullptr) {
-    renew(node->GetFrameId());
-    auto ent = node->GetEntry<Entry>();
+    renew(handler_->GetFrameId(node->Handle()));
+    auto ent = handler_->GetEntry(node->Handle());
     value.resize(kValueLength);
     memcpy((char *)value.c_str(), ent->value, kValueLength);
     return true;
@@ -323,7 +325,7 @@ bool BufferPool::Read(Slice key, std::string &value) {
 
   node = hash_table_->Find(key);
   LOG_ASSERT(node != nullptr, "Fetched invalid datablock.");
-  auto ent = node->GetEntry<Entry>();
+  auto ent = handler_->GetEntry(node->Handle());
   value.resize(kValueLength);
   memcpy((char *)value.c_str(), ent->value, kValueLength);
   return true;
@@ -334,8 +336,8 @@ bool BufferPool::Modify(Slice key, Slice value) {
 
   auto node = hash_table_->Find(key);
   if (node != nullptr) {
-    renew(node->GetFrameId());
-    auto ent = node->GetEntry<Entry>();
+    renew(handler_->GetFrameId(node->Handle()));
+    auto ent = handler_->GetEntry(node->Handle());
     memcpy(ent->value, value.data(), kValueLength);
     return true;
   }
@@ -348,7 +350,7 @@ bool BufferPool::Modify(Slice key, Slice value) {
 
   node = hash_table_->Find(key);
   LOG_ASSERT(node != nullptr, "Fetched invalid datablock.");
-  auto ent = node->GetEntry<Entry>();
+  auto ent = handler_->GetEntry(node->Handle());
   memcpy(ent->value, value.data(), kValueLength);
   return true;
 }
@@ -367,9 +369,12 @@ void BufferPool::prune(BlockHandle *handle) {
 void BufferPool::createIndex(BlockHandle *handle) {
   auto count = hash_table_->Count();
   for (uint32_t i = 0; i < handle->EntryNum(); i++) {
-    FrameId fid = block_table_[handle->GetBlockId()];
+    BlockId bid = handle->GetBlockId();
+    FrameId fid = block_table_[bid];
     assert(fid != INVALID_FRAME_ID);
-    hash_table_->Insert(Slice(handle->Read(i)->key, kKeyLength), handle->Read(i), fid);
+    uint64_t data_handle = (uint64_t)bid << 32 | i;
+
+    hash_table_->Insert(Slice(handle->Read(i)->key, kKeyLength), data_handle);
   }
   LOG_ASSERT(hash_table_->Count() - count == kItemNum, "Less than expected entries inserted. expected %d, got %lu",
              kItemNum, hash_table_->Count() - count);

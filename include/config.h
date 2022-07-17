@@ -35,7 +35,7 @@ constexpr int kDataBlockSize = 16 * 1024;  // 16KB
 constexpr int kItemNum = kDataBlockSize / (kKeyLength + kValueLength);
 constexpr int kDataSize = kItemNum * (kKeyLength + kValueLength);
 
-constexpr size_t kLocalDataSize = (size_t)6 * 1024 * 1024 * 1024;  // local data
+constexpr size_t kLocalDataSize = (size_t)5 * 1024 * 1024 * 1024;  // local data
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                  // 16 * 12M key
 
 // for test

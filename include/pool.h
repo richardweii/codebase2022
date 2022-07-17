@@ -58,10 +58,42 @@ class Pool NOCOPYABLE {
 
 class RemotePool NOCOPYABLE {
  public:
+  class RemotePoolHashHandler : public HashHandler {
+   public:
+    RemotePoolHashHandler(RemotePool *pool) : pool_(pool){};
+    Slice GetKey(uint64_t data_handle) override {
+      BlockId bid = data_handle >> 32;
+      int off = data_handle << 32 >> 32;
+
+      LOG_ASSERT(pool_->block_table_.count(bid) == 1, "invalid block id %d", bid);
+      FrameId fid = pool_->block_table_[bid];
+      auto handle = pool_->handles_[fid];
+      return Slice(handle->Read(off)->key, kKeyLength);
+    };
+
+    FrameId GetFrameId(uint64_t data_handle) {
+      BlockId bid = data_handle >> 32;
+      LOG_ASSERT(pool_->block_table_.count(bid) == 1, "invalid block id %d", bid);
+      FrameId fid = pool_->block_table_[bid];
+      return fid;
+    };
+
+    Entry *GetEntry(uint64_t data_handle) {
+      FrameId fid = GetFrameId(data_handle);
+      int off = data_handle << 32 >> 32;
+      auto handle = pool_->handles_[fid];
+      return handle->Read(off);
+    }
+
+    RemotePool *pool_;
+  };
   struct MR {
     DataBlock data[kRemoteMrSize / kDataBlockSize];
   };
-  RemotePool(ibv_pd *pd, uint8_t shard) : pd_(pd), shard_(shard) { hash_table_ = new HashTable(kKeyNum); }
+  RemotePool(ibv_pd *pd, uint8_t shard) : pd_(pd), shard_(shard) {
+    handler_ = new RemotePoolHashHandler(this);
+    hash_table_ = new HashTable(kKeyNum / kPoolShardNum, handler_);
+  }
   ~RemotePool() {
     delete hash_table_;
     for (auto &ptr : handles_) {
@@ -70,9 +102,10 @@ class RemotePool NOCOPYABLE {
     for (auto &ptr : datablocks_) {
       delete ptr;
     }
+    delete handler_;
   }
   // Allocate a datablock for one side write
-  MemoryAccess AllocDataBlock();
+  MemoryAccess AllocDataBlock(BlockId bid);
 
   // Access to a valid datablock for coming one side read
   MemoryAccess AccessDataBlock(BlockId id) const;
@@ -100,7 +133,9 @@ class RemotePool NOCOPYABLE {
     return mr_[index];
   }
 
+  RemotePoolHashHandler *handler_;
   std::vector<ibv_mr *> mr_;
+  std::unordered_map<BlockId, FrameId> block_table_;
   std::vector<BlockHandle *> handles_;
   HashTable *hash_table_;
   std::vector<MR *> datablocks_;
