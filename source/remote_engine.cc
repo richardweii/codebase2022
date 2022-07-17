@@ -59,8 +59,8 @@ void RemoteEngine::handler(RPCTask *task) {
       LOG_DEBUG("Alloc successfully, prepare response.");
 
       AllocResponse resp;
-      resp.addr = access.data;
-      resp.rkey = access.key;
+      resp.addr = access.addr;
+      resp.rkey = access.rkey;
       resp.status = RES_OK;
       task->SetResponse(resp, req->sync);
       LOG_DEBUG("Response Alloc msg...");
@@ -80,8 +80,8 @@ void RemoteEngine::handler(RPCTask *task) {
         LOG_DEBUG("Failed to find key %s", key.data());
       } else {
         auto access = pool_[index]->AccessDataBlock(id);
-        resp.addr = access.data;
-        resp.rkey = access.key;
+        resp.addr = access.addr;
+        resp.rkey = access.rkey;
         resp.status = RES_OK;
       }
 
@@ -95,8 +95,8 @@ void RemoteEngine::handler(RPCTask *task) {
       auto access = pool_[req->shard]->AccessDataBlock(req->id);
 
       FetchResponse resp;
-      resp.addr = access.data;
-      resp.rkey = access.key;
+      resp.addr = access.addr;
+      resp.rkey = access.rkey;
       resp.status = RES_OK;
 
       task->SetResponse(resp);

@@ -18,6 +18,11 @@
 
 namespace kv {
 
+struct MemoryAccess {
+  uint64_t addr;
+  uint32_t rkey;
+};
+
 /* The RDMA connection queue */
 class ConnQue {
  public:

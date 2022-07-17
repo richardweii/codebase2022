@@ -56,10 +56,6 @@ class Pool NOCOPYABLE {
 
 class RemotePool NOCOPYABLE {
  public:
-  struct MemoryAccess {
-    uint64_t data;
-    uint32_t key;
-  };
   struct MR {
     DataBlock data[kRemoteMrSize / kDataBlockSize];
   };

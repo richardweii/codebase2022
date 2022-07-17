@@ -1,4 +1,5 @@
 #include "pool.h"
+#include "rdma_manager.h"
 #include "stat.h"
 #include "util/defer.h"
 
@@ -159,7 +160,7 @@ bool RemotePool::FreeDataBlock(BlockId id) {
   return true;
 }
 
-RemotePool::MemoryAccess RemotePool::AllocDataBlock() {
+MemoryAccess RemotePool::AllocDataBlock() {
   latch_.WLock();
   defer { latch_.WUnlock(); };
   if (!free_list_.empty()) {
@@ -186,7 +187,7 @@ RemotePool::MemoryAccess RemotePool::AllocDataBlock() {
   return {(uint64_t)datablocks_.back()->data, mr_.back()->rkey};
 }
 
-RemotePool::MemoryAccess RemotePool::AccessDataBlock(BlockId id) const {
+MemoryAccess RemotePool::AccessDataBlock(BlockId id) const {
   latch_.RLock();
   defer { latch_.RUnlock(); };
   FrameId fid = findBlock(id);
