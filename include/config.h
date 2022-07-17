@@ -30,7 +30,7 @@ constexpr int kPoolShardNum = 1 << kPoolShardBits;
 constexpr int kKeyLength = 16;
 constexpr int kValueLength = 128;
 
-constexpr int kDataBlockSize = 64 * 1024;  // 16KB
+constexpr int kDataBlockSize = 1 * 1024 * 1024;  // 16KB
 // constexpr int kDataBlockSize = 2 * 1024;  // for test
 constexpr int kItemNum = kDataBlockSize / (kKeyLength + kValueLength);
 constexpr int kDataSize = kItemNum * (kKeyLength + kValueLength);
