@@ -1,4 +1,3 @@
-#include <unistd.h>
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
@@ -88,11 +87,11 @@ int main() {
               if (prob == 0) {
                 // wirte;
                 auto succ = local_engine->write(k[zipf_index[i * read_write_mix_op + j]].to_string(), write_value);
-                EXPECT(succ, "MIX [thread %d] failed to write %d", gettid(), zipf_index[i * read_write_mix_op + j]);
+                EXPECT(succ, "MIX [thread %d] failed to write %d", i, zipf_index[i * read_write_mix_op + j]);
               } else {
                 // read
                 auto succ = local_engine->read(k[zipf_index[i * read_write_mix_op + j]].to_string(), read_value);
-                EXPECT(succ, "MIX [thread %d] failed to read %d", gettid(), zipf_index[i * read_write_mix_op + j]);
+                EXPECT(succ, "MIX [thread %d] failed to read %d", i, zipf_index[i * read_write_mix_op + j]);
               }
             }
           },
