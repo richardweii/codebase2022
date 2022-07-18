@@ -61,6 +61,7 @@ double rand_val(int seed);                // Jain's RNG
 //=  Function to generate Zipf (power law) distributed random variables     =
 //=    - Input: alpha and N                                                 =
 //=    - Output: Returns with Zipf distributed random variable              =
+//=                           Not Thread Safe                               =
 //===========================================================================
 inline uint32_t zipf(uint32_t n, double alpha = 1.0) {
   static bool first = true;   // Static first time flag

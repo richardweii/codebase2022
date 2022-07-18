@@ -62,19 +62,14 @@ class RemotePool NOCOPYABLE {
    public:
     RemotePoolHashHandler(RemotePool *pool) : pool_(pool){};
     Slice GetKey(uint64_t data_handle) override {
-      BlockId bid = data_handle >> 32;
+      FrameId fid = data_handle >> 32;
       int off = data_handle << 32 >> 32;
-
-      LOG_ASSERT(pool_->block_table_.count(bid) == 1, "invalid block id %d", bid);
-      FrameId fid = pool_->block_table_[bid];
       auto handle = pool_->handles_[fid];
       return Slice(handle->Read(off)->key, kKeyLength);
     };
 
     FrameId GetFrameId(uint64_t data_handle) {
-      BlockId bid = data_handle >> 32;
-      LOG_ASSERT(pool_->block_table_.count(bid) == 1, "invalid block id %d", bid);
-      FrameId fid = pool_->block_table_[bid];
+      FrameId fid = data_handle >> 32;
       return fid;
     };
 
@@ -84,6 +79,8 @@ class RemotePool NOCOPYABLE {
       auto handle = pool_->handles_[fid];
       return handle->Read(off);
     }
+
+    uint64_t GenHandle(FrameId fid, int off) { return (uint64_t)fid << 32 | off; }
 
     RemotePool *pool_;
   };

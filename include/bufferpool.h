@@ -17,6 +17,7 @@
 #include "util/logging.h"
 #include "util/nocopy.h"
 #include "util/rwlock.h"
+#include "util/defer.h"
 #include "util/slice.h"
 
 namespace kv {
@@ -27,19 +28,14 @@ class BufferPool NOCOPYABLE {
    public:
     BufferPoolHashHandler(BufferPool *buffer_pool) : buffer_pool_(buffer_pool){};
     Slice GetKey(uint64_t data_handle) override {
-      BlockId bid = data_handle >> 32;
+      FrameId fid = data_handle >> 32;
       int off = data_handle << 32 >> 32;
-
-      LOG_ASSERT(buffer_pool_->block_table_.count(bid) == 1, "invalid block id %d", bid);
-      FrameId fid = buffer_pool_->block_table_[bid];
       auto handle = buffer_pool_->handles_[fid];
       return Slice(handle->Read(off)->key, kKeyLength);
     };
 
     FrameId GetFrameId(uint64_t data_handle) {
-      BlockId bid = data_handle >> 32;
-      LOG_ASSERT(buffer_pool_->block_table_.count(bid) == 1, "invalid block id %d", bid);
-      FrameId fid = buffer_pool_->block_table_[bid];
+      FrameId fid = data_handle >> 32;
       return fid;
     };
 
@@ -50,6 +46,7 @@ class BufferPool NOCOPYABLE {
       return handle->Read(off);
     }
 
+    uint64_t GenHandle(FrameId fid, int off) { return (uint64_t)fid << 32 | off; }
     BufferPool *buffer_pool_;
   };
 
@@ -74,14 +71,16 @@ class BufferPool NOCOPYABLE {
   // get a new datablock for local write
   DataBlock *GetNewDataBlock();
 
-  // read the value by key, return empty slice if not found
+  // read the value by key. return empty slice if not found
   bool Read(Slice key, std::string &value);
+
+  // fetch the block hold the key from remote. return false if not found 
+  bool FetchRead(Slice key, std::string &value);
 
   // modify the value if the key exists
   bool Modify(Slice key, Slice value);
 
   void CreateIndex(DataBlock *block) {
-    std::lock_guard<std::mutex> guard(mutex_);
     FrameId fid = block_table_[block->GetId()];
     assert(fid != INVALID_FRAME_ID);
     createIndex(handles_[fid]);
@@ -116,7 +115,6 @@ class BufferPool NOCOPYABLE {
 
   std::list<FrameId> free_list_;
   size_t pool_size_;
-  std::mutex mutex_;
 
   /**
    * LRU 实现

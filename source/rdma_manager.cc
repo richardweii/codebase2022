@@ -88,7 +88,6 @@ bool RDMAManager::postSend(ibv_qp *qp) {
     }
     int rc = ibv_poll_cq(cq_, RDMA_MSG_CAP, &wc);
     if (rc > 0) {
-      assert(rc = send_batch_.size());
       if (IBV_WC_SUCCESS == wc.status) {
         ret = true;
       } else if (IBV_WC_WR_FLUSH_ERR == wc.status) {

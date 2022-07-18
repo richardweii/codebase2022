@@ -54,7 +54,6 @@ bool BufferPool::Init() {
 }
 
 DataBlock *BufferPool::GetNewDataBlock() {
-  std::lock_guard<std::mutex> guard(mutex_);
   int ret;
   bool succ;
 
@@ -305,12 +304,10 @@ FrameId BufferPool::pop() {
   return ret;
 }
 
-bool BufferPool::Read(Slice key, std::string &value) {
-  std::lock_guard<std::mutex> guard(mutex_);
-
+bool BufferPool::FetchRead(Slice key, std::string &value) {
   auto node = hash_table_->Find(key);
   if (node != nullptr) {
-    renew(handler_->GetFrameId(node->Handle()));
+    // renew(handler_->GetFrameId(node->Handle()));
     auto ent = handler_->GetEntry(node->Handle());
     value.resize(kValueLength);
     memcpy((char *)value.c_str(), ent->value, kValueLength);
@@ -331,12 +328,23 @@ bool BufferPool::Read(Slice key, std::string &value) {
   return true;
 }
 
-bool BufferPool::Modify(Slice key, Slice value) {
-  std::lock_guard<std::mutex> guard(mutex_);
-
+bool BufferPool::Read(Slice key, std::string &value) {
   auto node = hash_table_->Find(key);
   if (node != nullptr) {
-    renew(handler_->GetFrameId(node->Handle()));
+    // renew(handler_->GetFrameId(node->Handle()));
+    auto ent = handler_->GetEntry(node->Handle());
+    value.resize(kValueLength);
+    memcpy((char *)value.c_str(), ent->value, kValueLength);
+    return true;
+  }
+
+  return false;
+}
+
+bool BufferPool::Modify(Slice key, Slice value) {
+  auto node = hash_table_->Find(key);
+  if (node != nullptr) {
+    // renew(handler_->GetFrameId(node->Handle()));
     auto ent = handler_->GetEntry(node->Handle());
     memcpy(ent->value, value.data(), kValueLength);
     return true;
@@ -372,7 +380,7 @@ void BufferPool::createIndex(BlockHandle *handle) {
     BlockId bid = handle->GetBlockId();
     FrameId fid = block_table_[bid];
     assert(fid != INVALID_FRAME_ID);
-    uint64_t data_handle = (uint64_t)bid << 32 | i;
+    uint64_t data_handle = handler_->GenHandle(fid, i);
 
     hash_table_->Insert(Slice(handle->Read(i)->key, kKeyLength), data_handle);
   }

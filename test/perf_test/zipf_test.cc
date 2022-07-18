@@ -6,7 +6,7 @@
 int main() {
   std::vector<int> counter(101, 0);
   for (int i = 0; i < 1000; i++) {
-    int num = zipf(100);
+    int num = zipf(100, 2.12);
     LOG_DEBUG("Zipf %d", num);
     counter[num]++;
   }

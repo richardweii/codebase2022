@@ -1,3 +1,4 @@
+#pragma once
 #include <utility>
 // C++ implementation of golang defer. execute the codes when leave the scope.
 template <typename T>
