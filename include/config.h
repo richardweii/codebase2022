@@ -8,6 +8,8 @@
 #include <string>
 #include "util/nocopy.h"
 
+// #define TEST_CONFIG // test configuration marco switch
+
 namespace kv {
 #define RDMA_MR_FLAG (IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE)
 #define TIME_NOW (std::chrono::high_resolution_clock::now())
@@ -23,30 +25,41 @@ constexpr int kOneSideWorkerNum = 16;
 
 constexpr int kPoolHashSeed = 0x89ea7d2f;
 
+#ifdef TEST_CONFIG
+constexpr int kPoolShardBits = 1;   // for test
+#else
 constexpr int kPoolShardBits = 5;
-// constexpr int kPoolShardBits = 1;   // for test
+#endif
 constexpr int kPoolShardNum = 1 << kPoolShardBits;
 
 constexpr int kKeyLength = 16;
 constexpr int kValueLength = 128;
 
-constexpr int kDataBlockSize = 256 * 1024;  // 16KB
-// constexpr int kDataBlockSize = 2 * 1024;  // for test
+#ifdef TEST_CONFIG
+constexpr int kDataBlockSize = 2 * 1024;  // for test
+#else
+constexpr int kDataBlockSize = 16 * 1024;  // 16KB
+#endif
+
 constexpr int kItemNum = kDataBlockSize / (kKeyLength + kValueLength);
 constexpr int kDataSize = kItemNum * (kKeyLength + kValueLength);
 
+#ifdef TEST_CONFIG
+constexpr size_t kLocalDataSize = (size_t)4 * 16 * 1024;  // 128KB = 16 * 8
+constexpr size_t kKeyNum = 16 * 100;                      // 16 * 12 * 32K key
+#else
 constexpr size_t kLocalDataSize = (size_t)5 * 1024 * 1024 * 1024;  // local data
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                  // 16 * 12M key
-
-// for test
-// constexpr size_t kLocalDataSize = (size_t)4 * 16 * 1024;  // 128KB = 16 * 8
-// constexpr size_t kKeyNum = 16 * 100;                      // 16 * 12 * 32K key
+#endif
 
 constexpr int kAlign = 8;  // kAlign show be powers of 2, say 2, 4 ,8, 16, 32, ...
 inline constexpr int roundUp(unsigned int nBytes) { return ((nBytes) + (kAlign - 1)) & ~(kAlign - 1); }
 
+#ifdef TEST_CONFIG
+constexpr int kRemoteMrSize = 16 * 1024;
+#else
 constexpr int kRemoteMrSize = 64 * 1024 * 1024;
-// constexpr int kRemoteMrSize = 16 * 1024;
+#endif
 
 template <typename Tp>
 using Ptr = Tp *;

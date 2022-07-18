@@ -22,15 +22,25 @@ Pool::~Pool() {
 }
 
 bool Pool::Read(Slice key, std::string &val) {
-  latch_.RLock();
-  defer { latch_.RUnlock(); };
-  if (!filter_->KeyMayMatch(key, Slice(filter_data_, filter_length_))) {
-    return false;
+  {
+    latch_.RLock();
+    defer { latch_.RUnlock(); };
+    if (!filter_->KeyMayMatch(key, Slice(filter_data_, filter_length_))) {
+      return false;
+    }
+    if (memtable_->Read(key, val)) {
+      return true;
+    }
+    if (buffer_pool_->Read(key, val)) {
+      return true;
+    }
   }
-  if (memtable_->Read(key, val)) {
-    return true;
+  {
+    latch_.WLock();
+    auto succ = buffer_pool_->FetchRead(key, val);
+    latch_.WUnlock();
+    return succ;
   }
-  return buffer_pool_->Read(key, val);
 }
 
 void Pool::insertIntoMemtable(Slice key, Slice val) {
@@ -135,7 +145,7 @@ void RemotePool::CreateIndex(BlockId id) {
   auto handle = handles_[fid];
   auto count = hash_table_->Count();
   for (uint32_t i = 0; i < handle->EntryNum(); i++) {
-    uint64_t data_handle = (uint64_t)id << 32 | i;
+    uint64_t data_handle = handler_->GenHandle(fid, i);
     hash_table_->Insert(Slice(handle->Read(i)->key, kKeyLength), data_handle);
   }
   LOG_ASSERT(hash_table_->Count() - count == kItemNum, "Less than expected entries inserted. expected %d, got %lu",

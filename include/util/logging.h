@@ -4,6 +4,7 @@
 #include <time.h>
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 
 #define GET_TIME                                                                                             \
   struct timeval tv;                                                                                         \
