@@ -153,7 +153,7 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
 
 RPCTask *RDMAServer::pollTask() {
   MessageBlock *blocks_ = msg_buffer_->Data();
-  while (true) {
+  while (!stop_) {
     for (size_t i = 0; i < msg_buffer_->Size(); i++) {
       if (blocks_[i].req_block.notify == PREPARED) {
         bool tmp = false;
@@ -171,6 +171,9 @@ RPCTask *RDMAServer::pollTask() {
 void RDMAServer::worker() {
   while (!stop_) {
     RPCTask *task = pollTask();
+    if (task == nullptr) {
+      break;
+    }
     switch (task->RequestType()) {
       case CMD_PING: {
         LOG_DEBUG("Ping message.");
@@ -209,5 +212,6 @@ void RDMAServer::worker() {
 
     delete task;
   }
+  LOG_INFO("Worker exit.");
 }
 }  // namespace kv

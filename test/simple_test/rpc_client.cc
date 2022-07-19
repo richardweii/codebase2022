@@ -14,13 +14,13 @@
 using namespace kv;
 
 constexpr int thread_num = 16;
-constexpr int op_per_thread_num = 1 << 10;
+constexpr int op_per_thread_num = 1 << 15;
 
 std::atomic_uint64_t rid_counter{};
 
 int main(int argc, const char **argv) {
   RDMAClient *client = new RDMAClient();
-  client->Init("172.16.5.129", "12344");
+  client->Init("192.168.200.22", "12344");
   client->Start();
 
   std::vector<std::thread> threads;
