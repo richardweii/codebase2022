@@ -12,6 +12,7 @@
 #include "rdma_client.h"
 #include "stat.h"
 #include "util/filter.h"
+#include "util/get_clock.h"
 #include "util/hash.h"
 #include "util/logging.h"
 #include "util/slice.h"
@@ -59,6 +60,9 @@ void LocalEngine::stop() {
   LOG_INFO(" Remote lookup failed %ld times", stat::remote_miss.load());
   LOG_INFO(" Replacement %ld times, Fetch %ld times ", stat::replacement.load(), stat::fetch.load());
   LOG_INFO(" Cache hit %ld times, invalid %ld times", stat::cache_hit.load(), stat::cache_invalid.load());
+  LOG_INFO(" Read Miss %ld times", stat::read_miss.load());
+  auto mhz = get_cpu_mhz(1);
+  LOG_INFO(" CPU frequency %f MHZ", mhz);
   return;
 };
 

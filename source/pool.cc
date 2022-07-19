@@ -1,4 +1,5 @@
 #include "pool.h"
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include "config.h"
@@ -34,6 +35,7 @@ bool Pool::Read(Slice key, std::string &val) {
     if (buffer_pool_->Read(key, val)) {
       return true;
     }
+    stat::read_miss.fetch_add(1, std::memory_order_relaxed);
   }
   {
     latch_.WLock();
@@ -45,6 +47,9 @@ bool Pool::Read(Slice key, std::string &val) {
 
 void Pool::insertIntoMemtable(Slice key, Slice val) {
   stat::insert_num.fetch_add(1, std::memory_order_relaxed);
+  if (stat::insert_num.load() == 160000001) {
+    LOG_INFO("finish insert.");
+  }
   if (memtable_->Full()) {
     stat::block_num.fetch_add(1, std::memory_order_relaxed);
     DataBlock *block = buffer_pool_->GetNewDataBlock();
