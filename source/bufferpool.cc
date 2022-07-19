@@ -32,7 +32,7 @@ BufferPool::BufferPool(size_t size, uint8_t shard, RDMAClient *client) {
     handles_.emplace_back(new BlockHandle(&datablocks_[i]));
   }
   handler_ = new BufferPoolHashHandler(this);
-  hash_table_ = new HashTable(size * kItemNum, handler_);
+  hash_table_ = new HashTable<Slice>(size * kItemNum, handler_);
   client_ = client;
   pd_ = client->Pd();
   // Initially, every page is in the free list.
@@ -116,7 +116,6 @@ bool BufferPool::alloc(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey
   req.type = MSG_ALLOC;
   req.bid = id;
   req.rid = getRid();
-  req.sync = false;
 
   AllocResponse resp;
   auto ret = client_->RPC(req, resp);
@@ -132,7 +131,6 @@ bool BufferPool::lookup(Slice slice, uint64_t &addr, uint32_t &rkey) {
   req.type = MSG_LOOKUP;
   memcpy(req.key, slice.data(), slice.size());
   req.rid = getRid();
-  req.sync = false;
 
   LookupResponse resp;
   auto ret = client_->RPC(req, resp);
@@ -151,7 +149,6 @@ bool BufferPool::remoteCreateIndex(uint8_t shard, BlockId id) {
   req.rid = getRid();
   req.id = id;
   req.shard = shard;
-  req.sync = false;
 
   CreateIndexResponse resp;
   auto ret = client_->RPC(req, resp);

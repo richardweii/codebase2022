@@ -32,8 +32,9 @@ target_link_libraries(msg_buf polarkv rdmacm ibverbs ibumad pci)
 add_executable(
     hash_table_test
     unit_test/hash_table_test.cc
+    ${PROJECT_SOURCE_DIR}/source/util/hash.cc
 )
-target_link_libraries(hash_table_test polarkv)
+target_link_libraries(hash_table_test)
 
 
 add_executable(

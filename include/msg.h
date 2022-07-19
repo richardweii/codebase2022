@@ -44,7 +44,6 @@ struct MessageBlock {
 struct RequestsMsg {
   uint32_t rid;
   uint8_t type;
-  bool sync;
 };
 
 struct ResponseMsg {

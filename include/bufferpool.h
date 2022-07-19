@@ -24,7 +24,7 @@ namespace kv {
 
 class BufferPool NOCOPYABLE {
  public:
-  class BufferPoolHashHandler : public HashHandler {
+  class BufferPoolHashHandler : public HashHandler<Slice> {
    public:
     BufferPoolHashHandler(BufferPool *buffer_pool) : buffer_pool_(buffer_pool){};
     Slice GetKey(uint64_t data_handle) override {
@@ -109,7 +109,7 @@ class BufferPool NOCOPYABLE {
   BufferPoolHashHandler *handler_;
   uint8_t shard_;
 
-  HashTable *hash_table_;
+  HashTable<Slice> *hash_table_;
   std::unordered_map<BlockId, FrameId> block_table_;
   std::unordered_map<BlockId, MemoryAccess> global_table_;
 

@@ -5,6 +5,7 @@
 #include "config.h"
 #include "msg.h"
 #include "msg_buf.h"
+#include "rdma_manager.h"
 #include "util/logging.h"
 
 namespace kv {
@@ -60,11 +61,12 @@ bool RDMAServer::Init(std::string ip, std::string port) {
     return succ;
   }
 
-  poller_ = new std::thread(&RDMAServer::poller, this);
+  tasks_ = new std::atomic_bool[msg_buffer_->Size()]{};
+
   for (int i = 0; i < kRPCWorkerNum; i++) {
     workers_.emplace_back(&RDMAServer::worker, this);
   }
-
+  rdma_one_side_ = new ConnQue(kRPCWorkerNum);
   return true;
 }
 
@@ -114,11 +116,6 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
     return -1;
   }
 
-  if (cq_ == nullptr) {
-    // rpc connection
-    cq_ = cq;
-  }
-
   struct ibv_qp_init_attr qp_attr = {};
   qp_attr.cap.max_send_wr = RDMA_MSG_CAP;
   qp_attr.cap.max_send_sge = 1;
@@ -147,50 +144,33 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
     perror("rdma_accept fail");
     return -1;
   }
-
-  if (cm_id_ == nullptr) {
-    // rpc connection
-    cm_id_ = cm_id;
+  if (worker_num_ < kRPCWorkerNum) {
+    rdma_one_side_->InitConnection(worker_num_, pd_, cq, cm_id);
+    worker_num_++;
   }
-
   return 0;
 }
 
-void RDMAServer::poller() {
+RPCTask *RDMAServer::pollTask() {
   MessageBlock *blocks_ = msg_buffer_->Data();
-  while (!stop_) {
-    {
-      std::unique_lock<std::mutex> lock(task_mutex_);
-      for (size_t i = 0; i < msg_buffer_->Size(); i++) {
-        if (blocks_[i].req_block.notify == PREPARED) {
+  while (true) {
+    for (size_t i = 0; i < msg_buffer_->Size(); i++) {
+      if (blocks_[i].req_block.notify == PREPARED) {
+        bool tmp = false;
+        if (tasks_[i].compare_exchange_weak(tmp, true)) {
           blocks_[i].req_block.notify = PROCESS;
-          tasks_.emplace(new RPCTask(&blocks_[i], this));
+          return new RPCTask(&blocks_[i], this);
         }
       }
     }
-
-    task_cv_.notify_all();
-
-    {
-      std::unique_lock<std::mutex> lock(task_mutex_);
-      task_cv_.wait(lock, [&]() -> bool { return tasks_.size() <= kRPCWorkerNum; });
-    }
+    std::this_thread::yield();
   }
+  return nullptr;
 }
 
 void RDMAServer::worker() {
   while (!stop_) {
-    RPCTask *task = nullptr;
-    {
-      std::unique_lock<std::mutex> lock(task_mutex_);
-      task_cv_.wait(lock, [&]() -> bool { return !tasks_.empty() || stop_; });
-      if (stop_) {
-        break;
-      }
-      task = tasks_.front();
-      tasks_.pop();
-    }
-    task_cv_.notify_one();
+    RPCTask *task = pollTask();
     switch (task->RequestType()) {
       case CMD_PING: {
         LOG_DEBUG("Ping message.");
@@ -199,16 +179,15 @@ void RDMAServer::worker() {
         this->remote_rkey_ = req->rkey;
         PingResponse resp;
         resp.status = RES_OK;
-        task->SetResponse(resp, true);
+        task->SetResponse(resp);
         break;
       }
       case CMD_STOP: {
         LOG_DEBUG("Stop message.");
         StopResponse resp;
         resp.status = RES_OK;
-        task->SetResponse(resp, true);
+        task->SetResponse(resp);
         stop_ = true;
-        task_cv_.notify_all();
         break;
       }
       case CMD_TEST: {
@@ -221,7 +200,7 @@ void RDMAServer::worker() {
         resp.status = RES_OK;
         memcpy(resp.resp, req->msg, 16);
         LOG_DEBUG("Send %s", resp.resp);
-        task->SetResponse(resp, req->sync);
+        task->SetResponse(resp);
         break;
       }
       default:

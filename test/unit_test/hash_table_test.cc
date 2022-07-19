@@ -6,13 +6,14 @@
 #include "config.h"
 #include "test.h"
 #include "util/logging.h"
+#include "util/slice.h"
 
 struct DummyEntry {
   std::string key;
   std::string value;
 };
 
-class DummyHandler : public HashHandler {
+class DummyHandler : public HashHandler<Slice> {
  public:
   DummyHandler(std::vector<DummyEntry> *data) : data_(data){};
   Slice GetKey(uint64_t data_handle) override { return (*data_)[data_handle].key; };
@@ -24,7 +25,7 @@ class DummyHandler : public HashHandler {
 void TestBasic2() {
   std::vector<DummyEntry> entries;
   DummyHandler *handler =  new DummyHandler(&entries);
-  HashTable table(1023, handler);
+  HashTable<Slice> table(1023, handler);
   for (int i = 0; i < 1023; i++) {
     entries.emplace_back();
     entries.back().key = to_string(i);

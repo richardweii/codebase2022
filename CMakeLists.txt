@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project(POLAR_CONTEST)
 
-set(CMAKE_BUILD_TYPE "Release")   # 手动指定编译版本
+# set(CMAKE_BUILD_TYPE "Release")   # 手动指定编译版本
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 11)
 

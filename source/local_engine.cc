@@ -28,7 +28,7 @@ namespace kv {
 bool LocalEngine::start(const std::string addr, const std::string port) {
   constexpr size_t buffer_pool_size = kLocalDataSize / kPoolShardNum / kDataBlockSize;
   constexpr size_t filter_bits = 10 * kKeyNum / kPoolShardNum;
-  constexpr size_t index_size = kLocalDataSize / kDataBlockSize * kItemNum * sizeof(HashNode) / 1024 / 1024;
+  constexpr size_t index_size = kLocalDataSize / kDataBlockSize * kItemNum * sizeof(HashNode<void>) / 1024 / 1024;
   LOG_INFO("Create %d pool, each pool with %lu datablock, index size %lu MB", kPoolShardNum, buffer_pool_size, index_size);
 
   client_ = new RDMAClient();

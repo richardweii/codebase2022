@@ -2,6 +2,8 @@
 
 #include <infiniband/verbs.h>
 #include <rdma/rdma_cma.h>
+#include <atomic>
+#include <cassert>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +17,7 @@
 #include "msg.h"
 #include "msg_buf.h"
 #include "rdma_conn.h"
+#include "util/logging.h"
 
 namespace kv {
 
@@ -26,37 +29,70 @@ struct MemoryAccess {
 /* The RDMA connection queue */
 class ConnQue {
  public:
-  ConnQue() {}
+  ConnQue(size_t size) : size_(size) {
+    connections_ = new RDMAConnection *[size];
+    in_use_ = new std::atomic<bool>[size] {};
+  }
 
-  void enqueue(RDMAConnection *conn) {
-    std::unique_lock<std::mutex> lock(m_mutex_);
-    m_queue_.push(conn);
+  ~ConnQue() {
+    for (size_t i = 0; i < size_; i++) {
+      delete connections_[i];
+    }
+    delete[] connections_;
+    delete[] in_use_;
+  }
+
+  // init all by create new RDMA connection
+  bool Init(ibv_pd *pd, const std::string ip, const std::string port, uint64_t *addr = nullptr,
+            uint32_t *rkey = nullptr) {
+    for (size_t i = 0; i < size_; i++) {
+      connections_[i] = new RDMAConnection(pd, i);
+      if (connections_[i]->Init(ip, port, addr, rkey)) {
+        LOG_ERROR("Init rdma connection %ld failed", i);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // init specific connection with given RMDA resource
+  bool InitConnection(int idx, ibv_pd *pd, ibv_cq *cq, rdma_cm_id *cm_id) {
+    LOG_ASSERT((size_t)idx < size_, "idx %d", idx);
+    connections_[idx] = new RDMAConnection(pd, idx);
+    connections_[idx]->Init(cq, cm_id);
+    return true;
+  }
+
+  void Enqueue(RDMAConnection *conn) {
+    int idx = conn->ConnId();
+    LOG_ASSERT((size_t)idx < size_, "idx %d", idx);
+    assert(in_use_[idx].load());
+    in_use_[idx].store(false);
   };
 
-  RDMAConnection *dequeue() {
-  retry:
-    std::unique_lock<std::mutex> lock(m_mutex_);
-    while (m_queue_.empty()) {
-      lock.unlock();
+  RDMAConnection *Dequeue() {
+    while (true) {
+      for (int i = 0; i < (int)size_; i++) {
+        bool tmp = false;
+        if (in_use_[i].compare_exchange_weak(tmp, true)) {
+          return connections_[i];
+        }
+      }
       std::this_thread::yield();
-      goto retry;
     }
-    RDMAConnection *conn = m_queue_.front();
-    m_queue_.pop();
-    return conn;
+    return nullptr;
   }
 
  private:
-  std::queue<RDMAConnection *> m_queue_;
-  std::mutex m_mutex_;
+  RDMAConnection **connections_ = nullptr;
+  std::atomic<bool> *in_use_ = nullptr;
+  size_t size_ = 0;
 };
 
 class RDMAManager {
  public:
-  RDMAManager() { rdma_routine_ = new std::thread(&RDMAManager::rdmaRoutine, this); }
+  RDMAManager() {}
   virtual ~RDMAManager() {
-    rdma_routine_->join();
-    delete rdma_routine_;
     delete msg_buffer_;
     // TODO: release rdma resource
   }
@@ -73,47 +109,17 @@ class RDMAManager {
 
   ibv_pd *Pd() const { return pd_; }
 
+  int RemoteRead(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey);
+
+  int RemoteWrite(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey);
+
  protected:
-  void rdmaRoutine();
-  struct WR {
-    ibv_sge *sge;
-    ibv_send_wr *wr;
-    WR() {
-      sge = new ibv_sge;
-      wr = new ibv_send_wr;
-    };
-    WR(WR &&w) {
-      sge = w.sge;
-      wr = w.wr;
-      w.sge = nullptr;
-      w.wr = nullptr;
-    }
-    ~WR() {
-      delete sge;
-      delete wr;
-    }
-  };
-
-  // no thread-safe
-  bool postSend(ibv_qp *qp);
-
-  bool remoteWrite(ibv_qp *qp, uint64_t addr, uint32_t lkey, size_t length, uint64_t remote_addr, uint32_t rkey,
-                   bool sync);
-
   volatile bool stop_;
-
-  std::vector<WR> send_batch_;
-  std::mutex send_mutex_;
-  std::condition_variable send_cv_;
-
-  std::thread *rdma_routine_;
-
   MsgBuffer *msg_buffer_ = nullptr;
+  ConnQue *rdma_one_side_ = nullptr;
   rdma_event_channel *cm_channel_ = nullptr;
-  rdma_cm_id *cm_id_ = nullptr;
   ibv_context *context_ = nullptr;
   ibv_pd *pd_ = nullptr;
-  ibv_cq *cq_ = nullptr;
 
   uint64_t remote_addr_;
   uint32_t remote_rkey_;
