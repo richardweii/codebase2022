@@ -8,7 +8,7 @@
 #include <string>
 #include "util/nocopy.h"
 
-#define TEST_CONFIG // test configuration marco switch
+// #define TEST_CONFIG // test configuration marco switch
 
 namespace kv {
 #define RDMA_MR_FLAG (IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE)
@@ -38,7 +38,7 @@ constexpr int kValueLength = 128;
 #ifdef TEST_CONFIG
 constexpr int kDataBlockSize = 2 * 1024;  // for test
 #else
-constexpr int kDataBlockSize = 16 * 1024;  // 16KB
+constexpr int kDataBlockSize = 1 * 1024 * 1024;  // 16KB
 #endif
 
 constexpr int kItemNum = kDataBlockSize / (kKeyLength + kValueLength);
