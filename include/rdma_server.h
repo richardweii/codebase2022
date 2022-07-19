@@ -38,7 +38,6 @@ class RDMAServer : public RDMAManager {
 
   int worker_num_ = 0;
   rdma_cm_id *listen_id_ = nullptr;
-  std::atomic_bool *tasks_ = nullptr;
 };
 
 class RPCTask {
@@ -54,13 +53,10 @@ class RPCTask {
 
   template <typename Tp>
   void SetResponse(const Tp &resp) {
-    memcpy(&msg_->resp_block, &resp, sizeof(resp));
+    memcpy(&msg_->resp_block.message, &resp, sizeof(resp));
     msg_->resp_block.notify = DONE;
     server_->RemoteWrite(msg_, server_->msg_buffer_->Lkey(), sizeof(MessageBlock),
                          server_->remote_addr_ + server_->msg_buffer_->MessageAddrOff(msg_), server_->remote_rkey_);
-    int idx = server_->msg_buffer_->MessageIndex(msg_);
-    LOG_ASSERT(server_->tasks_[idx].load(), "Not occupied task %d", idx);
-    server_->tasks_[idx].store(false);
   }
 
  private:

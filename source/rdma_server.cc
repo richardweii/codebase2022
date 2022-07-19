@@ -1,5 +1,7 @@
 #include "rdma_server.h"
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <thread>
 #include "config.h"
@@ -60,8 +62,6 @@ bool RDMAServer::Init(std::string ip, std::string port) {
     LOG_FATAL("init msg buffer failed.");
     return succ;
   }
-
-  tasks_ = new std::atomic_bool[msg_buffer_->Size()]{};
 
   for (int i = 0; i < kRPCWorkerNum; i++) {
     workers_.emplace_back(&RDMAServer::worker, this);
@@ -155,12 +155,9 @@ RPCTask *RDMAServer::pollTask() {
   MessageBlock *blocks_ = msg_buffer_->Data();
   while (!stop_) {
     for (size_t i = 0; i < msg_buffer_->Size(); i++) {
-      if (blocks_[i].req_block.notify == PREPARED) {
-        bool tmp = false;
-        if (tasks_[i].compare_exchange_weak(tmp, true)) {
-          blocks_[i].req_block.notify = PROCESS;
-          return new RPCTask(&blocks_[i], this);
-        }
+      uint8_t notify = PREPARED;
+      if (blocks_[i].req_block.notify.compare_exchange_weak(notify, PROCESS)) {
+        return new RPCTask(&blocks_[i], this);
       }
     }
     std::this_thread::yield();

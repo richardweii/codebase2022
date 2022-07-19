@@ -54,7 +54,7 @@ class MsgBuffer {
 
   void FreeMessage(MessageBlock *msg) {
     int off = MessageIndex(msg);
-    memset(msg, 0, sizeof(MessageBlock));
+    memset((char *)msg, 0, sizeof(MessageBlock));
     assert(in_use_[off].load());
     in_use_[off].store(false);
   }

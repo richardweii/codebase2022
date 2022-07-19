@@ -5,6 +5,7 @@
 #include "config.h"
 #include "util/hash.h"
 #include "util/slice.h"
+#include "util/logging.h"
 
 namespace kv {
 
@@ -106,6 +107,7 @@ class HashTable {
     while (slot != nullptr) {
       if (key == handler_->GetKey(slot->data_handle_)) {
         // duplicate
+        LOG_INFO("duplicate %s slot handle %lx, handle %lx", key.data(), slot->data_handle_, data_handle);
         return;
       }
       slot = slot->next_;
