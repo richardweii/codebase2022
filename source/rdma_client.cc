@@ -1,19 +1,22 @@
 #include "rdma_client.h"
 #include <infiniband/verbs.h>
+#include <rdma/rdma_cma.h>
 #include "config.h"
-#include "util/logging.h"
 #include "msg.h"
 #include "rdma_manager.h"
+#include "util/logging.h"
 
 namespace kv {
 bool RDMAClient::Init(std::string ip, std::string port) {
+  stop_ = false;
+
   cm_channel_ = rdma_create_event_channel();
   if (!cm_channel_) {
     perror("rdma_create_event_channel fail");
     return false;
   }
-
-  if (rdma_create_id(cm_channel_, &cm_id_, NULL, RDMA_PS_TCP)) {
+  rdma_cm_id *cm_id;
+  if (rdma_create_id(cm_channel_, &cm_id, NULL, RDMA_PS_TCP)) {
     perror("rdma_create_id fail");
     return false;
   }
@@ -26,7 +29,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
 
   struct addrinfo *t = nullptr;
   for (t = res; t; t = t->ai_next) {
-    if (!rdma_resolve_addr(cm_id_, NULL, t->ai_addr, RESOLVE_TIMEOUT_MS)) {
+    if (!rdma_resolve_addr(cm_id, NULL, t->ai_addr, RESOLVE_TIMEOUT_MS)) {
       break;
     }
   }
@@ -52,7 +55,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
 
   rdma_ack_cm_event(event);
 
-  if (rdma_resolve_route(cm_id_, RESOLVE_TIMEOUT_MS)) {
+  if (rdma_resolve_route(cm_id, RESOLVE_TIMEOUT_MS)) {
     perror("rdma_resolve_route fail");
     LOG_ERROR("rdma_resolve_route fail");
     return false;
@@ -73,7 +76,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
 
   rdma_ack_cm_event(event);
 
-  pd_ = ibv_alloc_pd(cm_id_->verbs);
+  pd_ = ibv_alloc_pd(cm_id->verbs);
   if (!pd_) {
     perror("ibv_alloc_pd fail");
     LOG_ERROR("ibv_alloc_pd fail");
@@ -86,23 +89,22 @@ bool RDMAClient::Init(std::string ip, std::string port) {
     return false;
   }
 
-
   struct ibv_comp_channel *comp_chan;
-  comp_chan = ibv_create_comp_channel(cm_id_->verbs);
+  comp_chan = ibv_create_comp_channel(cm_id->verbs);
   if (!comp_chan) {
     perror("ibv_create_comp_channel fail");
     LOG_ERROR("ibv_create_comp_channel fail");
     return false;
   }
 
-  cq_ = ibv_create_cq(cm_id_->verbs, RDMA_MSG_CAP, NULL, comp_chan, 0);
-  if (!cq_) {
+  ibv_cq *cq = ibv_create_cq(cm_id->verbs, RDMA_MSG_CAP, NULL, comp_chan, 0);
+  if (!cq) {
     perror("ibv_create_cq fail");
     LOG_ERROR("ibv_create_cq fail");
     return false;
   }
 
-  if (ibv_req_notify_cq(cq_, 0)) {
+  if (ibv_req_notify_cq(cq, 0)) {
     perror("ibv_req_notify_cq fail");
     LOG_ERROR("ibv_req_notify_cq fail");
     return false;
@@ -114,10 +116,10 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   qp_attr.cap.max_recv_wr = 1;
   qp_attr.cap.max_recv_sge = 1;
 
-  qp_attr.send_cq = cq_;
-  qp_attr.recv_cq = cq_;
+  qp_attr.send_cq = cq;
+  qp_attr.recv_cq = cq;
   qp_attr.qp_type = IBV_QPT_RC;
-  if (rdma_create_qp(cm_id_, pd_, &qp_attr)) {
+  if (rdma_create_qp(cm_id, pd_, &qp_attr)) {
     perror("rdma_create_qp fail");
     LOG_ERROR("rdma_create_qp fail");
     return false;
@@ -126,7 +128,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   struct rdma_conn_param conn_param = {};
   conn_param.initiator_depth = 1;
   conn_param.retry_count = 7;
-  if (rdma_connect(cm_id_, &conn_param)) {
+  if (rdma_connect(cm_id, &conn_param)) {
     perror("rdma_connect fail");
     LOG_ERROR("rdma_connect fail");
     return false;
@@ -140,7 +142,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
 
   if (event->event != RDMA_CM_EVENT_ESTABLISHED) {
     perror("RDMA_CM_EVENT_ESTABLISHED fail");
-    LOG_ERROR("RDMA_CM_EVENT_ESTABLISHED fail , got %s",  rdma_event_str(event->event));
+    LOG_ERROR("RDMA_CM_EVENT_ESTABLISHED fail , got %s", rdma_event_str(event->event));
     return false;
   }
 
@@ -152,35 +154,17 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   remote_addr_ = server_pdata.buf_addr;
   remote_rkey_ = server_pdata.buf_rkey;
 
-  one_side_rdma_ = new ConnQue();
-  for (uint32_t i = 0; i < kOneSideWorkerNum; i++) {
-    RDMAConnection *conn = new RDMAConnection(pd_, i);
-    if (conn->Init(ip, port)) {
-      LOG_ERROR("Init one side connection %d fail", i);
-      return false;
-    }
-    one_side_rdma_->enqueue(conn);
+  msg_buffer_ = new MsgBuffer(pd_);
+  if (!msg_buffer_->Init()) {
+    LOG_ERROR("Init MsgBuffer fail.");
+    return false;
   }
 
+  rdma_one_side_ = new ConnQue(kOneSideWorkerNum);
+  rdma_one_side_->InitConnection(0, pd_, cq, cm_id);
+  for (int i = 1; i < kOneSideWorkerNum; i++) {
+    rdma_one_side_->InitConnection(i, pd_, ip, port);
+  }
   return true;
 }
-
-int RDMAClient::RemoteRead(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey) {
-  auto conn = one_side_rdma_->dequeue();
-  assert(conn != nullptr);
-  auto ret = conn->RemoteRead(ptr, lkey, size, remote_addr, rkey);
-  assert(ret == 0);
-  one_side_rdma_->enqueue(conn);
-  return ret;
-}
-
-int RDMAClient::RemoteWrite(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey) {
-  auto conn = one_side_rdma_->dequeue();
-  assert(conn != nullptr);
-  auto ret = conn->RemoteWrite(ptr, lkey, size, remote_addr, rkey);
-  assert(ret == 0);
-  one_side_rdma_->enqueue(conn);
-  return ret;
-}
-
 }  // namespace kv

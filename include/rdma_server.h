@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstddef>
 #include <functional>
 #include "rdma_manager.h"
@@ -8,14 +9,14 @@ class RPCTask;
 class RDMAServer : public RDMAManager {
  public:
   friend class RPCTask;
-  ~RDMAServer() { delete poller_; }
+  ~RDMAServer() {}
+
   using Handler = std::function<void(RPCTask *task)>;
   RDMAServer(Handler &&handler) : handler_(std::move(handler)){};
 
   void Start() override { handleConnection(); }
 
   void Stop() override {
-    poller_->join();
     for (size_t i = 0; i < workers_.size(); i++) {
       workers_[i].join();
     }
@@ -26,19 +27,18 @@ class RDMAServer : public RDMAManager {
  private:
   void handleConnection();
 
-  void poller();
-
   void worker();
+
+  RPCTask *pollTask();
 
   int createConnection(rdma_cm_id *cm_id);
 
-  std::mutex task_mutex_;
-  std::condition_variable task_cv_;
-  std::queue<RPCTask *> tasks_;
   Handler handler_;
   std::vector<std::thread> workers_;
-  std::thread *poller_ = nullptr;
+
+  int worker_num_ = 0;
   rdma_cm_id *listen_id_ = nullptr;
+  std::atomic_bool *tasks_ = nullptr;
 };
 
 class RPCTask {
@@ -53,16 +53,19 @@ class RPCTask {
   }
 
   template <typename Tp>
-  void SetResponse(const Tp &resp, bool sync = false) {
+  void SetResponse(const Tp &resp) {
     memcpy(&msg_->resp_block, &resp, sizeof(resp));
     msg_->resp_block.notify = DONE;
-    server_->remoteWrite(server_->cm_id_->qp, (uint64_t)msg_, server_->msg_buffer_->Lkey(), sizeof(MessageBlock),
-                         server_->remote_addr_ + server_->msg_buffer_->MessageAddrOff(msg_), server_->remote_rkey_,
-                         sync);
+    server_->RemoteWrite(msg_, server_->msg_buffer_->Lkey(), sizeof(MessageBlock),
+                         server_->remote_addr_ + server_->msg_buffer_->MessageAddrOff(msg_), server_->remote_rkey_);
+    int idx = server_->msg_buffer_->MessageIndex(msg_);
+    LOG_ASSERT(server_->tasks_[idx].load(), "Not occupied task %d", idx);
+    server_->tasks_[idx].store(false);
   }
 
  private:
   MessageBlock *msg_ = nullptr;
   RDMAServer *server_ = nullptr;
 };
+
 }  // namespace kv

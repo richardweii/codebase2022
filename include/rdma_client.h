@@ -3,6 +3,7 @@
 #include "config.h"
 #include "msg.h"
 #include "rdma_manager.h"
+#include "util/logging.h"
 
 namespace kv {
 class RDMAClient : public RDMAManager {
@@ -15,9 +16,8 @@ class RDMAClient : public RDMAManager {
     req.type = CMD_PING;
     req.addr = (uint64_t)msg_buffer_->Data();
     req.rkey = msg_buffer_->Rkey();
-    req.sync = true;
     PingResponse resp;
-    RPC(req, resp, true);
+    RPC(req, resp);
     if (resp.status == RES_FAIL) {
       LOG_ERROR("Connect to remote failed.");
     }
@@ -29,33 +29,26 @@ class RDMAClient : public RDMAManager {
     req.type = CMD_STOP;
 
     StopResponse resp;
-    RPC(req, resp, true);
+    RPC(req, resp);
     if (resp.status == RES_FAIL) {
       LOG_ERROR("Stop failed.");
     }
   }
 
   template <typename Req, typename Resp>
-  int RPC(const Req &req, Resp &resp, bool sync = kRDMASync);
-
-  int RemoteRead(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey);
-
-  int RemoteWrite(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey);
-
+  int RPC(const Req &req, Resp &resp);
  private:
-  ConnQue *one_side_rdma_ = nullptr;
 };
 
 template <typename Req, typename Resp>
-int RDMAClient::RPC(const Req &req, Resp &resp, bool sync) {
+int RDMAClient::RPC(const Req &req, Resp &resp) {
   MessageBlock *msg = msg_buffer_->AllocMessage();
   // LOG_INFO("Alloc msg %d", msg_buffer_->MessageIndex(msg));
   msg->req_block.notify = PREPARED;
   msg->resp_block.notify = PROCESS;
   memcpy(msg->req_block.message, &req, sizeof(Req));
-  remoteWrite(cm_id_->qp, (uint64_t)msg, msg_buffer_->Lkey(), sizeof(MessageBlock),
-              remote_addr_ + msg_buffer_->MessageAddrOff(msg), remote_rkey_, sync);
-
+  RemoteWrite(msg, msg_buffer_->Lkey(), sizeof(MessageBlock), remote_addr_ + msg_buffer_->MessageAddrOff(msg),
+              remote_rkey_);
   /* wait for response */
   auto start = TIME_NOW;
   while (msg->resp_block.notify != DONE) {

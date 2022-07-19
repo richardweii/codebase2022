@@ -13,19 +13,14 @@
 
 using namespace kv;
 
-constexpr int thread_num = 8;
+constexpr int thread_num = 16;
 constexpr int op_per_thread_num = 1 << 15;
 
 std::atomic_uint64_t rid_counter{};
 
 int main(int argc, const char **argv) {
-  bool sync = false;
-  if (argc > 1) {
-    sync = std::atoi(argv[1]);
-    LOG_INFO("Sync %d", sync);
-  }
   RDMAClient *client = new RDMAClient();
-  client->Init("192.168.200.22", "12345");
+  client->Init("192.168.200.22", "12344");
   client->Start();
 
   std::vector<std::thread> threads;
@@ -36,7 +31,6 @@ int main(int argc, const char **argv) {
     threads.emplace_back([&]() {
       for (int j = 0; j < op_per_thread_num; j++) {
         DummyRequest req;
-        req.sync = sync;
         req.rid = rid_counter.fetch_add(1);
         memset(req.msg, 0, 16);
         auto a = std::to_string(j);
@@ -44,7 +38,7 @@ int main(int argc, const char **argv) {
         req.type = CMD_TEST;
 
         DummyResponse resp;
-        int ret = client->RPC(req, resp, req.sync);
+        int ret = client->RPC(req, resp);
 
         std::string res = resp.resp;
 

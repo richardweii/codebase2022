@@ -16,15 +16,20 @@ constexpr static const unsigned long PrimeList[] = {
 
 constexpr static uint64_t INVALID_HANDLE = ~0;
 
+template <typename Tp>
 class HashHandler {
  public:
   virtual ~HashHandler(){};
-  virtual Slice GetKey(uint64_t data_handle) = 0;
+  virtual Tp GetKey(uint64_t data_handle) = 0;
 };
 
+template <typename Tp>
+class HashTable;
+
+template <typename Tp>
 class HashNode {
  public:
-  friend class HashTable;
+  friend class HashTable<Tp>;
   HashNode() = default;
   HashNode(uint64_t data_handle) : data_handle_(data_handle){};
 
@@ -40,23 +45,24 @@ class HashNode {
   uint64_t data_handle_ = INVALID_HANDLE;
 };
 
+template <typename Tp>
 class HashTable {
  public:
-  static uint32_t Hash(Slice key) { return kv::Hash(key.data(), key.size(), hash_seed_); }
+  static uint32_t Hash(Tp key);
 
-  HashTable(size_t size, HashHandler *handler) : handler_(handler), size_(size) {
+  HashTable(size_t size, HashHandler<Tp> *handler) : handler_(handler), size_(size) {
     int logn = 0;
     while (size >= 2) {
       size /= 2;
       logn++;
     }
     size_ = PrimeList[logn];
-    slots_ = new HashNode[size_];
+    slots_ = new HashNode<Tp>[size_];
   };
 
   ~HashTable() {
-    HashNode *slot;
-    HashNode *next;
+    HashNode<Tp> *slot;
+    HashNode<Tp> *next;
     for (size_t i = 0; i < size_; i++) {
       if (slots_[i].next_ != nullptr) {
         slot = slots_[i].next_;
@@ -70,9 +76,9 @@ class HashTable {
     delete[] slots_;
   }
 
-  HashNode *Find(Slice key) {
+  HashNode<Tp> *Find(Tp key) {
     uint32_t index = Hash(key) % size_;
-    HashNode *slot = &slots_[index];
+    HashNode<Tp> *slot = &slots_[index];
     if (!slot->IsValid()) {
       return nullptr;
     }
@@ -86,9 +92,9 @@ class HashTable {
     return nullptr;
   }
 
-  void Insert(Slice key, uint64_t data_handle) {
+  void Insert(Tp key, uint64_t data_handle) {
     uint32_t index = Hash(key) % size_;
-    HashNode *slot = &slots_[index];
+    HashNode<Tp> *slot = &slots_[index];
 
     if (!slot->IsValid()) {
       slot->data_handle_ = data_handle;
@@ -107,14 +113,14 @@ class HashTable {
 
     // insert into head
     slot = slots_[index].next_;
-    slots_[index].next_ = new HashNode(data_handle);
+    slots_[index].next_ = new HashNode<Tp>(data_handle);
     slots_[index].next_->next_ = slot;
     count_++;
   }
 
-  bool Remove(Slice key) {
+  bool Remove(Tp key) {
     uint32_t index = Hash(key) % size_;
-    HashNode *slot = &slots_[index];
+    HashNode<Tp> *slot = &slots_[index];
 
     if (!slot->IsValid()) {
       return false;
@@ -123,7 +129,7 @@ class HashTable {
     // head
     if (key == handler_->GetKey(slot->data_handle_)) {
       if (slot->next_ != nullptr) {
-        HashNode *tmp = slot->next_;
+        HashNode<Tp> *tmp = slot->next_;
         *slot = *slot->next_;
         delete tmp;
       } else {
@@ -135,7 +141,7 @@ class HashTable {
     }
 
     // find
-    HashNode *front = slot;
+    HashNode<Tp> *front = slot;
     while (slot != nullptr) {
       if (key == handler_->GetKey(slot->data_handle_)) {
         front->next_ = slot->next_;
@@ -155,9 +161,25 @@ class HashTable {
 
  private:
   constexpr static uint32_t hash_seed_ = 0xf6ec23d9;
-  HashHandler *handler_;
-  HashNode *slots_ = nullptr;
+  HashHandler<Tp> *handler_;
+  HashNode<Tp> *slots_ = nullptr;
   size_t count_ = 0;
   size_t size_ = 0;
 };
+
+template <>
+inline uint32_t HashTable<Slice>::Hash(Slice key) {
+  return kv::Hash(key.data(), key.size(), hash_seed_);
+}
+
+template <>
+inline uint32_t HashTable<uint32_t>::Hash(uint32_t key) {
+  return key;
+}
+
+template <>
+inline uint32_t HashTable<uint64_t>::Hash(uint64_t key) {
+  return key;
+}
+
 }  // namespace kv

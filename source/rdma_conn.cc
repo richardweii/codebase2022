@@ -1,11 +1,16 @@
 #include "rdma_conn.h"
 #include <infiniband/verbs.h>
+#include <cstdint>
 #include "config.h"
 #include "util/logging.h"
 
 namespace kv {
 
 int RDMAConnection::Init(const std::string ip, const std::string port) {
+  if (init_) {
+    LOG_ERROR("Double init.");
+    return -1;
+  }
   cm_channel_ = rdma_create_event_channel();
   if (!cm_channel_) {
     perror("rdma_create_event_channel fail");
@@ -99,7 +104,8 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
 
   if (rdma_connect(cm_id_, nullptr)) {
     perror("rdma_connect fail");
-    return -1;
+    LOG_ERROR("rdma_connect fail");
+    return false;
   }
 
   if (rdma_get_cm_event(cm_channel_, &event)) {
@@ -111,6 +117,7 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
     perror("RDMA_CM_EVENT_ESTABLISHED fail");
     return -1;
   }
+  init_ = true;
   return 0;
 }
 

@@ -19,6 +19,7 @@
 #include "util/logging.h"
 #include "util/nocopy.h"
 #include "util/rwlock.h"
+#include "util/slice.h"
 
 namespace kv {
 
@@ -58,7 +59,7 @@ class Pool NOCOPYABLE {
 
 class RemotePool NOCOPYABLE {
  public:
-  class RemotePoolHashHandler : public HashHandler {
+  class RemotePoolHashHandler : public HashHandler<Slice> {
    public:
     RemotePoolHashHandler(RemotePool *pool) : pool_(pool){};
     Slice GetKey(uint64_t data_handle) override {
@@ -89,7 +90,7 @@ class RemotePool NOCOPYABLE {
   };
   RemotePool(ibv_pd *pd, uint8_t shard) : pd_(pd), shard_(shard) {
     handler_ = new RemotePoolHashHandler(this);
-    hash_table_ = new HashTable(kKeyNum / kPoolShardNum, handler_);
+    hash_table_ = new HashTable<Slice>(kKeyNum / kPoolShardNum, handler_);
   }
   ~RemotePool() {
     delete hash_table_;
@@ -134,7 +135,7 @@ class RemotePool NOCOPYABLE {
   std::vector<ibv_mr *> mr_;
   std::unordered_map<BlockId, FrameId> block_table_;
   std::vector<BlockHandle *> handles_;
-  HashTable *hash_table_;
+  HashTable<Slice> *hash_table_;
   std::vector<MR *> datablocks_;
   std::list<FrameId> free_list_;
   ibv_pd *pd_;
