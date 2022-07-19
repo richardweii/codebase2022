@@ -6,7 +6,7 @@
 
 namespace kv {
 
-int RDMAConnection::Init(const std::string ip, const std::string port, uint64_t *addr, uint32_t *rkey) {
+int RDMAConnection::Init(const std::string ip, const std::string port) {
   if (init_) {
     LOG_ERROR("Double init.");
     return -1;
@@ -102,10 +102,7 @@ int RDMAConnection::Init(const std::string ip, const std::string port, uint64_t 
     return -1;
   }
 
-  struct rdma_conn_param conn_param = {};
-  conn_param.initiator_depth = 1;
-  conn_param.retry_count = 7;
-  if (rdma_connect(cm_id_, &conn_param)) {
+  if (rdma_connect(cm_id_, nullptr)) {
     perror("rdma_connect fail");
     LOG_ERROR("rdma_connect fail");
     return false;
@@ -120,17 +117,6 @@ int RDMAConnection::Init(const std::string ip, const std::string port, uint64_t 
     perror("RDMA_CM_EVENT_ESTABLISHED fail");
     return -1;
   }
-
-  struct PData server_pdata;
-  memcpy(&server_pdata, event->param.conn.private_data, sizeof(server_pdata));
-
-  rdma_ack_cm_event(event);
-
-  if (addr != nullptr && rkey != nullptr) {
-    *addr = server_pdata.buf_addr;
-    *rkey = server_pdata.buf_rkey;
-  }
-
   init_ = true;
   return 0;
 }

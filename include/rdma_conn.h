@@ -37,7 +37,7 @@ class RDMAConnection NOCOPYABLE {
     rdma_destroy_id(cm_id_);
     rdma_destroy_event_channel(cm_channel_);
   };
-  int Init(const std::string ip, const std::string port, uint64_t *addr = nullptr, uint32_t *rkey = nullptr);
+  int Init(const std::string ip, const std::string port);
 
   int Init(ibv_cq *cq, rdma_cm_id *cm_id) {
     if (init_) {

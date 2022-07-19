@@ -42,15 +42,13 @@ class ConnQue {
     delete[] in_use_;
   }
 
-  // init all by create new RDMA connection
-  bool Init(ibv_pd *pd, const std::string ip, const std::string port, uint64_t *addr = nullptr,
-            uint32_t *rkey = nullptr) {
-    for (size_t i = 0; i < size_; i++) {
-      connections_[i] = new RDMAConnection(pd, i);
-      if (connections_[i]->Init(ip, port, addr, rkey)) {
-        LOG_ERROR("Init rdma connection %ld failed", i);
-        return false;
-      }
+  // init specific connection by create RDMA connection
+  bool InitConnection(int idx, ibv_pd *pd, const std::string ip, const std::string port) {
+    LOG_ASSERT((size_t)idx < size_, "idx %d", idx);
+    connections_[idx] = new RDMAConnection(pd, idx);
+    if (connections_[idx]->Init(ip, port)) {
+      LOG_ERROR("Init rdma connection %d failed", idx);
+      return false;
     }
     return true;
   }
@@ -59,7 +57,10 @@ class ConnQue {
   bool InitConnection(int idx, ibv_pd *pd, ibv_cq *cq, rdma_cm_id *cm_id) {
     LOG_ASSERT((size_t)idx < size_, "idx %d", idx);
     connections_[idx] = new RDMAConnection(pd, idx);
-    connections_[idx]->Init(cq, cm_id);
+    if (connections_[idx]->Init(cq, cm_id)) {
+      LOG_ERROR("Init rdma connection %d failed", idx);
+      return false;
+    }
     return true;
   }
 
