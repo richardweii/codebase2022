@@ -72,7 +72,7 @@ template <typename Req>
 int RDMAClient::Async(const Req &req) {
   MessageBlock *msg = msg_buffer_->AllocMessage();
   // LOG_INFO("Alloc msg %d", msg_buffer_->MessageIndex(msg));
-  msg->req_block.notify = ASYNC;
+  msg->req_block.notify = PREPARED;
   memcpy(msg->req_block.message, &req, sizeof(Req));
   RemoteWrite(msg, msg_buffer_->Lkey(), sizeof(MessageBlock), remote_addr_ + msg_buffer_->MessageAddrOff(msg),
               remote_rkey_);

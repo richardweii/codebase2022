@@ -28,7 +28,7 @@ class MsgBuffer {
   }
 
   bool Init() {
-    std::memset(msg_, 0, sizeof(MessageBlock) * RDMA_MSG_CAP);
+    std::memset((char*)msg_, 0, sizeof(MessageBlock) * RDMA_MSG_CAP);
     mr_ = ibv_reg_mr(pd_, msg_, sizeof(MessageBlock) * RDMA_MSG_CAP,
                      IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
     if (mr_ == nullptr) {
@@ -43,7 +43,7 @@ class MsgBuffer {
     while (true) {
       for (int i = 0; i < (int)size_; i++) {
         bool tmp = false;
-        if (in_use_[i].compare_exchange_weak(tmp, true) && msg_[i].req_block.notify != ASYNC) {
+        if (msg_[i].req_block.notify != PREPARED && in_use_[i].compare_exchange_weak(tmp, true)) {
           return &msg_[i];
         }
       }
@@ -54,7 +54,7 @@ class MsgBuffer {
 
   void FreeMessage(MessageBlock *msg) {
     int off = MessageIndex(msg);
-    memset(msg, 0, sizeof(MessageBlock));
+    memset((char *)msg, 0, sizeof(MessageBlock));
     assert(in_use_[off].load());
     in_use_[off].store(false);
   }
