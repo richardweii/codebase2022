@@ -1,7 +1,9 @@
 #pragma once
 #include <atomic>
 #include <cstddef>
+#include <cstring>
 #include <functional>
+#include "msg.h"
 #include "rdma_manager.h"
 
 namespace kv {
@@ -56,6 +58,16 @@ class RPCTask {
   void SetResponse(const Tp &resp) {
     memcpy(&msg_->resp_block, &resp, sizeof(resp));
     msg_->resp_block.notify = DONE;
+    server_->RemoteWrite(msg_, server_->msg_buffer_->Lkey(), sizeof(MessageBlock),
+                         server_->remote_addr_ + server_->msg_buffer_->MessageAddrOff(msg_), server_->remote_rkey_);
+    int idx = server_->msg_buffer_->MessageIndex(msg_);
+    LOG_ASSERT(server_->tasks_[idx].load(), "Not occupied task %d", idx);
+    server_->tasks_[idx].store(false);
+  }
+
+  void FreeAsyncMessage() {
+    msg_->req_block.notify = IDLE;
+    memset(&msg_->req_block, 0, sizeof(RequestBlock) - 1);
     server_->RemoteWrite(msg_, server_->msg_buffer_->Lkey(), sizeof(MessageBlock),
                          server_->remote_addr_ + server_->msg_buffer_->MessageAddrOff(msg_), server_->remote_rkey_);
     int idx = server_->msg_buffer_->MessageIndex(msg_);

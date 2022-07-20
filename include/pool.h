@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 #include "block.h"
@@ -32,7 +33,7 @@ class Pool NOCOPYABLE {
    * @param filter_bits bloom filter bits num 10 * key
    * @param cache_size cache data size
    */
-  Pool(size_t buffer_pool_size, size_t filter_bits, uint8_t shard, RDMAClient *client);
+  Pool(size_t buffer_pool_size, size_t filter_bits, size_t cache_size, uint8_t shard, RDMAClient *client);
   ~Pool();
 
   void Init() {
@@ -54,6 +55,7 @@ class Pool NOCOPYABLE {
   RDMAClient *client_;
   BufferPool *buffer_pool_;
   Filter *filter_;
+  Cache *cache_;
   Latch latch_;
 };
 
@@ -66,7 +68,7 @@ class RemotePool NOCOPYABLE {
       FrameId fid = data_handle >> 32;
       int off = data_handle << 32 >> 32;
       auto handle = pool_->handles_[fid];
-      return Slice(handle->Read(off)->key, kKeyLength);
+      return Slice(handle->ReadEntry(off)->key, kKeyLength);
     };
 
     FrameId GetFrameId(uint64_t data_handle) {
@@ -78,7 +80,7 @@ class RemotePool NOCOPYABLE {
       FrameId fid = GetFrameId(data_handle);
       int off = data_handle << 32 >> 32;
       auto handle = pool_->handles_[fid];
-      return handle->Read(off);
+      return handle->ReadEntry(off);
     }
 
     uint64_t GenHandle(FrameId fid, int off) { return (uint64_t)fid << 32 | off; }
@@ -116,6 +118,8 @@ class RemotePool NOCOPYABLE {
  private:
   FrameId findBlock(BlockId id) const;
 
+  void indexRountine();
+
   DataBlock *getDataBlock(FrameId id) const {
     constexpr int ratio = kRemoteMrSize / kDataBlockSize;
     int index = id / ratio;
@@ -131,14 +135,18 @@ class RemotePool NOCOPYABLE {
     return mr_[index];
   }
 
-  RemotePoolHashHandler *handler_;
+  RemotePoolHashHandler *handler_ = nullptr;
+
   std::vector<ibv_mr *> mr_;
+  std::vector<MR *> datablocks_;
+
+  ibv_pd *pd_ = nullptr;
+
   std::unordered_map<BlockId, FrameId> block_table_;
   std::vector<BlockHandle *> handles_;
-  HashTable<Slice> *hash_table_;
-  std::vector<MR *> datablocks_;
+
+  HashTable<Slice> *hash_table_ = nullptr;
   std::list<FrameId> free_list_;
-  ibv_pd *pd_;
   uint8_t shard_;
   mutable Latch latch_;
 };

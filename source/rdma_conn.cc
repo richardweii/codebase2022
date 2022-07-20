@@ -2,6 +2,7 @@
 #include <infiniband/verbs.h>
 #include <cstdint>
 #include "config.h"
+#include "msg_buf.h"
 #include "util/logging.h"
 
 namespace kv {
@@ -77,7 +78,7 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
     return -1;
   }
 
-  cq_ = ibv_create_cq(cm_id_->verbs, 2, NULL, comp_chan_, 0);
+  cq_ = ibv_create_cq(cm_id_->verbs, RDMA_MSG_CAP, NULL, comp_chan_, 0);
   if (!cq_) {
     perror("ibv_create_cq fail");
     return -1;
@@ -89,7 +90,7 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
   }
 
   struct ibv_qp_init_attr qp_attr = {};
-  qp_attr.cap.max_send_wr = 2;
+  qp_attr.cap.max_send_wr = RDMA_MSG_CAP;
   qp_attr.cap.max_send_sge = 1;
   qp_attr.cap.max_recv_wr = 1;
   qp_attr.cap.max_recv_sge = 1;
@@ -129,7 +130,7 @@ int RDMAConnection::rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint
   sge.lkey = lkey;
 
   struct ibv_send_wr send_wr = {};
-  struct ibv_send_wr *bad_send_wr;
+  struct ibv_send_wr *bad_send_wr = nullptr;
   send_wr.wr_id = 0;
   send_wr.num_sge = 1;
   send_wr.next = NULL;
@@ -143,6 +144,10 @@ int RDMAConnection::rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint
     return -1;
   }
 
+  if (bad_send_wr != nullptr) {
+    LOG_ERROR("Bad send wr.");
+  }
+
   // LOG_ERROR("remote write %ld %d\n", remote_addr, rkey);
 
   auto start = TIME_NOW;
@@ -150,7 +155,7 @@ int RDMAConnection::rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint
   struct ibv_wc wc;
   while (true) {
     if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
-      LOG_ERROR("rdma_remote_write timeout\n");
+      LOG_ERROR("rdma_one_side timeout\n");
       return -1;
     }
     int rc = ibv_poll_cq(cq_, 1, &wc);
@@ -160,13 +165,8 @@ int RDMAConnection::rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint
         // LOG_ERROR("Break out as operation completed successfully\n");
         ret = 0;
         break;
-      } else if (IBV_WC_WR_FLUSH_ERR == wc.status) {
-        perror("cmd_send IBV_WC_WR_FLUSH_ERR");
-        break;
-      } else if (IBV_WC_RNR_RETRY_EXC_ERR == wc.status) {
-        perror("cmd_send IBV_WC_RNR_RETRY_EXC_ERR");
-        break;
       } else {
+        LOG_ERROR("poll cq failed. Status %d : %s", wc.status, ibv_wc_status_str(wc.status));
         perror("cmd_send ibv_poll_cq status error");
         break;
       }

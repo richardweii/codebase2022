@@ -17,10 +17,8 @@
 
 namespace kv {
 
-static std::atomic<BlockId> blockId(1);
 static std::atomic<uint32_t> rid_counter(1);
 
-BlockId getGetBlockId() { return blockId.fetch_add(1, std::memory_order_relaxed); }
 uint32_t getRid() { return rid_counter.fetch_add(1, std::memory_order_relaxed); }
 
 BufferPool::BufferPool(size_t size, uint8_t shard, RDMAClient *client) {
@@ -31,14 +29,14 @@ BufferPool::BufferPool(size_t size, uint8_t shard, RDMAClient *client) {
   for (size_t i = 0; i < size; i++) {
     handles_.emplace_back(new BlockHandle(&datablocks_[i]));
   }
-  handler_ = new BufferPoolHashHandler(this);
-  hash_table_ = new HashTable<Slice>(size * kItemNum, handler_);
+  filter_ = NewBloomFilterPolicy();
   client_ = client;
   pd_ = client->Pd();
   // Initially, every page is in the free list.
   for (size_t i = 0; i < pool_size_; ++i) {
     free_list_.emplace_back(static_cast<int>(i));
   }
+  clock_frame_ = new std::atomic_bool[size];
 }
 
 bool BufferPool::Init() {
@@ -87,22 +85,29 @@ DataBlock *BufferPool::GetNewDataBlock() {
     addr = global_table_[old_bid].addr;
     rkey = global_table_[old_bid].rkey;
 
-    prune(handles_[frame_id]);
+    // erase old
+    WriteLockTable();
+    ret = block_table_.erase(datablocks_[frame_id].GetId());
+    assert(ret == 1);
+    WriteUnlockTable();
+
     ret = client_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, addr, rkey);
     if (alloced) {
-      succ = remoteCreateIndex(shard_, old_bid);
-      LOG_ASSERT(succ, "Remote create index failed.");
+      createRemoteIndex(shard_, old_bid);
     }
+
     LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
-    LOG_DEBUG("Get new datablock from remote successfully...");
+    LOG_DEBUG("shard %d, Write datablock %d to remote successfully...", shard_, old_bid);
   }
 
-  BlockId id = getGetBlockId();
+  BlockId id = genBlockId();
   datablocks_[frame_id].Free();
   datablocks_[frame_id].SetId(id);
 
   // insert new
+  WriteLockTable();
   block_table_[datablocks_[frame_id].GetId()] = frame_id;
+  WriteUnlockTable();
 
   renew(frame_id);
 
@@ -143,20 +148,14 @@ bool BufferPool::lookup(Slice slice, uint64_t &addr, uint32_t &rkey) {
   return false;
 }
 
-bool BufferPool::remoteCreateIndex(uint8_t shard, BlockId id) {
+void BufferPool::createRemoteIndex(uint8_t shard, BlockId id) {
   CreateIndexRequest req;
-  req.type = MSG_CREATE;
-  req.rid = getRid();
-  req.id = id;
   req.shard = shard;
+  req.id = id;
+  req.rid = getRid();
+  req.type = MSG_CREATE;
 
-  CreateIndexResponse resp;
-  auto ret = client_->RPC(req, resp);
-  assert(ret == 0);
-  if (resp.status == RES_OK) {
-    return true;
-  }
-  return false;
+  client_->Async(req);
 }
 
 bool BufferPool::replacement(Slice key, FrameId &fid) {
@@ -199,27 +198,27 @@ bool BufferPool::replacement(Slice key, FrameId &fid) {
   write_addr = global_table_[victim].addr;
   write_rkey = global_table_[victim].rkey;
 
-  prune(handles_[frame_id]);
-  ret = block_table_.erase(victim);
-  assert(ret == 1);
-
   ret = client_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr, write_rkey);
   LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
   if (alloced) {
-    succ = remoteCreateIndex(shard_, victim);
-    LOG_ASSERT(succ, "Remote create index failed.");
+    createRemoteIndex(shard_, victim);
   }
-
   // erase old
+  WriteLockTable();
+  ret = block_table_.erase(datablocks_[frame_id].GetId());
   datablocks_[frame_id].Free();
+  assert(ret == 1);
+  WriteUnlockTable();
 
   // fetch
   ret = client_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr, read_rkey);
   LOG_ASSERT(ret == 0, "Remote Read Datablock Failed.");
   LOG_DEBUG("Read Block %d", datablocks_[frame_id].GetId());
 
+  // insert new
+  WriteLockTable();
   block_table_[datablocks_[frame_id].GetId()] = frame_id;
-  createIndex(handles_[frame_id]);
+  WriteUnlockTable();
 
   // LRU update
   renew(frame_id);
@@ -230,121 +229,147 @@ bool BufferPool::replacement(Slice key, FrameId &fid) {
   return found;
 }
 
-void BufferPool::renew(FrameId frame_id) {
-  if (frame_mapping_.count(frame_id) == 0) {
-    // add to frame_mapping_
-    Frame *new_frame = new Frame(frame_id);
-    frame_mapping_.emplace(frame_id, new_frame);
-    // add to frame_list
-    if (frame_list_head_ == nullptr) {
-      assert(frame_list_head_ == frame_list_tail_);
-      frame_list_head_ = new_frame;
-      frame_list_tail_ = new_frame;
-    } else {
-      frame_list_tail_->next = new_frame;
-      new_frame->front = frame_list_tail_;
-      frame_list_tail_ = new_frame;
-    }
-  } else {
-    auto frame = frame_mapping_[frame_id];
-    // remove from list
-    if (frame->front == nullptr && frame->next == nullptr) {
-      frame_list_head_ = nullptr;
-      frame_list_tail_ = nullptr;
-    } else if (frame->front == nullptr) {  // head
-      frame_list_head_ = frame->next;
-      frame_list_head_->front = nullptr;
-    } else if (frame->next == nullptr) {  // tail
-      frame_list_tail_ = frame->front;
-      frame_list_tail_->next = nullptr;
-    } else {
-      frame->front->next = frame->next;
-      frame->next->front = frame->front;
-    }
-    frame->front = nullptr;
-    frame->next = nullptr;
-    // add to frame_list
-    if (frame_list_head_ == nullptr) {
-      assert(frame_list_head_ == frame_list_tail_);
-      frame_list_head_ = frame;
-      frame_list_tail_ = frame;
-    } else {
-      frame_list_tail_->next = frame;
-      frame->front = frame_list_tail_;
-      frame_list_tail_ = frame;
-    }
-  }
-}
+void BufferPool::renew(FrameId frame_id) { clock_frame_[frame_id].store(true); }
 
-FrameId BufferPool::pop() {
-  if (frame_list_head_ == nullptr) {
-    return INVALID_FRAME_ID;
-  }
-
-  // remove from list
-  auto frame = frame_list_head_;
-  frame_list_head_ = frame_list_head_->next;
-  if (frame_list_head_ != nullptr) {
-    frame_list_head_->front = nullptr;
-  } else {
-    frame_list_tail_ = nullptr;
-  }
-  // remove from hash_table
-  // assert(frame_mapping_.count(frame->frame_) != 0);
-  if (frame_mapping_.count(frame->frame_) == 0) {
-    LOG_ERROR("fuck");
-  }
-  frame_mapping_.erase(frame->frame_);
-
-  FrameId ret = frame->frame_;
-  delete frame;
+int BufferPool::walk() {
+  int ret = hand_;
+  hand_ = (hand_ + 1) % pool_size_;
   return ret;
 }
 
-bool BufferPool::FetchRead(Slice key, std::string &value) {
-  auto node = hash_table_->Find(key);
-  if (node != nullptr) {
-    // renew(handler_->GetFrameId(node->Handle()));
-    auto ent = handler_->GetEntry(node->Handle());
-    value.resize(kValueLength);
-    memcpy((char *)value.c_str(), ent->value, kValueLength);
-    return true;
+FrameId BufferPool::pop() {
+  bool found = false;
+  while (!found) {
+    bool ref = true;
+    if (clock_frame_[hand_].compare_exchange_weak(ref, false)) {
+      walk();
+      continue;
+    } else {
+      found = true;
+    }
+  }
+  return walk();
+}
+
+bool BufferPool::FetchRead(Slice key, std::string &value, CacheEntry &entry) {
+  for (auto &kv : block_table_) {
+    FrameId fid = kv.second;
+
+    BlockHandle *handle = handles_[fid];
+    if (handle->Read(key, value, filter_, entry)) {
+      renew(fid);
+      stat::local_access.fetch_add(1);
+      return true;
+    }
   }
 
   FrameId fid;
+  // TODO: replacement can return off of entry, aviod additional lookup
   bool found = replacement(key, fid);
   if (!found) {
     return false;
   }
 
-  node = hash_table_->Find(key);
-  LOG_ASSERT(node != nullptr, "Fetched invalid datablock.");
-  auto ent = handler_->GetEntry(node->Handle());
-  value.resize(kValueLength);
-  memcpy((char *)value.c_str(), ent->value, kValueLength);
+  bool succ = handles_[fid]->Read(key, value, filter_, entry);
+  LOG_ASSERT(succ, "Fetched invalid datablock.")
   return true;
 }
 
-bool BufferPool::Read(Slice key, std::string &value) {
-  auto node = hash_table_->Find(key);
-  if (node != nullptr) {
-    // renew(handler_->GetFrameId(node->Handle()));
-    auto ent = handler_->GetEntry(node->Handle());
-    value.resize(kValueLength);
-    memcpy((char *)value.c_str(), ent->value, kValueLength);
+bool BufferPool::MissFetch(Slice key, BlockId id) {
+  LOG_DEBUG("Fetch block %d for key %s", id, key.data());
+
+  if (block_table_.count(id)) {
+    LOG_DEBUG("Other has fetched the block.");
     return true;
   }
 
+  stat::fetch.fetch_add(1, std::memory_order_relaxed);
+  int ret;
+  bool succ;
+  // replacement
+  FrameId frame_id;
+  frame_id = pop();
+  if (frame_id == INVALID_FRAME_ID) {
+    return false;
+  }
+
+  BlockId victim = datablocks_[frame_id].GetId();
+
+  // write back victim
+  uint64_t write_addr;
+  uint32_t write_rkey;
+  bool alloced = false;
+  if (!global_table_.count(victim)) {
+    LOG_DEBUG("Request new datablock for replace block %d", victim);
+    succ = alloc(shard_, victim, write_addr, write_rkey);
+    LOG_ASSERT(succ, "Alloc Failed.");
+    global_table_[victim].addr = write_addr;
+    global_table_[victim].rkey = write_rkey;
+    alloced = true;
+  }
+  write_addr = global_table_[victim].addr;
+  write_rkey = global_table_[victim].rkey;
+  ret = client_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr, write_rkey);
+  if (alloced) {
+    createRemoteIndex(shard_, victim);
+  }
+  LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
+
+  // erase old
+  WriteLockTable();
+  ret = block_table_.erase(victim);
+  datablocks_[frame_id].Free();
+  assert(ret == 1);
+  WriteUnlockTable();
+
+  // fetch
+  uint64_t read_addr = global_table_[id].addr;
+  uint32_t read_rkey = global_table_[id].rkey;
+  // fetch
+  ret = client_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr, read_rkey);
+  LOG_ASSERT(ret == 0, "Remote Read Datablock Failed.");
+  LOG_DEBUG("Read Block %d", id);
+  LOG_ASSERT(datablocks_[frame_id].GetId() == id, "Unmatched block id.");
+  // insert new
+  WriteLockTable();
+  block_table_[id] = frame_id;
+  WriteUnlockTable();
+
+  // LRU update
+  renew(frame_id);
+
+  LOG_DEBUG("Replacement finish.");
+
+  LOG_ASSERT(handles_[frame_id]->Find(key, this->filter_), "Invalid key in cache.");
+  LOG_ASSERT(HasBlock(id), "Failed to fetch block %d", id);
+  return true;
+}
+
+bool BufferPool::Read(Slice key, std::string &value, CacheEntry &entry) {
+  for (auto &kv : block_table_) {
+    FrameId fid = kv.second;
+
+    BlockHandle *handle = handles_[fid];
+    if (handle->Read(key, value, filter_, entry)) {
+      renew(fid);
+      stat::local_access.fetch_add(1);
+      return true;
+    }
+  }
   return false;
 }
 
-bool BufferPool::Modify(Slice key, Slice value) {
-  auto node = hash_table_->Find(key);
-  if (node != nullptr) {
-    // renew(handler_->GetFrameId(node->Handle()));
-    auto ent = handler_->GetEntry(node->Handle());
-    memcpy(ent->value, value.data(), kValueLength);
-    return true;
+bool BufferPool::Modify(Slice key, Slice value, CacheEntry &entry) {
+  for (auto &kv : block_table_) {
+    BlockId id = kv.first;
+    FrameId fid = kv.second;
+
+    BlockHandle *handle = handles_[fid];
+    if (handle->Modify(key, value, filter_, entry)) {
+      stat::local_access.fetch_add(1);
+      renew(fid);
+      return true;
+    }
   }
 
   FrameId fid;
@@ -353,35 +378,8 @@ bool BufferPool::Modify(Slice key, Slice value) {
     return false;
   }
 
-  node = hash_table_->Find(key);
-  LOG_ASSERT(node != nullptr, "Fetched invalid datablock.");
-  auto ent = handler_->GetEntry(node->Handle());
-  memcpy(ent->value, value.data(), kValueLength);
+  bool succ = handles_[fid]->Modify(key, value, filter_, entry);
+  LOG_ASSERT(succ, "Fetched invalid datablock.")
   return true;
-}
-
-void BufferPool::prune(BlockHandle *handle) {
-  auto count = hash_table_->Count();
-  for (uint32_t i = 0; i < handle->EntryNum(); i++) {
-    FrameId fid = block_table_[handle->GetBlockId()];
-    assert(fid != INVALID_FRAME_ID);
-    hash_table_->Remove(Slice(handle->Read(i)->key, kKeyLength));
-  }
-  LOG_ASSERT(count - hash_table_->Count() == kItemNum, "Less than expected entries removed. expected %d, got %lu",
-             kItemNum, count - hash_table_->Count());
-}
-
-void BufferPool::createIndex(BlockHandle *handle) {
-  auto count = hash_table_->Count();
-  for (uint32_t i = 0; i < handle->EntryNum(); i++) {
-    BlockId bid = handle->GetBlockId();
-    FrameId fid = block_table_[bid];
-    assert(fid != INVALID_FRAME_ID);
-    uint64_t data_handle = handler_->GenHandle(fid, i);
-
-    hash_table_->Insert(Slice(handle->Read(i)->key, kKeyLength), data_handle);
-  }
-  LOG_ASSERT(hash_table_->Count() - count == kItemNum, "Less than expected entries inserted. expected %d, got %lu",
-             kItemNum, hash_table_->Count() - count);
 }
 }  // namespace kv

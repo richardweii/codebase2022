@@ -37,6 +37,9 @@ class RDMAClient : public RDMAManager {
 
   template <typename Req, typename Resp>
   int RPC(const Req &req, Resp &resp);
+
+  template <typename Req>
+  int Async(const Req &req);
  private:
 };
 
@@ -64,4 +67,18 @@ int RDMAClient::RPC(const Req &req, Resp &resp) {
   // LOG_INFO("Free msg %d", msg_buffer_->MessageIndex(msg));
   return 0;
 }
+
+template <typename Req>
+int RDMAClient::Async(const Req &req) {
+  MessageBlock *msg = msg_buffer_->AllocMessage();
+  // LOG_INFO("Alloc msg %d", msg_buffer_->MessageIndex(msg));
+  msg->req_block.notify = ASYNC;
+  memcpy(msg->req_block.message, &req, sizeof(Req));
+  RemoteWrite(msg, msg_buffer_->Lkey(), sizeof(MessageBlock), remote_addr_ + msg_buffer_->MessageAddrOff(msg),
+              remote_rkey_);
+  // return immediately
+  msg_buffer_->FreeAsyncMessage(msg);
+  return 0;
+}
+
 }  // namespace kv

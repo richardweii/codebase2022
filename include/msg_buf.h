@@ -7,8 +7,8 @@
 #include <cstdio>
 #include <cstring>
 #include <thread>
-#include "util/logging.h"
 #include "msg.h"
+#include "util/logging.h"
 
 namespace kv {
 
@@ -43,7 +43,7 @@ class MsgBuffer {
     while (true) {
       for (int i = 0; i < (int)size_; i++) {
         bool tmp = false;
-        if (in_use_[i].compare_exchange_weak(tmp, true)) {
+        if (in_use_[i].compare_exchange_weak(tmp, true) && msg_[i].req_block.notify != ASYNC) {
           return &msg_[i];
         }
       }
@@ -59,11 +59,15 @@ class MsgBuffer {
     in_use_[off].store(false);
   }
 
+  void FreeAsyncMessage(MessageBlock *msg) {
+    int off = MessageIndex(msg);
+    assert(in_use_[off].load());
+    in_use_[off].store(false);
+  }
+
   int MessageIndex(MessageBlock *msg) { return msg - msg_; }
 
-  uint64_t MessageAddrOff(MessageBlock *msg) {
-    return (uint64_t)msg - (uint64_t)msg_;
-  }
+  uint64_t MessageAddrOff(MessageBlock *msg) { return (uint64_t)msg - (uint64_t)msg_; }
 
   uint32_t Rkey() const { return mr_->rkey; }
 

@@ -105,7 +105,7 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
     return -1;
   }
 
-  struct ibv_cq *cq = ibv_create_cq(context_, 2, NULL, comp_chan, 0);
+  struct ibv_cq *cq = ibv_create_cq(context_, RDMA_MSG_CAP, NULL, comp_chan, 0);
   if (!cq) {
     perror("ibv_create_cq fail");
     return -1;
@@ -155,7 +155,7 @@ RPCTask *RDMAServer::pollTask() {
   MessageBlock *blocks_ = msg_buffer_->Data();
   while (!stop_) {
     for (size_t i = 0; i < msg_buffer_->Size(); i++) {
-      if (blocks_[i].req_block.notify == PREPARED) {
+      if (blocks_[i].req_block.notify == PREPARED || blocks_[i].req_block.notify == ASYNC) {
         bool tmp = false;
         if (tasks_[i].compare_exchange_weak(tmp, true)) {
           blocks_[i].req_block.notify = PROCESS;

@@ -16,11 +16,11 @@ using namespace std;
 
 constexpr int key_num = kKeyNum;
 constexpr int write_thread = 4;
-constexpr int read_thread = 16;
+constexpr int read_thread = 1;
 
 int main() {
   LocalEngine *local_engine = new LocalEngine();
-  local_engine->start("192.168.200.22",
+  local_engine->start("172.16.5.129",
                       "12344");  // ip 必须写具体ip，不能直接写localhost和127.0.0.1
   auto keys = genKey(key_num);
   auto values = genValue(key_num);
