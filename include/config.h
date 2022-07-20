@@ -39,7 +39,7 @@ constexpr int kBloomFilterBitsPerKey = 10;
 #ifdef TEST_CONFIG
 constexpr int kDataBlockSize = 2 * 1024;  // for test
 #else
-constexpr int kDataBlockSize = 8 * 1024 * 1024;                    // 16KB
+constexpr int kDataBlockSize = 16 * 1024 * 1024;                    // 16KB
 #endif
 
 constexpr int kItemNum = kDataBlockSize * 8 / (kKeyLength * 8 + kValueLength * 8 + kBloomFilterBitsPerKey);
@@ -51,8 +51,8 @@ constexpr size_t kLocalDataSize = (size_t)4 * 16 * 1024;  // 128KB = 16 * 8
 constexpr size_t kKeyNum = 16 * 100;                      // 16 * 12 * 32K key
 constexpr size_t kCacheSize = 2 * 16 * 1024;              // 32KB cache
 #else
-constexpr size_t kLocalDataSize = (size_t)4 * 1024 * 1024 * 1024;  // local data
-constexpr size_t kCacheSize = (size_t)3 * 1024 * 1024 * 1024;      // 2GB cache
+constexpr size_t kLocalDataSize = (size_t)5 * 1024 * 1024 * 1024;  // local data
+constexpr size_t kCacheSize = (size_t)2 * 1024 * 1024 * 1024;      // 2GB cache
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                  // 16 * 12M key
 #endif
 
