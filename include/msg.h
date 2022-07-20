@@ -20,7 +20,7 @@ struct PData {
   uint32_t size;
 };
 
-enum MsgType { CMD_PING, CMD_STOP, CMD_TEST, MSG_ALLOC, MSG_LOOKUP, MSG_CREATE };
+enum MsgType { CMD_PING, CMD_STOP, CMD_TEST, MSG_ALLOC, MSG_LOOKUP, MSG_FETCH };
 
 enum ResStatus { RES_OK, RES_FAIL };
 
@@ -89,15 +89,6 @@ struct LookupResponse : public ResponseMsg {
   uint32_t rkey;
 };
 CHECK_RDMA_MSG_SIZE(LookupResponse);
-
-struct CreateIndexRequest : public RequestsMsg {
-  uint8_t shard;
-  BlockId id;
-};
-CHECK_RDMA_MSG_SIZE(CreateIndexRequest);
-
-struct CreateIndexResponse : public ResponseMsg {};
-CHECK_RDMA_MSG_SIZE(CreateIndexResponse);
 
 struct FetchRequest : public RequestsMsg {
   uint8_t shard;

@@ -21,7 +21,7 @@ class BlockBuilder {
   // 向块中插入
   void Put(Slice key, Slice value);
 
-  void Finish(Ptr<Filter> filter);
+  void Finish(Filter * filter);
 
  private:
   char *current() { return datablock_->Data() + pos_; }

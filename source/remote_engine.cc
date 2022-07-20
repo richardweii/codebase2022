@@ -87,18 +87,23 @@ void RemoteEngine::handler(RPCTask *task) {
       LOG_DEBUG("Response Lookup %s msg, blockid %d", key.data(), id);
       break;
     }
-    case MSG_CREATE: {
-      CreateIndexRequest *req = task->GetRequest<CreateIndexRequest>();
-      uint8_t shard = req->shard;
-      BlockId id = req->id;
+    case MSG_FETCH: {
+      FetchRequest *req = task->GetRequest<FetchRequest>();
+      LOG_DEBUG("Fetch msg, shard %d, block %d", req->shard, req->id);
+      auto access = pool_[req->shard]->AccessDataBlock(req->id);
+      LOG_DEBUG("Fetch successfully, prepare response.");
 
-      CreateIndexResponse resp;
-      resp.status = RES_OK;
+      FetchResponse resp;
+      if (access.addr == 0) {
+        resp.status = RES_FAIL;
+        LOG_ERROR("Cannot find block %d", req->id);
+      } else {
+        resp.status = RES_OK;
+        resp.addr = access.addr;
+        resp.rkey = access.rkey;
+      }
       task->SetResponse(resp);
-      LOG_DEBUG("Create Index, shard %d, blockid %d", req->shard, req->id);
-
-      // create index async
-      pool_[shard]->CreateIndex(id);
+      LOG_DEBUG("Response Fetch block %d msg to shard %d", req->id, req->shard);
       break;
     }
     default:

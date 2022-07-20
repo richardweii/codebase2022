@@ -2,6 +2,7 @@
 
 #include <infiniband/verbs.h>
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -14,42 +15,17 @@
 #include "config.h"
 #include "hash_table.h"
 #include "rdma_client.h"
+#include "util/defer.h"
+#include "util/filter.h"
 #include "util/logging.h"
 #include "util/nocopy.h"
 #include "util/rwlock.h"
-#include "util/defer.h"
 #include "util/slice.h"
 
 namespace kv {
 
 class BufferPool NOCOPYABLE {
  public:
-  class BufferPoolHashHandler : public HashHandler<Slice> {
-   public:
-    BufferPoolHashHandler(BufferPool *buffer_pool) : buffer_pool_(buffer_pool){};
-    Slice GetKey(uint64_t data_handle) override {
-      FrameId fid = data_handle >> 32;
-      int off = data_handle << 32 >> 32;
-      auto handle = buffer_pool_->handles_[fid];
-      return Slice(handle->Read(off)->key, kKeyLength);
-    };
-
-    FrameId GetFrameId(uint64_t data_handle) {
-      FrameId fid = data_handle >> 32;
-      return fid;
-    };
-
-    Entry *GetEntry(uint64_t data_handle) {
-      FrameId fid = GetFrameId(data_handle);
-      int off = data_handle << 32 >> 32;
-      auto handle = buffer_pool_->handles_[fid];
-      return handle->Read(off);
-    }
-
-    uint64_t GenHandle(FrameId fid, int off) { return (uint64_t)fid << 32 | off; }
-    BufferPool *buffer_pool_;
-  };
-
   BufferPool(size_t size, uint8_t shard, RDMAClient *client);
   ~BufferPool() {
     auto ret = ibv_dereg_mr(mr_);
@@ -58,11 +34,7 @@ class BufferPool NOCOPYABLE {
       delete handle;
     }
     assert(ret == 0);
-    for (auto &kv : frame_mapping_) {
-      delete kv.second;
-    }
-    delete hash_table_;
-    delete handler_;
+    delete[] clock_frame_;
   }
 
   // init local memory regestration
@@ -71,33 +43,48 @@ class BufferPool NOCOPYABLE {
   // get a new datablock for local write
   DataBlock *GetNewDataBlock();
 
-  // read the value by key. return empty slice if not found
-  bool Read(Slice key, std::string &value);
+  // read the value by key, return empty slice if not found
+  bool Read(Slice key, std::string &value, CacheEntry &entry);
 
-  // fetch the block hold the key from remote. return false if not found 
-  bool FetchRead(Slice key, std::string &value);
+  // fetch the block hold the key from remote and read. return false if not found
+  bool FetchRead(Slice key, std::string &value, CacheEntry &entry);
+
+  // when a cache entry point to a invalid datablock, need fetch the block from remote.
+  bool MissFetch(Slice key, BlockId id);
 
   // modify the value if the key exists
-  bool Modify(Slice key, Slice value);
+  bool Modify(Slice key, Slice value, CacheEntry &entry);
 
-  void CreateIndex(DataBlock *block) {
-    FrameId fid = block_table_[block->GetId()];
-    assert(fid != INVALID_FRAME_ID);
-    createIndex(handles_[fid]);
+  // not thread-safe, need protect block_table_
+  bool HasBlock(BlockId id) const { return block_table_.count(id); }
+
+  // not thread-safe, need protect block_table_
+  BlockHandle *GetHandle(BlockId id) const {
+    if (block_table_.count(id) == 0) {
+      LOG_ERROR("Invalid block id %d, need refetch", id);
+      return nullptr;
+    }
+    return handles_.at(block_table_.at(id));
   }
 
+  void ReadLockTable() { table_latch_.RLock(); }
+  void ReadUnlockTable() { table_latch_.RUnlock(); };
+  void WriteLockTable() { table_latch_.WLock(); }
+  void WriteUnlockTable() { table_latch_.WUnlock(); };
+
  private:
+  BlockId genBlockId() {
+    static BlockId id = 0;
+    return ++id;
+  }
+
   bool alloc(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey);
 
   bool lookup(Slice slice, uint64_t &addr, uint32_t &rkey);
+
+  bool fetch(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey);
   // write back one datablock for fetching another one from remote if the block holding the key exists.
   bool replacement(Slice key, FrameId &fid);
-
-  bool remoteCreateIndex(uint8_t shard, BlockId id);
-
-  void prune(BlockHandle *handle);
-
-  void createIndex(BlockHandle *handle);
 
   DataBlock *datablocks_ = nullptr;
   std::vector<BlockHandle *> handles_;
@@ -106,28 +93,24 @@ class BufferPool NOCOPYABLE {
   ibv_pd *pd_ = nullptr;
   ibv_mr *mr_ = nullptr;  // one mr
 
-  BufferPoolHashHandler *handler_;
   uint8_t shard_;
 
-  HashTable<Slice> *hash_table_;
   std::unordered_map<BlockId, FrameId> block_table_;
+  Latch table_latch_;
+
   std::unordered_map<BlockId, MemoryAccess> global_table_;
 
   std::list<FrameId> free_list_;
   size_t pool_size_;
 
+  Filter *filter_= nullptr;
   /**
-   * LRU 实现
+   * 无锁 Clock 实现
    */
-  struct Frame {
-    explicit Frame(FrameId frame_id) : frame_(frame_id), next(nullptr), front(nullptr) {}
-    FrameId frame_;
-    Frame *next;
-    Frame *front;
-  };
-  Frame *frame_list_head_ = nullptr;
-  Frame *frame_list_tail_ = nullptr;
-  std::unordered_map<FrameId, Frame *> frame_mapping_;
+
+  std::atomic_bool *clock_frame_ = nullptr;
+  int hand_ = 0;
+  int walk();
   void renew(FrameId frame_id);
   FrameId pop();
 };

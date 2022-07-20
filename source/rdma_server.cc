@@ -105,7 +105,7 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
     return -1;
   }
 
-  struct ibv_cq *cq = ibv_create_cq(context_, 2, NULL, comp_chan, 0);
+  struct ibv_cq *cq = ibv_create_cq(context_, RDMA_MSG_CAP, NULL, comp_chan, 0);
   if (!cq) {
     perror("ibv_create_cq fail");
     return -1;

@@ -17,9 +17,12 @@ void BlockBuilder::Put(Slice key, Slice value) {
   advance(value.size());
 }
 
-void BlockBuilder::Finish(Ptr<Filter> filter) {
+void BlockBuilder::Finish(Filter* filter) {
   LOG_ASSERT(pos_ <= (kKeyLength + kValueLength) * kItemNum, "Invalid position %d", pos_);
+  pos_ = kDataSize;
+  filter->CreateFilter(&keys_[0], keys_.size(), current());
   datablock_->SetEntryNum(keys_.size());
   datablock_->SetUsed();
+  LOG_ASSERT(pos_ == cap_, "Unmatched dataBlock size: pos %d != cap %d", pos_, cap_);
 }
 }  // namespace kv
