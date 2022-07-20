@@ -81,8 +81,6 @@ class BufferPool NOCOPYABLE {
   bool alloc(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey);
 
   bool lookup(Slice slice, uint64_t &addr, uint32_t &rkey);
-
-  bool fetch(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey);
   // write back one datablock for fetching another one from remote if the block holding the key exists.
   bool replacement(Slice key, FrameId &fid);
 

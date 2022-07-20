@@ -126,22 +126,6 @@ bool BufferPool::alloc(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey
   return true;
 }
 
-bool BufferPool::fetch(uint8_t shard, BlockId id, uint64_t &addr, uint32_t &rkey) {
-  FetchRequest req;
-  req.shard = shard;
-  req.type = MSG_FETCH;
-  req.id = id;
-  req.rid = getRid();
-
-  FetchResponse resp;
-  auto ret = client_->RPC(req, resp);
-  assert(ret == 0);
-  assert(resp.status == RES_OK);
-  addr = resp.addr;
-  rkey = resp.rkey;
-  return true;
-}
-
 bool BufferPool::lookup(Slice slice, uint64_t &addr, uint32_t &rkey) {
   LookupRequest req;
   req.type = MSG_LOOKUP;
@@ -281,14 +265,8 @@ bool BufferPool::MissFetch(Slice key, BlockId id) {
   }
 
   stat::fetch.fetch_add(1, std::memory_order_relaxed);
-  // fetch
-  uint64_t read_addr;
-  uint32_t read_rkey;
   int ret;
   bool succ;
-  succ = fetch(shard_, id, read_addr, read_rkey);
-  LOG_ASSERT(succ, "Shard %d failed to fetch block %d", shard_, id);
-
   // replacement
   FrameId frame_id;
   frame_id = pop();
@@ -296,21 +274,33 @@ bool BufferPool::MissFetch(Slice key, BlockId id) {
     return false;
   }
 
-  BlockId vicitim = datablocks_[frame_id].GetId();
+  BlockId victim = datablocks_[frame_id].GetId();
 
   // write back victim
-  uint64_t write_addr = global_table_[vicitim].addr;
-  uint32_t write_rkey = global_table_[vicitim].rkey;
+  uint64_t write_addr;
+  uint32_t write_rkey;
+  if (!global_table_.count(victim)) {
+    LOG_DEBUG("Request new datablock for replace block %d", victim);
+    succ = alloc(shard_, victim, write_addr, write_rkey);
+    LOG_ASSERT(succ, "Alloc Failed.");
+    global_table_[victim].addr = write_addr;
+    global_table_[victim].rkey = write_rkey;
+  }
+  write_addr = global_table_[victim].addr;
+  write_rkey = global_table_[victim].rkey;
   ret = client_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr, write_rkey);
   LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
 
   // erase old
   WriteLockTable();
-  ret = block_table_.erase(vicitim);
+  ret = block_table_.erase(victim);
   datablocks_[frame_id].Free();
   assert(ret == 1);
   WriteUnlockTable();
 
+  // fetch
+  uint64_t read_addr = global_table_[id].addr;
+  uint32_t read_rkey = global_table_[id].rkey;
   // fetch
   ret = client_->RemoteRead(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, read_addr, read_rkey);
   LOG_ASSERT(ret == 0, "Remote Read Datablock Failed.");

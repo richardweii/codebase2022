@@ -16,7 +16,7 @@ using namespace std;
 
 constexpr int key_num = kKeyNum;
 constexpr int write_thread = 4;
-constexpr int read_thread = 16;
+constexpr int read_thread = 1;
 
 int main() {
   LocalEngine *local_engine = new LocalEngine();

@@ -1,6 +1,7 @@
 #include "pool.h"
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <thread>
 #include "cache.h"
@@ -106,7 +107,6 @@ void Pool::insertIntoMemtable(Slice key, Slice val) {
     DataBlock *block = buffer_pool_->GetNewDataBlock();
     // LOG_DEBUG("memtable is full, get new block %d", block->GetId());
     memtable_->BuildDataBlock(block);
-    ;
     memtable_->Reset();
   }
   memtable_->Insert(key, val);
@@ -232,6 +232,7 @@ void RemotePool::indexRountine() {
         CreateIndex(handles_[cur]->GetBlockId());
         cur++;
       }
+      std::this_thread::yield();
     }
     std::this_thread::yield();
   }

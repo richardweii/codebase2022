@@ -94,14 +94,9 @@ void RemoteEngine::handler(RPCTask *task) {
       LOG_DEBUG("Fetch successfully, prepare response.");
 
       FetchResponse resp;
-      if (access.addr == 0) {
-        resp.status = RES_FAIL;
-        LOG_ERROR("Cannot find block %d", req->id);
-      } else {
-        resp.status = RES_OK;
-        resp.addr = access.addr;
-        resp.rkey = access.rkey;
-      }
+      resp.status = RES_OK;
+      resp.addr = access.addr;
+      resp.rkey = access.rkey;
       task->SetResponse(resp);
       LOG_DEBUG("Response Fetch block %d msg to shard %d", req->id, req->shard);
       break;
