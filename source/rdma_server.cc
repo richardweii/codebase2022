@@ -155,7 +155,7 @@ RPCTask *RDMAServer::pollTask() {
   MessageBlock *blocks_ = msg_buffer_->Data();
   while (!stop_) {
     for (size_t i = 0; i < msg_buffer_->Size(); i++) {
-      if (blocks_[i].req_block.notify == PREPARED) {
+      if (blocks_[i].req_block.notify == PREPARED || blocks_[i].req_block.notify == ASYNC) {
         bool tmp = false;
         if (tasks_[i].compare_exchange_weak(tmp, true)) {
           blocks_[i].req_block.notify = PROCESS;

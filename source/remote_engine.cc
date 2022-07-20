@@ -101,6 +101,18 @@ void RemoteEngine::handler(RPCTask *task) {
       LOG_DEBUG("Response Fetch block %d msg to shard %d", req->id, req->shard);
       break;
     }
+    case MSG_CREATE: {
+      CreateIndexRequest *req = task->GetRequest<CreateIndexRequest>();
+      uint8_t shard = req->shard;
+      BlockId id = req->id;
+
+      task->FreeAsyncMessage();
+      LOG_DEBUG("Create Index, shard %d, blockid %d", req->shard, req->id);
+
+      // create index async
+      pool_[shard]->CreateIndex(id);
+      break;
+    }
     default:
       LOG_ERROR("Invalid message.");
       break;

@@ -72,6 +72,7 @@ DataBlock *BufferPool::GetNewDataBlock() {
     // write victim to remote
     uint64_t addr;
     uint32_t rkey;
+    bool alloced = false;
     if (!global_table_.count(old_bid)) {
       LOG_DEBUG("Request new datablock from remote...");
       succ = alloc(shard_, old_bid, addr, rkey);
@@ -79,6 +80,7 @@ DataBlock *BufferPool::GetNewDataBlock() {
       global_table_[old_bid].addr = addr;
       global_table_[old_bid].rkey = rkey;
       LOG_ASSERT(succ, "Alloc Failed.");
+      alloced = true;
     }
     addr = global_table_[old_bid].addr;
     rkey = global_table_[old_bid].rkey;
@@ -90,6 +92,9 @@ DataBlock *BufferPool::GetNewDataBlock() {
     WriteUnlockTable();
 
     ret = client_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, addr, rkey);
+    if (alloced) {
+      createRemoteIndex(shard_, old_bid);
+    }
 
     LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
     LOG_DEBUG("shard %d, Write datablock %d to remote successfully...", shard_, old_bid);
@@ -143,6 +148,16 @@ bool BufferPool::lookup(Slice slice, uint64_t &addr, uint32_t &rkey) {
   return false;
 }
 
+void BufferPool::createRemoteIndex(uint8_t shard, BlockId id) {
+  CreateIndexRequest req;
+  req.shard = shard;
+  req.id = id;
+  req.rid = getRid();
+  req.type = MSG_CREATE;
+
+  client_->Async(req);
+}
+
 bool BufferPool::replacement(Slice key, FrameId &fid) {
   // lookup
   uint64_t read_addr;
@@ -171,19 +186,23 @@ bool BufferPool::replacement(Slice key, FrameId &fid) {
   // write victim
   uint64_t write_addr;
   uint32_t write_rkey;
+  bool alloced = false;
   if (!global_table_.count(victim)) {
     LOG_DEBUG("Request new datablock for replace block %d", victim);
     succ = alloc(shard_, victim, write_addr, write_rkey);
     LOG_ASSERT(succ, "Alloc Failed.");
     global_table_[victim].addr = write_addr;
     global_table_[victim].rkey = write_rkey;
+    alloced = true;
   }
   write_addr = global_table_[victim].addr;
   write_rkey = global_table_[victim].rkey;
 
   ret = client_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr, write_rkey);
   LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
-
+  if (alloced) {
+    createRemoteIndex(shard_, victim);
+  }
   // erase old
   WriteLockTable();
   ret = block_table_.erase(datablocks_[frame_id].GetId());
@@ -279,16 +298,21 @@ bool BufferPool::MissFetch(Slice key, BlockId id) {
   // write back victim
   uint64_t write_addr;
   uint32_t write_rkey;
+  bool alloced = false;
   if (!global_table_.count(victim)) {
     LOG_DEBUG("Request new datablock for replace block %d", victim);
     succ = alloc(shard_, victim, write_addr, write_rkey);
     LOG_ASSERT(succ, "Alloc Failed.");
     global_table_[victim].addr = write_addr;
     global_table_[victim].rkey = write_rkey;
+    alloced = true;
   }
   write_addr = global_table_[victim].addr;
   write_rkey = global_table_[victim].rkey;
   ret = client_->RemoteWrite(&datablocks_[frame_id], mr_->lkey, kDataBlockSize, write_addr, write_rkey);
+  if (alloced) {
+    createRemoteIndex(shard_, victim);
+  }
   LOG_ASSERT(ret == 0, "Remote Write Datablock Failed.");
 
   // erase old

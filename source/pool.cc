@@ -178,7 +178,6 @@ MemoryAccess RemotePool::AllocDataBlock(BlockId bid) {
     free_list_.pop_front();
     static_assert(sizeof(void *) == sizeof(uint64_t), "Pointer should be 8 bytes.");
     block_table_[bid] = fid;
-    frame_count_.fetch_add(1);
     return {(uint64_t)getDataBlock(fid), getMr(fid)->rkey};
   }
 
@@ -197,7 +196,6 @@ MemoryAccess RemotePool::AllocDataBlock(BlockId bid) {
   mr_.push_back(mr);
   LOG_DEBUG("Registrate %d datablock", num);
   block_table_[bid] = cur;
-  frame_count_.fetch_add(1);
   return {(uint64_t)datablocks_.back()->data, mr_.back()->rkey};
 }
 
@@ -222,20 +220,6 @@ BlockId RemotePool::Lookup(Slice key) const {
   }
 
   return handles_[handler_->GetFrameId(node->Handle())]->GetBlockId();
-}
-
-void RemotePool::indexRountine() {
-  int cur = 0;
-  while (!stop_) {
-    while (cur <= frame_count_) {
-      if (handles_[cur]->Valid()) {
-        CreateIndex(handles_[cur]->GetBlockId());
-        cur++;
-      }
-      std::this_thread::yield();
-    }
-    std::this_thread::yield();
-  }
 }
 
 void RemotePool::CreateIndex(BlockId id) {

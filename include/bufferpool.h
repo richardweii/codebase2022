@@ -84,6 +84,8 @@ class BufferPool NOCOPYABLE {
   // write back one datablock for fetching another one from remote if the block holding the key exists.
   bool replacement(Slice key, FrameId &fid);
 
+  void createRemoteIndex(uint8_t shard, BlockId id);
+
   DataBlock *datablocks_ = nullptr;
   std::vector<BlockHandle *> handles_;
 

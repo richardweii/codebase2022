@@ -93,7 +93,6 @@ class RemotePool NOCOPYABLE {
   RemotePool(ibv_pd *pd, uint8_t shard) : pd_(pd), shard_(shard) {
     handler_ = new RemotePoolHashHandler(this);
     hash_table_ = new HashTable<Slice>(kKeyNum / kPoolShardNum, handler_);
-    index_rountine_ = new std::thread(&RemotePool::indexRountine, this);
   }
   ~RemotePool() {
     delete hash_table_;
@@ -104,9 +103,6 @@ class RemotePool NOCOPYABLE {
       delete ptr;
     }
     delete handler_;
-    stop_ = true;
-    index_rountine_->join();
-    delete index_rountine_;
   }
   // Allocate a datablock for one side write
   MemoryAccess AllocDataBlock(BlockId bid);
@@ -148,10 +144,6 @@ class RemotePool NOCOPYABLE {
 
   std::unordered_map<BlockId, FrameId> block_table_;
   std::vector<BlockHandle *> handles_;
-
-  std::thread *index_rountine_ = nullptr;
-  volatile bool stop_ = false;
-  std::atomic_int32_t frame_count_{-1};
 
   HashTable<Slice> *hash_table_ = nullptr;
   std::list<FrameId> free_list_;
