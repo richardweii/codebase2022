@@ -223,7 +223,7 @@ BlockId RemotePool::Lookup(Slice key) const {
 }
 
 void RemotePool::CreateIndex(BlockId id) {
-  LOG_INFO("shard %d create index of block %d", shard_, id);
+  // LOG_INFO("shard %d create index of block %d", shard_, id);
   latch_.WLock();
   defer { latch_.WUnlock(); };
   FrameId fid = findBlock(id);
