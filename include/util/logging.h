@@ -62,9 +62,13 @@ enum LOG_LEVEL {
     if (level >= LOG_LEVEL_DEBUG) DEBUG("\033[;33m[DEBUG] %s: " format "\n\033[0m", TIME, ##__VA_ARGS__); \
   } while (0)
 
+#ifndef NDEBUG
 #define LOG_ASSERT(condition, format, ...)                                                                       \
   if (!(condition)) {                                                                                            \
     GET_TIME                                                                                                     \
     DEBUG("\033[;31m %s Assertion Failed! %s:%d: " format "\n\033[0m", TIME, __FILE__, __LINE__, ##__VA_ARGS__); \
     exit(1);                                                                                                     \
   }
+#else
+#define LOG_ASSERT(condition, format, ...)   
+#endif

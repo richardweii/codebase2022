@@ -39,7 +39,7 @@ constexpr int kBloomFilterBitsPerKey = 10;
 #ifdef TEST_CONFIG
 constexpr int kDataBlockSize = 2 * 1024;  // for test
 #else
-constexpr int kDataBlockSize = 1 * 1024 * 1024;                    // 16KB
+constexpr int kDataBlockSize = 16 * 1024;                    // 16KB
 #endif
 
 constexpr int kItemNum = kDataBlockSize * 8 / (kKeyLength * 8 + kValueLength * 8 + kBloomFilterBitsPerKey);

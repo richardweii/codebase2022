@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include "config.h"
@@ -28,12 +29,12 @@ enum MsgState { IDLE = 0, PREPARED = 0x11, PROCESS = 0x33, ASYNC = 0x55, DONE = 
 
 struct RequestBlock {
   uint8_t message[MAX_REQUEST_SIZE - 1];
-  volatile uint8_t notify;
+  std::atomic_uint8_t notify;
 };
 
 struct ResponseBlock {
   uint8_t message[MAX_RESPONSE_SIZE - 1];
-  volatile uint8_t notify;
+  std::atomic_uint8_t notify;
 };
 
 struct MessageBlock {
