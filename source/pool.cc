@@ -50,6 +50,7 @@ bool Pool::Read(const Slice &key, std::string &val) {
   // hash index
   auto node = hash_index_->Find(key);
   if (node == nullptr) {
+    stat::read_miss.fetch_add(1);
     return false;
   }
   Addr addr = handler_->GetAddr(node->Handle());
@@ -65,7 +66,7 @@ bool Pool::Read(const Slice &key, std::string &val) {
     cache_->Release(victim);
     return true;
   }
-
+  stat::cache_hit.fetch_add(1);
   memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), val.size());
   cache_->Release(entry);
   return true;
@@ -94,7 +95,7 @@ bool Pool::Write(const Slice &key, const Slice &val) {
     cache_->Release(victim);
     return true;
   }
-
+  stat::cache_hit.fetch_add(1);
   memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
   cache_->Release(entry);
   return true;
@@ -102,8 +103,10 @@ bool Pool::Write(const Slice &key, const Slice &val) {
 
 CacheEntry *Pool::replacement(Addr addr) {
   // miss
+  stat::replacement.fetch_add(1);
   CacheEntry *victim = cache_->Insert(addr);
   if (victim->Dirty) {
+    stat::dirty_write.fetch_add(1);
     auto ret = writeToRemote(victim);
     LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", victim->Addr.BlockId(),
                victim->Addr.CacheLine());
@@ -116,6 +119,7 @@ CacheEntry *Pool::replacement(Addr addr) {
 }
 
 void Pool::writeNew(const Slice &key, const Slice &val) {
+  stat::insert_num.fetch_add(1);
   keys_[cur_block_id_]->SetKey(cur_kv_off_, key);
   memcpy(write_line_->Data()->at(cache_kv_off_), val.data(), val.size());
   cache_kv_off_++;
@@ -123,10 +127,10 @@ void Pool::writeNew(const Slice &key, const Slice &val) {
 
   if (cur_kv_off_ == kBlockValueNum) {
     LOG_DEBUG("Need alloc new block.");
-    auto ret = allocNewBlock();
-    assert(ret == 0);
     cur_block_id_++;
     cur_kv_off_ = 0;
+    auto ret = allocNewBlock();
+    assert(ret == 0);
   }
 
   if (cache_kv_off_ == kCacheValueNum) {
@@ -145,6 +149,7 @@ void Pool::writeNew(const Slice &key, const Slice &val) {
 }
 
 int Pool::allocNewBlock() {
+  stat::block_num.fetch_add(1);
   keys_.emplace_back(new KeyBlock());
   AllocRequest req;
   req.shard = shard_;

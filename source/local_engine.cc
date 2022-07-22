@@ -53,10 +53,8 @@ void LocalEngine::stop() {
   LOG_INFO(" Total read %ld times, write %ld times", stat::read_times.load(), stat::write_times.load());
   LOG_INFO(" Unique insert %ld  times", stat::insert_num.load());
   LOG_INFO(" Total block num %ld", stat::block_num.load());
-  LOG_INFO(" Access to local %ld times ", stat::local_access.load());
-  LOG_INFO(" Remote lookup failed %ld times", stat::remote_miss.load());
-  LOG_INFO(" Replacement %ld times, Fetch %ld times ", stat::replacement.load(), stat::fetch.load());
-  LOG_INFO(" Cache hit %ld times, invalid %ld times", stat::cache_hit.load(), stat::cache_invalid.load());
+  LOG_INFO(" Replacement %ld times, Dirty write %ld times ", stat::replacement.load(), stat::dirty_write.load());
+  LOG_INFO(" Cache hit %ld times", stat::cache_hit.load());
   LOG_INFO(" Read Miss %ld times", stat::read_miss.load());
   auto mhz = get_cpu_mhz(1);
   LOG_INFO(" CPU frequency %f MHZ", mhz);
