@@ -50,25 +50,40 @@ class RDMAConnection NOCOPYABLE {
     return 0;
   }
 
+  void BeginBatch() {
+    is_batch_ = true;
+    batch_ = 0;
+  }
+
   int RemoteRead(void *ptr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey) {
+    batch_++;
     return rdma((uint64_t)ptr, lkey, size, remote_addr, rkey, true);
   }
 
   int RemoteWrite(void *ptr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey) {
+    batch_++;
     return rdma((uint64_t)ptr, lkey, size, remote_addr, rkey, false);
+  }
+
+  int FinishBatch() {
+    int ret = pollCq(batch_);
+    is_batch_ = false;
+    return ret;
   }
 
   int ConnId() const { return conn_id_; }
 
  private:
   int rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey, bool read);
+  int pollCq(int num);
 
   struct ibv_comp_channel *comp_chan_;
   struct rdma_event_channel *cm_channel_;
   struct ibv_pd *pd_;
   struct ibv_cq *cq_;
   struct rdma_cm_id *cm_id_;
-
+  bool is_batch_ = false;
+  int batch_ = 0;
   bool init_ = false;
   int conn_id_;
 };

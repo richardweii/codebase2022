@@ -1,80 +1,144 @@
 #pragma once
-// Copyright (c) 2011 The LevelDB Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file. See the AUTHORS file for names of contributors.
-//
-// A Cache is an interface that maps keys to values.  It has internal
-// synchronization and may be safely accessed concurrently from
-// multiple threads.  It may automatically evict entries to make room
-// for new entries.  Values have a specified charge against the cache
-// capacity.  For example, a cache where the values are variable
-// length strings, may use the length of the string as the charge for
-// the string.
-//
-// A builtin cache implementation with a least-recently-used eviction
-// policy is provided.  Clients may use their own implementations if
-// they want something more sophisticated (like scan-resistance, a
-// custom eviction policy, variable cache sizing, etc.)
 
+#include <infiniband/verbs.h>
+#include <cstddef>
 #include <cstdint>
+#include <list>
+#include <mutex>
+#include <unordered_map>
 
 #include "config.h"
+#include "hash_table.h"
+#include "rdma_client.h"
+#include "util/logging.h"
 #include "util/nocopy.h"
 #include "util/slice.h"
 
 namespace kv {
 
-struct CacheEntry {
-  uint32_t off;
-  BlockId id;
+class CacheLine {
+ public:
+  char *at(int index) {
+    assert(index < kCacheValueNum);
+    return &data_[index * kValueLength];
+  }
+
+ private:
+  char data_[kCacheLineSize];
+};
+
+class CacheEntry {
+ public:
+  friend class Cache;
+  kv::Addr Addr;
+  bool Dirty = false;
+  CacheLine *Data() const { return line_; }
+  bool Valid() const { return valid_; }
+
+ private:
+  CacheEntry() = default;
+  CacheLine *line_ = nullptr;
+  int fid_ = INVALID_FRAME_ID;
+  bool valid_ = false;
+};
+
+class LRUReplacer {
+ public:
+  explicit LRUReplacer(size_t frame_num);
+  ~LRUReplacer();
+  bool Victim(FrameId *frame_id);
+  void Pin(FrameId frame_id);
+  void Unpin(FrameId frame_id);
+
+ private:
+  struct Frame {
+    Frame() = default;
+    FrameId frame_ = INVALID_FRAME_ID;
+    Frame *next = nullptr;
+    Frame *front = nullptr;
+  };
+
+  /**
+   * Insert a frame to frame_list, and add <frame_id, frame pointer> to frame_mapping.
+   * @param frame_id frame ID add to list
+   */
+  void insertBack(FrameId frame_id);
+  /**
+   * Delete a frame from frame_list, and remove <frame_id, frame pointer> from frame_mapping.
+   * If frame_id does not exist in frame_mapping, nothing will happen.
+   * @param frame_id frame ID remove from list
+   */
+  void deleteFrame(FrameId frame_id);
+  FrameId pop();
+
+  size_t frame_num_;
+  Frame *frame_list_head_ = nullptr;
+  Frame *frame_list_tail_ = nullptr;
+  Frame *frames_ = nullptr;
+  std::list<FrameId> free_list_;
 };
 
 class Cache NOCOPYABLE {
  public:
-  Cache() = default;
-  // Destroys all existing entries by calling the "deleter"
-  // function that was passed to the constructor.
-  virtual ~Cache();
+  Cache(size_t cache_size) : cache_line_num_(cache_size / kValueLength) {
+    lines_ = new CacheLine[cache_line_num_];
+    entries_ = new CacheEntry[cache_line_num_];
+    for (size_t i = 0; i < cache_line_num_; i++) {
+      entries_[i].line_ = &lines_[i];
+      entries_[i].fid_ = i;
+    }
+    handler_ = new CacheHashTableHanler();
+    replacer_ = new LRUReplacer(cache_line_num_);
+    hash_table_ = new HashTable<uint32_t>(cache_line_num_, handler_);
+  }
 
-  // Opaque handle to an entry stored in the cache.
-  struct Handle {};
+  bool Init(ibv_pd *pd) {
+    mr_ = ibv_reg_mr(pd, lines_, cache_line_num_ * kValueLength * kCacheValueNum, RDMA_MR_FLAG);
+    if (mr_ == nullptr) {
+      LOG_ERROR("Register %lu memory failed.", cache_line_num_ * kValueLength);
+      return false;
+    }
+    return true;
+  }
 
-  // Insert a mapping from key->value into the cache and assign it
-  // the specified charge against the total cache capacity.
-  //
-  // Returns a handle that corresponds to the mapping.  The caller
-  // must call this->Release(handle) when the returned mapping is no
-  // longer needed.
-  virtual Handle *Insert(const Slice &key, CacheEntry &&value) = 0;
+  ~Cache() {
+    if (ibv_dereg_mr(mr_)) {
+      perror("ibv_derge_mr failed.");
+      LOG_ERROR("ibv_derge_mr failed.");
+    }
+    delete[] lines_;
+    delete handler_;
+    delete hash_table_;
+    delete replacer_;
+  }
 
-  // If the cache has no mapping for "key", returns nullptr.
-  //
-  // Else return a handle that corresponds to the mapping.  The caller
-  // must call this->Release(handle) when the returned mapping is no
-  // longer needed.
-  virtual Handle *Lookup(const Slice &key) = 0;
+  // return a cacheHandle used to write new data to it, if old data is dirty, need to write to remote first
+  CacheEntry *Insert(Addr addr);
 
-  // Release a mapping returned by a previous Lookup().
-  // REQUIRES: handle must not have been released yet.
-  // REQUIRES: handle must have been returned by a method on *this.
-  virtual void Release(Handle *handle) = 0;
+  void Release(CacheEntry *entry);
 
-  // Return the value encapsulated in a handle returned by a
-  // successful Lookup().
-  // REQUIRES: handle must not have been released yet.
-  // REQUIRES: handle must have been returned by a method on *this.
-  virtual CacheEntry &Value(Handle *handle) = 0;
+  CacheEntry *Lookup(Addr addr);
 
-  // If the cache contains entry for key, erase it.  Note that the
-  // underlying entry will be kept around until all existing handles
-  // to it have been released.
-  virtual void Erase(const Slice &key) = 0;
+  ibv_mr *MR() const { return mr_; }
 
-  // Return an estimate of the combined charges of all elements stored in the
-  // cache.
-  virtual size_t TotalCharge() const = 0;
+ private:
+  class CacheHashTableHanler : public HashHandler<uint32_t> {
+   public:
+    uint32_t GetKey(uint64_t data_handle) override { return data_handle >> 32; }
+    uint32_t GetFrameId(uint64_t data_handle) { return data_handle & 0xffffffff; }
+    uint64_t GenHandle(uint32_t key_index, FrameId fid) { return (uint64_t)key_index << 32 | fid; }
+  };
+
+  size_t cache_line_num_;
+  CacheLine *lines_ = nullptr;
+  CacheEntry *entries_ = nullptr;
+  ibv_mr *mr_ = nullptr;
+
+  CacheHashTableHanler *handler_ = nullptr;
+  HashTable<uint32_t> *hash_table_ = nullptr;
+
+  // LRU
+  LRUReplacer *replacer_ = nullptr;
+  std::mutex mutex_;
 };
-
-Cache *NewLRUCache(size_t capacity);
-
 }  // namespace kv

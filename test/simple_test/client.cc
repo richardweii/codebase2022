@@ -16,7 +16,7 @@ using namespace std;
 
 constexpr int key_num = kKeyNum;
 constexpr int write_thread = 4;
-constexpr int read_thread = 1;
+constexpr int read_thread = 4;
 
 int main() {
   LocalEngine *local_engine = new LocalEngine();
@@ -41,7 +41,6 @@ int main() {
   for (auto &th : threads) {
     th.join();
   }
-
   threads.clear();
 
   LOG_INFO(" ============= start read ================");
@@ -61,6 +60,46 @@ int main() {
   for (auto &th : threads) {
     th.join();
   }
+  threads.clear();
+
+  LOG_INFO(" ============= start modify&read ================ ");
+  for (auto &val : values) {
+    char *data = (char *)val.c_str();
+    data[0] = 'A';
+    data[1] = 'B';
+  }
+
+  for (int i = 0; i < write_thread; i++) {
+    threads.emplace_back(
+        [=](const std::vector<std::string> &keys, const std::vector<std::string> &values) {
+          for (int j = 0; j < key_num; j++) {
+            local_engine->write(keys[j], values[j]);
+          }
+        },
+        keys, values);
+  }
+  for (auto &th : threads) {
+    th.join();
+  }
+  threads.clear();
+
+  for (int i = 0; i < read_thread; i++) {
+    threads.emplace_back(
+        [=](const std::vector<std::string> &keys, const std::vector<std::string> &values) {
+          for (int j = 0; j < key_num; j++) {
+            std::string value;
+            bool found = local_engine->read(keys[j], value);
+            EXPECT(found, "Read %s failed.", keys[j].c_str());
+            ASSERT(found && value == values[j], "Unexpected value %s ", value.c_str());
+          }
+        },
+        keys, values);
+  }
+  for (auto &th : threads) {
+    th.join();
+  }
+  threads.clear();
+
   local_engine->stop();
   delete local_engine;
   return 0;

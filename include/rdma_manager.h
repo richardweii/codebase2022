@@ -92,6 +92,29 @@ class ConnQue {
 
 class RDMAManager {
  public:
+  class Batch {
+   public:
+    Batch(RDMAConnection *connection, ConnQue *q) : conn_(connection), queue_(q){};
+
+    int RemoteRead(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey) {
+      return conn_->RemoteRead(ptr, lkey, size, remote_addr, rkey);
+    }
+    int RemoteWrite(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey) {
+      return conn_->RemoteWrite(ptr, lkey, size, remote_addr, rkey);
+    }
+
+    int FinishBatch() {
+      auto ret = conn_->FinishBatch();
+      queue_->Enqueue(conn_);
+      conn_ = nullptr;
+      queue_ = nullptr;
+      return ret;
+    }
+
+   private:
+    RDMAConnection *conn_ = nullptr;
+    ConnQue *queue_ = nullptr;
+  };
   RDMAManager() {}
   virtual ~RDMAManager() {
     delete msg_buffer_;
@@ -106,13 +129,41 @@ class RDMAManager {
 
   virtual void Stop() = 0;
 
-  ibv_mr *RegisterMemory(void *ptr, size_t length);
+  ibv_mr *RegisterMemory(void *ptr, size_t length) {
+    auto mr = ibv_reg_mr(pd_, ptr, length, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
+    if (mr == nullptr) {
+      perror("ibv_reg_mr failed : ");
+      LOG_ERROR("Failed to register %zu bytes memory.", length);
+      return nullptr;
+    }
+    return mr;
+  }
 
   ibv_pd *Pd() const { return pd_; }
 
-  int RemoteRead(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey);
+  int RemoteRead(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey) {
+    auto conn = rdma_one_side_->Dequeue();
+    assert(conn != nullptr);
+    auto ret = conn->RemoteRead(ptr, lkey, size, remote_addr, rkey);
+    assert(ret == 0);
+    rdma_one_side_->Enqueue(conn);
+    return ret;
+  }
 
-  int RemoteWrite(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey);
+  int RemoteWrite(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey) {
+    auto conn = rdma_one_side_->Dequeue();
+    assert(conn != nullptr);
+    auto ret = conn->RemoteWrite(ptr, lkey, size, remote_addr, rkey);
+    assert(ret == 0);
+    rdma_one_side_->Enqueue(conn);
+    return ret;
+  }
+
+  Batch BeginBatch() {
+    auto conn = rdma_one_side_->Dequeue();
+    assert(conn != nullptr);
+    return Batch(conn, rdma_one_side_);
+  }
 
  protected:
   volatile bool stop_;
