@@ -21,7 +21,6 @@ namespace kv {
  */
 bool RemoteEngine::start(const std::string addr, const std::string port) {
   stop_ = false;
-  bloom_filter_ = NewBloomFilterPolicy();
   server_ = new RDMAServer(std::bind(&RemoteEngine::handler, this, std::placeholders::_1));
   auto succ = server_->Init(addr, port);
   assert(succ);
@@ -53,7 +52,7 @@ void RemoteEngine::handler(RPCTask *task) {
     case MSG_ALLOC: {
       AllocRequest *req = task->GetRequest<AllocRequest>();
       LOG_DEBUG("Alloc msg, shard %d:", req->shard);
-      auto access = pool_[req->shard]->AllocDataBlock(req->bid);
+      auto access = pool_[req->shard]->AllocBlock();
       LOG_DEBUG("Alloc successfully, prepare response.");
 
       AllocResponse resp;
@@ -62,55 +61,6 @@ void RemoteEngine::handler(RPCTask *task) {
       resp.status = RES_OK;
       task->SetResponse(resp);
       LOG_DEBUG("Response Alloc msg...");
-      break;
-    }
-    case MSG_LOOKUP: {
-      LookupRequest *req = task->GetRequest<LookupRequest>();
-      Slice key(req->key, kKeyLength);
-      uint32_t hash = Hash(key.data(), kKeyLength, kPoolHashSeed);
-      int index = Shard(hash);
-      LOG_DEBUG("Lookup msg, key %s, shard %d", key.data(), index);
-      BlockId id = pool_[index]->Lookup(key);
-
-      LookupResponse resp;
-      if (id == INVALID_BLOCK_ID) {
-        resp.status = RES_FAIL;
-        LOG_DEBUG("Failed to find key %s", key.data());
-      } else {
-        auto access = pool_[index]->AccessDataBlock(id);
-        resp.addr = access.addr;
-        resp.rkey = access.rkey;
-        resp.status = RES_OK;
-      }
-
-      task->SetResponse(resp);
-      LOG_DEBUG("Response Lookup %s msg, blockid %d", key.data(), id);
-      break;
-    }
-    case MSG_FETCH: {
-      FetchRequest *req = task->GetRequest<FetchRequest>();
-      LOG_DEBUG("Fetch msg, shard %d, block %d", req->shard, req->id);
-      auto access = pool_[req->shard]->AccessDataBlock(req->id);
-      LOG_DEBUG("Fetch successfully, prepare response.");
-
-      FetchResponse resp;
-      resp.status = RES_OK;
-      resp.addr = access.addr;
-      resp.rkey = access.rkey;
-      task->SetResponse(resp);
-      LOG_DEBUG("Response Fetch block %d msg to shard %d", req->id, req->shard);
-      break;
-    }
-    case MSG_CREATE: {
-      CreateIndexRequest *req = task->GetRequest<CreateIndexRequest>();
-      uint8_t shard = req->shard;
-      BlockId id = req->id;
-
-      task->FreeAsyncMessage();
-      LOG_DEBUG("Create Index, shard %d, blockid %d", req->shard, req->id);
-
-      // create index async
-      pool_[shard]->CreateIndex(id);
       break;
     }
     default:

@@ -4,8 +4,8 @@
 #include <cstdint>
 #include "config.h"
 #include "util/hash.h"
-#include "util/slice.h"
 #include "util/logging.h"
+#include "util/slice.h"
 
 namespace kv {
 
@@ -77,7 +77,7 @@ class HashTable {
     delete[] slots_;
   }
 
-  HashNode<Tp> *Find(Tp key) {
+  HashNode<Tp> *Find(const Tp &key) {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
     if (!slot->IsValid()) {
@@ -93,7 +93,7 @@ class HashTable {
     return nullptr;
   }
 
-  void Insert(Tp key, uint64_t data_handle) {
+  void Insert(const Tp &key, uint64_t data_handle) {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
 
@@ -120,7 +120,7 @@ class HashTable {
     count_++;
   }
 
-  bool Remove(Tp key) {
+  bool Remove(const Tp &key) {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
 

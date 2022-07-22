@@ -61,7 +61,6 @@ class RemoteEngine : public Engine {
   kv::RDMAServer *server_;
   volatile bool stop_;
   RemotePool *pool_[kPoolShardNum];
-  Filter* bloom_filter_;
 };
 
 }  // namespace kv

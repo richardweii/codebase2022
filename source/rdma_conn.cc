@@ -1,5 +1,6 @@
 #include "rdma_conn.h"
 #include <infiniband/verbs.h>
+#include <cassert>
 #include <cstdint>
 #include "config.h"
 #include "msg_buf.h"
@@ -148,28 +149,35 @@ int RDMAConnection::rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint
     LOG_ERROR("Bad send wr.");
   }
 
+  if (!is_batch_) {
+    return pollCq(1);
+  }
   // LOG_ERROR("remote write %ld %d\n", remote_addr, rkey);
+  return 0;
+}
 
+int RDMAConnection::pollCq(int num) {
   auto start = TIME_NOW;
   int ret = -1;
-  struct ibv_wc wc;
+  struct ibv_wc wc[num];
   while (true) {
     if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
       LOG_ERROR("rdma_one_side timeout\n");
       return -1;
     }
-    int rc = ibv_poll_cq(cq_, 1, &wc);
+    int rc = ibv_poll_cq(cq_, num, wc);
     if (rc > 0) {
-      if (IBV_WC_SUCCESS == wc.status) {
-        // Break out as operation completed successfully
-        // LOG_ERROR("Break out as operation completed successfully\n");
-        ret = 0;
-        break;
-      } else {
-        LOG_ERROR("poll cq failed. Status %d : %s", wc.status, ibv_wc_status_str(wc.status));
-        perror("cmd_send ibv_poll_cq status error");
-        break;
+      assert(rc == num);
+      ret = 0;
+      for (int i = 0; i < num; i++) {
+        if (IBV_WC_SUCCESS != wc[i].status) {
+          LOG_ERROR("poll cq %d/%d failed. Status %d : %s", i, num, wc[i].status, ibv_wc_status_str(wc[i].status));
+          perror("cmd_send ibv_poll_cq status error");
+          ret = -1;
+          break;
+        }
       }
+      break;
     } else if (0 == rc) {
       continue;
     } else {
@@ -179,4 +187,5 @@ int RDMAConnection::rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint
   }
   return ret;
 }
+
 }  // namespace kv
