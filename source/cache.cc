@@ -22,9 +22,19 @@ bool LRUReplacer::Victim(FrameId *frame_id) {
   return *frame_id != INVALID_FRAME_ID;
 }
 
-void LRUReplacer::Pin(FrameId frame_id) { this->deleteFrame(frame_id); }
+void LRUReplacer::Pin(FrameId frame_id) {
+  if (frames_[frame_id].pin == 0) {
+    this->deleteFrame(frame_id);
+  }
+  frames_[frame_id].pin++;
+}
 
-void LRUReplacer::Unpin(FrameId frame_id) { this->insertBack(frame_id); }
+void LRUReplacer::Unpin(FrameId frame_id) {
+  frames_[frame_id].pin--;
+  if (frames_[frame_id].pin == 0) {
+    this->insertBack(frame_id);
+  }
+}
 
 void LRUReplacer::insertBack(FrameId frame_id) {
   Frame *frame = &frames_[frame_id];

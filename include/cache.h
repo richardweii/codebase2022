@@ -1,6 +1,7 @@
 #pragma once
 
 #include <infiniband/verbs.h>
+#include <sys/types.h>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -54,6 +55,7 @@ class LRUReplacer {
   struct Frame {
     Frame() = default;
     FrameId frame_ = INVALID_FRAME_ID;
+    uint8_t pin = 1;
     Frame *next = nullptr;
     Frame *front = nullptr;
   };
