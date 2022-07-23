@@ -56,8 +56,6 @@ void LocalEngine::stop() {
   LOG_INFO(" Replacement %ld times, Dirty write %ld times ", stat::replacement.load(), stat::dirty_write.load());
   LOG_INFO(" Cache hit %ld times", stat::cache_hit.load());
   LOG_INFO(" Read Miss %ld times", stat::read_miss.load());
-  auto mhz = get_cpu_mhz(1);
-  LOG_INFO(" CPU frequency %f MHZ", mhz);
   return;
 };
 

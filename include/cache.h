@@ -80,7 +80,7 @@ class LRUReplacer {
 
 class Cache NOCOPYABLE {
  public:
-  Cache(size_t cache_size) : cache_line_num_(cache_size / kValueLength) {
+  Cache(size_t cache_size) : cache_line_num_(cache_size / kCacheLineSize) {
     lines_ = new CacheLine[cache_line_num_];
     entries_ = new CacheEntry[cache_line_num_];
     for (size_t i = 0; i < cache_line_num_; i++) {
@@ -93,9 +93,9 @@ class Cache NOCOPYABLE {
   }
 
   bool Init(ibv_pd *pd) {
-    mr_ = ibv_reg_mr(pd, lines_, cache_line_num_ * kValueLength * kCacheValueNum, RDMA_MR_FLAG);
+    mr_ = ibv_reg_mr(pd, lines_, cache_line_num_ * kCacheLineSize, RDMA_MR_FLAG);
     if (mr_ == nullptr) {
-      LOG_ERROR("Register %lu memory failed.", cache_line_num_ * kValueLength);
+      LOG_ERROR("Register %lu memory failed.", cache_line_num_ * kCacheLineSize);
       return false;
     }
     return true;
