@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <iterator>
 #include <mutex>
@@ -50,6 +51,7 @@ int main() {
               if (j % M == 0) {
                 LOG_INFO("[thread %d] finish write %d kv", i, j);
               }
+              memcpy((char *)value.c_str(), k[i * write_op_per_thread + j].key, 16);
               auto succ = local_engine->write(k[i * write_op_per_thread + j].to_string(), value);
               EXPECT(succ, "[thread %d] failed to write %d", i, i * write_op_per_thread + j);
             }
@@ -86,12 +88,16 @@ int main() {
               }
               if (prob == 0) {
                 // wirte;
+                memcpy((char *)write_value.c_str(), k[i * write_op_per_thread + j].key, 16);
                 auto succ = local_engine->write(k[zipf_index[i * read_write_mix_op + j]].to_string(), write_value);
                 EXPECT(succ, "MIX [thread %d] failed to write %d", i, zipf_index[i * read_write_mix_op + j]);
               } else {
                 // read
                 auto succ = local_engine->read(k[zipf_index[i * read_write_mix_op + j]].to_string(), read_value);
                 EXPECT(succ, "MIX [thread %d] failed to read %d", i, zipf_index[i * read_write_mix_op + j]);
+                auto cmp = memcmp(read_value.c_str(), k[zipf_index[i * read_write_mix_op + j]].key, 16);
+                EXPECT(cmp == 0, "expect %s, got %s", k[zipf_index[i * read_write_mix_op + j]].key,
+                       write_value.c_str());
               }
             }
           },
