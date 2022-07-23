@@ -62,12 +62,12 @@ bool Pool::Read(const Slice &key, std::string &val) {
   if (entry == nullptr) {
     // cache miss
     CacheEntry *victim = replacement(addr);
-    memcpy((char *)val.data(), victim->Data()->at(addr.CacheOff()), val.size());
+    memcpy((char *)val.data(), victim->Data()->at(addr.CacheOff()), kValueLength);
     cache_->Release(victim);
     return true;
   }
   stat::cache_hit.fetch_add(1);
-  memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), val.size());
+  memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
   cache_->Release(entry);
   return true;
 }
@@ -81,6 +81,9 @@ bool Pool::Write(const Slice &key, const Slice &val) {
     Addr addr(cur_block_id_, cur_kv_off_);
     hash_index_->Insert(key, handler_->GenHandle(addr));
     writeNew(key, val);
+    if (stat::insert_num == 160000001) {
+      LOG_INFO("Finish insert.");
+    }
     return true;
   }
   Addr addr = handler_->GetAddr(node->Handle());
@@ -90,13 +93,14 @@ bool Pool::Write(const Slice &key, const Slice &val) {
   if (entry == nullptr) {
     // cache miss
     CacheEntry *victim = replacement(addr);
-    memcpy(victim->Data()->at(addr.CacheOff()), val.data(), val.size());
+    memcpy(victim->Data()->at(addr.CacheOff()), val.data(), kValueLength);
     victim->Dirty = true;
     cache_->Release(victim);
     return true;
   }
   stat::cache_hit.fetch_add(1);
-  memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
+  memcpy(entry->Data()->at(addr.CacheOff()), val.data(), kValueLength);
+  entry->Dirty = true;
   cache_->Release(entry);
   return true;
 }
@@ -121,7 +125,7 @@ CacheEntry *Pool::replacement(Addr addr) {
 void Pool::writeNew(const Slice &key, const Slice &val) {
   stat::insert_num.fetch_add(1);
   keys_[cur_block_id_]->SetKey(cur_kv_off_, key);
-  memcpy(write_line_->Data()->at(cache_kv_off_), val.data(), val.size());
+  memcpy(write_line_->Data()->at(cache_kv_off_), val.data(), kValueLength);
   cache_kv_off_++;
   cur_kv_off_++;
 
