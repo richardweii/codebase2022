@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstddef>
 #include "config.h"
+#include "hash_table.h"
 #include "util/logging.h"
 
 namespace kv {
@@ -108,9 +109,9 @@ CacheEntry *Cache::Insert(Addr addr) {
   // add to hash table
   hash_table_->Insert(addr.RawAddr(), handler_->GenHandle(addr.RawAddr(), fid));
 
-  if (victim->Valid()) {
-    replacer_->Pin(fid);
-  }
+  // if (victim->Valid()) {
+  replacer_->Pin(fid);
+  // }
   victim->valid_ = true;
   return victim;
 }
