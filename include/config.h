@@ -85,8 +85,9 @@ class Addr {
   }
 
   // round up cache line
-  void RoundUp() {
+  Addr RoundUp() {
     addr_ &= CACHE_MASK;
+    return addr_;
   }
 
   uint32_t RawAddr() const { return addr_; }

@@ -88,7 +88,7 @@ int main() {
               }
               if (prob == 0) {
                 // wirte;
-                memcpy((char *)write_value.c_str(), k[i * write_op_per_thread + j].key, 16);
+                memcpy((char *)write_value.c_str(), k[zipf_index[i * read_write_mix_op + j]].key, 16);
                 auto succ = local_engine->write(k[zipf_index[i * read_write_mix_op + j]].to_string(), write_value);
                 EXPECT(succ, "MIX [thread %d] failed to write %d", i, zipf_index[i * read_write_mix_op + j]);
               } else {
