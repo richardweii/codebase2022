@@ -93,13 +93,13 @@ bool Pool::Write(const Slice &key, const Slice &val) {
   if (entry == nullptr) {
     // cache miss
     CacheEntry *victim = replacement(addr);
-    memcpy(victim->Data()->at(addr.CacheOff()), val.data(), kValueLength);
+    memcpy(victim->Data()->at(addr.CacheOff()), val.data(), val.size());
     victim->Dirty = true;
     cache_->Release(victim);
     return true;
   }
   stat::cache_hit.fetch_add(1);
-  memcpy(entry->Data()->at(addr.CacheOff()), val.data(), kValueLength);
+  memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
   entry->Dirty = true;
   cache_->Release(entry);
   return true;
@@ -117,7 +117,7 @@ CacheEntry *Pool::replacement(Addr addr) {
   }
   auto ret = readFromRemote(victim, addr);
   LOG_ASSERT(ret == 0, "read cache block %d, line %d from remote failed.", addr.BlockId(), addr.CacheLine());
-  victim->Addr = addr;
+  victim->Addr = addr.RoundUp();
   victim->Dirty = false;
   return victim;
 }
@@ -125,7 +125,7 @@ CacheEntry *Pool::replacement(Addr addr) {
 void Pool::writeNew(const Slice &key, const Slice &val) {
   stat::insert_num.fetch_add(1);
   keys_[cur_block_id_]->SetKey(cur_kv_off_, key);
-  memcpy(write_line_->Data()->at(cache_kv_off_), val.data(), kValueLength);
+  memcpy(write_line_->Data()->at(cache_kv_off_), val.data(), val.size());
   cache_kv_off_++;
   cur_kv_off_++;
 

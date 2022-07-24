@@ -94,6 +94,7 @@ FrameId LRUReplacer::pop() {
 }
 
 CacheEntry *Cache::Insert(Addr addr) {
+  addr.RoundUp();
   FrameId fid;
   auto succ = replacer_->Victim(&fid);
   assert(succ);
