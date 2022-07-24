@@ -2,6 +2,7 @@
 
 #include <infiniband/verbs.h>
 #include <sys/types.h>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -13,6 +14,7 @@
 #include "rdma_client.h"
 #include "util/logging.h"
 #include "util/nocopy.h"
+#include "util/rwlock.h"
 #include "util/slice.h"
 
 namespace kv {
@@ -80,6 +82,67 @@ class LRUReplacer {
   std::list<FrameId> free_list_;
 };
 
+class ClockReplacer {
+ public:
+  static constexpr uint8_t REF = 0x80;
+  static constexpr uint8_t UNREF = 0x7f;
+
+  explicit ClockReplacer(size_t frame_num) : frame_num_(frame_num) {
+    frames_ = new Frame[frame_num];
+    for (size_t i = 0; i < frame_num; i++) {
+      frames_[i].frame_ = i;
+      free_list_.push_back(i);
+    }
+  }
+  ~ClockReplacer() { delete[] frames_; }
+
+  // not thread-safe
+  bool Victim(FrameId *frame_id) {
+    assert(frame_id != nullptr);
+    *frame_id = this->pop();
+    return *frame_id != INVALID_FRAME_ID;
+  }
+
+  // thread-safe
+  void Pin(FrameId frame_id) { frames_[frame_id].ref_pin_.fetch_add(1); }
+
+  // thread-safe
+  void Unpin(FrameId frame_id) {
+    frames_[frame_id].ref_pin_.fetch_or(REF);
+    frames_[frame_id].ref_pin_.fetch_add(-1);
+  }
+
+ private:
+  struct Frame {
+    Frame() = default;
+    FrameId frame_ = INVALID_FRAME_ID;
+    std::atomic_uint8_t ref_pin_{0};
+  };
+
+  int walk() {
+    int ret = hand_;
+    hand_ = (hand_ + 1) % frame_num_;
+    return ret;
+  }
+
+  FrameId pop() {
+    while (true) {
+      uint8_t tmp = 0;
+      if (frames_[hand_].ref_pin_.load() == 0) {
+        break;
+      } else {
+        frames_[hand_].ref_pin_.fetch_and(UNREF);
+        walk();
+      }
+    }
+    return walk();
+  }
+  int hand_ = 0;
+  size_t frame_num_;
+  Frame *frames_ = nullptr;
+  std::list<FrameId> free_list_;
+};
+
 class Cache NOCOPYABLE {
  public:
   Cache(size_t cache_size) : cache_line_num_(cache_size / kCacheLineSize) {
@@ -90,7 +153,7 @@ class Cache NOCOPYABLE {
       entries_[i].fid_ = i;
     }
     handler_ = new CacheHashTableHanler();
-    replacer_ = new LRUReplacer(cache_line_num_);
+    replacer_ = new ClockReplacer(cache_line_num_);
     hash_table_ = new HashTable<uint32_t>(cache_line_num_, handler_);
   }
 
@@ -140,7 +203,6 @@ class Cache NOCOPYABLE {
   HashTable<uint32_t> *hash_table_ = nullptr;
 
   // LRU
-  LRUReplacer *replacer_ = nullptr;
-  std::mutex mutex_;
+  ClockReplacer *replacer_ = nullptr;
 };
 }  // namespace kv

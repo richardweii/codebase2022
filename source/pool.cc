@@ -45,52 +45,92 @@ void Pool::Init() {
 }
 
 bool Pool::Read(const Slice &key, std::string &val) {
-  latch_.WLock();
-  defer { latch_.WUnlock(); };
-  // hash index
-  auto node = hash_index_->Find(key);
-  if (node == nullptr) {
-    stat::read_miss.fetch_add(1);
-    return false;
+  Addr addr;
+  {
+    // existence
+    latch_.RLock();
+    defer { latch_.RUnlock(); };
+    auto node = hash_index_->Find(key);
+    if (node == nullptr) {
+      stat::read_miss.fetch_add(1);
+      return false;
+    }
+    addr = handler_->GetAddr(node->Handle());
+
+    val.resize(kValueLength);
+
+    // cache
+    CacheEntry *entry = cache_->Lookup(addr);
+    if (entry != nullptr) {
+      stat::cache_hit.fetch_add(1);
+      memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
+      cache_->Release(entry);
+      return true;
+    }
   }
-  Addr addr = handler_->GetAddr(node->Handle());
+  {
+    latch_.WLock();
+    defer { latch_.WUnlock(); };
+    CacheEntry *entry = cache_->Lookup(addr);
+    if (entry != nullptr) {
+      stat::cache_hit.fetch_add(1);
+      memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
+      cache_->Release(entry);
+      return true;
+    }
 
-  val.resize(kValueLength);
-
-  // cache
-  CacheEntry *entry = cache_->Lookup(addr);
-  if (entry == nullptr) {
     // cache miss
     CacheEntry *victim = replacement(addr);
     memcpy((char *)val.data(), victim->Data()->at(addr.CacheOff()), kValueLength);
     cache_->Release(victim);
     return true;
   }
-  stat::cache_hit.fetch_add(1);
-  memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
-  cache_->Release(entry);
-  return true;
 }
 
 bool Pool::Write(const Slice &key, const Slice &val) {
-  latch_.WLock();
-  defer { latch_.WUnlock(); };
-  // hash index
-  auto node = hash_index_->Find(key);
-  if (node == nullptr) {
-    Addr addr(cur_block_id_, cur_kv_off_);
-    hash_index_->Insert(key, handler_->GenHandle(addr));
-    writeNew(key, val);
-    if (stat::insert_num == 160000001) {
-      LOG_INFO("Finish insert.");
+  {
+    // for cache
+    latch_.RLock();
+    defer { latch_.RUnlock(); };
+    auto node = hash_index_->Find(key);
+    if (node != nullptr) {
+      Addr addr = handler_->GetAddr(node->Handle());
+      // cache
+      CacheEntry *entry = cache_->Lookup(addr);
+      if (entry != nullptr) {
+        stat::cache_hit.fetch_add(1);
+        memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
+        entry->Dirty = true;
+        cache_->Release(entry);
+        return true;
+      }
     }
-    return true;
   }
-  Addr addr = handler_->GetAddr(node->Handle());
+  {
+    latch_.WLock();
+    defer { latch_.WUnlock(); };
+    auto node = hash_index_->Find(key);
+    if (node == nullptr) {
+      Addr addr(cur_block_id_, cur_kv_off_);
+      hash_index_->Insert(key, handler_->GenHandle(addr));
+      writeNew(key, val);
+      if (stat::insert_num == 160000001) {
+        LOG_INFO("Finish insert.");
+      }
+      return true;
+    }
 
-  // cache
-  CacheEntry *entry = cache_->Lookup(addr);
-  if (entry == nullptr) {
+    Addr addr = handler_->GetAddr(node->Handle());
+
+    // cache
+    CacheEntry *entry = cache_->Lookup(addr);
+    if (entry != nullptr) {
+      stat::cache_hit.fetch_add(1);
+      memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
+      entry->Dirty = true;
+      cache_->Release(entry);
+      return true;
+    }
     // cache miss
     CacheEntry *victim = replacement(addr);
     memcpy(victim->Data()->at(addr.CacheOff()), val.data(), val.size());
@@ -98,11 +138,6 @@ bool Pool::Write(const Slice &key, const Slice &val) {
     cache_->Release(victim);
     return true;
   }
-  stat::cache_hit.fetch_add(1);
-  memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
-  entry->Dirty = true;
-  cache_->Release(entry);
-  return true;
 }
 
 CacheEntry *Pool::replacement(Addr addr) {
