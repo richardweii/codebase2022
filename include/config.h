@@ -32,7 +32,7 @@ constexpr int kPoolHashSeed = 0x89ea7d2f;
 constexpr int kPoolShardBits = 1;  // for test
 
 #else
-constexpr int kPoolShardBits = 6;
+constexpr int kPoolShardBits = 5;
 // constexpr int kCacheShardBits = 4;
 #endif
 constexpr int kPoolShardNum = 1 << kPoolShardBits;
