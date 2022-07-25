@@ -32,7 +32,7 @@ constexpr int kPoolHashSeed = 0x89ea7d2f;
 constexpr int kPoolShardBits = 1;  // for test
 
 #else
-constexpr int kPoolShardBits = 5;
+constexpr int kPoolShardBits = 6;
 // constexpr int kCacheShardBits = 4;
 #endif
 constexpr int kPoolShardNum = 1 << kPoolShardBits;
@@ -48,7 +48,7 @@ constexpr int kValueBlockSize = 1 << kValueBlockBit;  // value memory register u
 constexpr int kValueBlockBit = 26;                             //
 constexpr int kValueBlockSize = 1 << kValueBlockBit;           // 64MB, value memory register unit
 #endif
-constexpr int kCacheLineBit = 13;
+constexpr int kCacheLineBit = 14;
 constexpr int kCacheLineSize = 1 << kCacheLineBit;  // 1KB
 
 constexpr int kBlockValueNum = kValueBlockSize / kValueLength;
