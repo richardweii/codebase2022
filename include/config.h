@@ -44,12 +44,14 @@ constexpr int kValueBit = 7;
 #ifdef TEST_CONFIG
 constexpr int kValueBlockBit = 10 + 4;                // 16KB
 constexpr int kValueBlockSize = 1 << kValueBlockBit;  // value memory register unit
+constexpr int kCacheLineBit = 10;
+constexpr int kCacheLineSize = 1 << kCacheLineBit;  // 1KB
 #else
 constexpr int kValueBlockBit = 26;                             //
 constexpr int kValueBlockSize = 1 << kValueBlockBit;           // 64MB, value memory register unit
+constexpr int kCacheLineBit = 16;
+constexpr int kCacheLineSize = 1 << kCacheLineBit;  // 16KB
 #endif
-constexpr int kCacheLineBit = 20;
-constexpr int kCacheLineSize = 1 << kCacheLineBit;  // 1KB
 
 constexpr int kBlockValueNum = kValueBlockSize / kValueLength;
 constexpr int kCacheValueNum = kCacheLineSize / kValueLength;

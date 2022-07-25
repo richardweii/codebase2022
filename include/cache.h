@@ -104,19 +104,16 @@ class ClockReplacer {
   }
 
   // thread-safe
-  void Pin(FrameId frame_id) { frames_[frame_id].ref_pin_.fetch_add(1); }
+  void Pin(FrameId frame_id) { frames_[frame_id].ref_.store(true, std::memory_order_relaxed); }
 
   // thread-safe
-  void Unpin(FrameId frame_id) {
-    frames_[frame_id].ref_pin_.fetch_or(REF);
-    frames_[frame_id].ref_pin_.fetch_add(-1);
-  }
+  void Unpin(FrameId frame_id) { frames_[frame_id].ref_.store(true, std::memory_order_relaxed); }
 
  private:
   struct Frame {
     Frame() = default;
     FrameId frame_ = INVALID_FRAME_ID;
-    std::atomic_uint8_t ref_pin_{0};
+    std::atomic_bool ref_;
   };
 
   int walk() {
@@ -128,10 +125,10 @@ class ClockReplacer {
   FrameId pop() {
     while (true) {
       uint8_t tmp = 0;
-      if (frames_[hand_].ref_pin_.load() == 0) {
+      if (frames_[hand_].ref_.load(std::memory_order_relaxed) == false) {
         break;
       } else {
-        frames_[hand_].ref_pin_.fetch_and(UNREF);
+        frames_[hand_].ref_.store(false, std::memory_order_relaxed);
         walk();
       }
     }

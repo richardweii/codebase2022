@@ -62,7 +62,7 @@ bool Pool::Read(const Slice &key, std::string &val) {
     // cache
     CacheEntry *entry = cache_->Lookup(addr);
     if (entry != nullptr) {
-      stat::cache_hit.fetch_add(1);
+      stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
       memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
       cache_->Release(entry);
       return true;
@@ -73,7 +73,7 @@ bool Pool::Read(const Slice &key, std::string &val) {
     defer { latch_.WUnlock(); };
     CacheEntry *entry = cache_->Lookup(addr);
     if (entry != nullptr) {
-      stat::cache_hit.fetch_add(1);
+      stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
       memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
       cache_->Release(entry);
       return true;
@@ -98,7 +98,7 @@ bool Pool::Write(const Slice &key, const Slice &val) {
       // cache
       CacheEntry *entry = cache_->Lookup(addr);
       if (entry != nullptr) {
-        stat::cache_hit.fetch_add(1);
+        stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
         memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
         entry->Dirty = true;
         cache_->Release(entry);
@@ -125,7 +125,7 @@ bool Pool::Write(const Slice &key, const Slice &val) {
     // cache
     CacheEntry *entry = cache_->Lookup(addr);
     if (entry != nullptr) {
-      stat::cache_hit.fetch_add(1);
+      stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
       memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
       entry->Dirty = true;
       cache_->Release(entry);
