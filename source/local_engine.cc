@@ -72,7 +72,9 @@ bool LocalEngine::alive() { return client_->Alive(); }
  * @return {bool} true for success
  */
 bool LocalEngine::write(const std::string key, const std::string value) {
+#ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
+#endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   return pool_[index]->Write(Slice(key), Slice(value));
@@ -85,7 +87,9 @@ bool LocalEngine::write(const std::string key, const std::string value) {
  * @return {bool}  true for success
  */
 bool LocalEngine::read(const std::string key, std::string &value) {
+#ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
+#endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   return pool_[index]->Read(Slice(key), value);

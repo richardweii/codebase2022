@@ -8,6 +8,7 @@
 #include <string>
 
 // #define TEST_CONFIG  // test configuration marco switch
+// #define STAT         // statistic
 
 namespace kv {
 #define RDMA_MR_FLAG (IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE)
@@ -47,10 +48,10 @@ constexpr int kValueBlockSize = 1 << kValueBlockBit;  // value memory register u
 constexpr int kCacheLineBit = 10;
 constexpr int kCacheLineSize = 1 << kCacheLineBit;  // 1KB
 #else
-constexpr int kValueBlockBit = 26;                             //
-constexpr int kValueBlockSize = 1 << kValueBlockBit;           // 64MB, value memory register unit
+constexpr int kValueBlockBit = 26;                    //
+constexpr int kValueBlockSize = 1 << kValueBlockBit;  // 64MB, value memory register unit
 constexpr int kCacheLineBit = 16;
-constexpr int kCacheLineSize = 1 << kCacheLineBit;  // 16KB
+constexpr int kCacheLineSize = 1 << kCacheLineBit;             // 16KB
 #endif
 
 constexpr int kBlockValueNum = kValueBlockSize / kValueLength;

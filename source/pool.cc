@@ -52,7 +52,10 @@ bool Pool::Read(const Slice &key, std::string &val) {
     defer { latch_.RUnlock(); };
     auto node = hash_index_->Find(key);
     if (node == nullptr) {
+#ifdef STAT
       stat::read_miss.fetch_add(1);
+#endif
+
       return false;
     }
     addr = handler_->GetAddr(node->Handle());
@@ -62,7 +65,9 @@ bool Pool::Read(const Slice &key, std::string &val) {
     // cache
     CacheEntry *entry = cache_->Lookup(addr);
     if (entry != nullptr) {
+#ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
+#endif
       memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
       cache_->Release(entry);
       return true;
@@ -73,7 +78,9 @@ bool Pool::Read(const Slice &key, std::string &val) {
     defer { latch_.WUnlock(); };
     CacheEntry *entry = cache_->Lookup(addr);
     if (entry != nullptr) {
+#ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
+#endif
       memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
       cache_->Release(entry);
       return true;
@@ -98,7 +105,9 @@ bool Pool::Write(const Slice &key, const Slice &val) {
       // cache
       CacheEntry *entry = cache_->Lookup(addr);
       if (entry != nullptr) {
+#ifdef STAT
         stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
+#endif
         memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
         entry->Dirty = true;
         cache_->Release(entry);
@@ -114,9 +123,11 @@ bool Pool::Write(const Slice &key, const Slice &val) {
       Addr addr(cur_block_id_, cur_kv_off_);
       hash_index_->Insert(key, handler_->GenHandle(addr));
       writeNew(key, val);
+#ifdef STAT
       if (stat::insert_num == 160000001) {
         LOG_INFO("Finish insert.");
       }
+#endif
       return true;
     }
 
@@ -125,7 +136,9 @@ bool Pool::Write(const Slice &key, const Slice &val) {
     // cache
     CacheEntry *entry = cache_->Lookup(addr);
     if (entry != nullptr) {
+#ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
+#endif
       memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
       entry->Dirty = true;
       cache_->Release(entry);
@@ -142,14 +155,18 @@ bool Pool::Write(const Slice &key, const Slice &val) {
 
 CacheEntry *Pool::replacement(Addr addr) {
   // miss
+#ifdef STAT
   stat::replacement.fetch_add(1);
   if (stat::replacement.load(std::memory_order_relaxed) % 10000 == 0) {
-    LOG_INFO("Replacement %ld",stat::replacement.load(std::memory_order_relaxed));
+    LOG_INFO("Replacement %ld", stat::replacement.load(std::memory_order_relaxed));
   }
+#endif
   CacheEntry *victim = cache_->Insert(addr);
   auto batch = client_->BeginBatch();
   if (victim->Dirty) {
+#ifdef STAT
     stat::dirty_write.fetch_add(1);
+#endif
     auto ret = writeToRemote(victim, &batch);
     LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", victim->Addr.BlockId(),
                victim->Addr.CacheLine());
@@ -163,7 +180,9 @@ CacheEntry *Pool::replacement(Addr addr) {
 }
 
 void Pool::writeNew(const Slice &key, const Slice &val) {
+#ifdef STAT
   stat::insert_num.fetch_add(1);
+#endif
   keys_[cur_block_id_]->SetKey(cur_kv_off_, key);
   memcpy(write_line_->Data()->at(cache_kv_off_), val.data(), val.size());
   cache_kv_off_++;
@@ -195,7 +214,9 @@ void Pool::writeNew(const Slice &key, const Slice &val) {
 }
 
 int Pool::allocNewBlock() {
+#ifdef STAT
   stat::block_num.fetch_add(1);
+#endif
   keys_.emplace_back(new KeyBlock());
   AllocRequest req;
   req.shard = shard_;
