@@ -144,13 +144,15 @@ CacheEntry *Pool::replacement(Addr addr) {
   // miss
   stat::replacement.fetch_add(1);
   CacheEntry *victim = cache_->Insert(addr);
+  auto batch = client_->BeginBatch();
   if (victim->Dirty) {
     stat::dirty_write.fetch_add(1);
-    auto ret = writeToRemote(victim);
+    auto ret = writeToRemote(victim, &batch);
     LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", victim->Addr.BlockId(),
                victim->Addr.CacheLine());
   }
-  auto ret = readFromRemote(victim, addr);
+  auto ret = readFromRemote(victim, addr, &batch);
+  ret = batch.FinishBatch();
   LOG_ASSERT(ret == 0, "read cache block %d, line %d from remote failed.", addr.BlockId(), addr.CacheLine());
   victim->Addr = addr.RoundUp();
   victim->Dirty = false;
@@ -177,7 +179,9 @@ void Pool::writeNew(const Slice &key, const Slice &val) {
     cache_->Release(write_line_);
     write_line_ = cache_->Insert(new_cache_line);
     if (write_line_->Dirty) {
-      auto ret = writeToRemote(write_line_);
+      auto batch = client_->BeginBatch();
+      auto ret = writeToRemote(write_line_, &batch);
+      ret = batch.FinishBatch();
       LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", write_line_->Addr.BlockId(),
                  write_line_->Addr.CacheLine());
     }
@@ -208,20 +212,20 @@ int Pool::allocNewBlock() {
   return 0;
 }
 
-int Pool::writeToRemote(CacheEntry *entry) {
+int Pool::writeToRemote(CacheEntry *entry, RDMAManager::Batch *batch) {
   BlockId bid = entry->Addr.BlockId();
   uint32_t cache_line_off = entry->Addr.CacheLine();
   MemoryAccess &access = global_addr_table_.at(bid);
-  return client_->RemoteWrite(entry->Data(), cache_->MR()->lkey, sizeof(CacheLine),
-                              access.addr + sizeof(CacheLine) * cache_line_off, access.rkey);
+  return batch->RemoteWrite(entry->Data(), cache_->MR()->lkey, sizeof(CacheLine),
+                            access.addr + sizeof(CacheLine) * cache_line_off, access.rkey);
 }
 
-int Pool::readFromRemote(CacheEntry *entry, Addr addr) {
+int Pool::readFromRemote(CacheEntry *entry, Addr addr, RDMAManager::Batch *batch) {
   BlockId bid = addr.BlockId();
   uint32_t cache_line_off = addr.CacheLine();
   MemoryAccess &access = global_addr_table_.at(bid);
-  return client_->RemoteRead(entry->Data(), cache_->MR()->lkey, sizeof(CacheLine),
-                             access.addr + sizeof(CacheLine) * cache_line_off, access.rkey);
+  return batch->RemoteRead(entry->Data(), cache_->MR()->lkey, sizeof(CacheLine),
+                           access.addr + sizeof(CacheLine) * cache_line_off, access.rkey);
 }
 
 }  // namespace kv

@@ -162,6 +162,7 @@ class RDMAManager {
   Batch BeginBatch() {
     auto conn = rdma_one_side_->Dequeue();
     assert(conn != nullptr);
+    conn->BeginBatch();
     return Batch(conn, rdma_one_side_);
   }
 
