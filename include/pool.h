@@ -36,9 +36,9 @@ class Pool NOCOPYABLE {
  private:
   void writeNew(const Slice &key, const Slice &val);
 
-  int writeToRemote(CacheEntry *entry);
+  int writeToRemote(CacheEntry *entry, RDMAManager::Batch *batch);
 
-  int readFromRemote(CacheEntry *entry, Addr addr);
+  int readFromRemote(CacheEntry *entry, Addr addr, RDMAManager::Batch *batch);
 
   CacheEntry *replacement(Addr addr);
 

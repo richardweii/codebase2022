@@ -158,18 +158,16 @@ int RDMAConnection::rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint
 
 int RDMAConnection::pollCq(int num) {
   auto start = TIME_NOW;
-  int ret = -1;
+  int ret = 0;
   struct ibv_wc wc[num];
-  while (true) {
+  while (num > 0) {
     if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
       LOG_ERROR("rdma_one_side timeout\n");
       return -1;
     }
     int rc = ibv_poll_cq(cq_, num, wc);
     if (rc > 0) {
-      assert(rc == num);
-      ret = 0;
-      for (int i = 0; i < num; i++) {
+      for (int i = 0; i < rc; i++) {
         if (IBV_WC_SUCCESS != wc[i].status) {
           LOG_ERROR("poll cq %d/%d failed. Status %d : %s", i, num, wc[i].status, ibv_wc_status_str(wc[i].status));
           perror("cmd_send ibv_poll_cq status error");
@@ -177,11 +175,12 @@ int RDMAConnection::pollCq(int num) {
           break;
         }
       }
-      break;
+      num -= rc;
     } else if (0 == rc) {
       continue;
     } else {
       perror("ibv_poll_cq fail");
+      ret = -1;
       break;
     }
   }
