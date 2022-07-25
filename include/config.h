@@ -50,8 +50,8 @@ constexpr int kCacheLineSize = 1 << kCacheLineBit;  // 1KB
 #else
 constexpr int kValueBlockBit = 26;                    //
 constexpr int kValueBlockSize = 1 << kValueBlockBit;  // 64MB, value memory register unit
-constexpr int kCacheLineBit = 17;
-constexpr int kCacheLineSize = 1 << kCacheLineBit;             // 16KB
+constexpr int kCacheLineBit = 15;
+constexpr int kCacheLineSize = 1 << kCacheLineBit;             // 32KB
 #endif
 
 constexpr int kBlockValueNum = kValueBlockSize / kValueLength;
