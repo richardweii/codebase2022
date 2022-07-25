@@ -143,6 +143,9 @@ bool Pool::Write(const Slice &key, const Slice &val) {
 CacheEntry *Pool::replacement(Addr addr) {
   // miss
   stat::replacement.fetch_add(1);
+  if (stat::replacement.load(std::memory_order_relaxed) % 10000 == 0) {
+    LOG_INFO("Replacement %ld",stat::replacement.load(std::memory_order_relaxed));
+  }
   CacheEntry *victim = cache_->Insert(addr);
   auto batch = client_->BeginBatch();
   if (victim->Dirty) {
