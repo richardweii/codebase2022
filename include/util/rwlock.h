@@ -1,6 +1,8 @@
 #pragma once
 
 #include <pthread.h>
+#include <atomic>
+#include <cstdint>
 namespace kv {
 
 /**
@@ -38,6 +40,35 @@ class Latch {
 
  private:
   pthread_rwlock_t rwlock_;
+};
+
+class SpinLatch {
+ public:
+  void WLock() {
+    int8_t lock = 0;
+    while (!lock_.compare_exchange_weak(lock, -1, std::memory_order_acquire)) {
+      lock = 0;
+    }
+  }
+
+  void WUnlock() { lock_.store(0, std::memory_order_release); }
+
+  void RLock() {
+    while (true) {
+      int8_t lock = lock_.load();
+      if (lock + 1 > 0) {
+        if (lock_.compare_exchange_weak(lock, lock + 1, std::memory_order_acquire)) {
+          return;
+        }
+      }
+      // retry
+    }
+  }
+
+  void RUnlock() { lock_.fetch_add(-1, std::memory_order_release); }
+
+ private:
+  std::atomic_int8_t lock_{0};
 };
 
 }  // namespace kv

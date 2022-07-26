@@ -89,7 +89,7 @@ class Pool NOCOPYABLE {
   RDMAClient *client_ = nullptr;
 
   uint8_t shard_;
-  Latch latch_;
+  SpinLatch latch_;
 };
 
 class RemotePool NOCOPYABLE {
