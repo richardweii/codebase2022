@@ -80,7 +80,7 @@ class HashTable {
   HashNode<Tp> *Find(const Tp &key) {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
-    if (!slot->IsValid()) {
+    if (slot->data_handle_ == INVALID_HANDLE) {
       return nullptr;
     }
 
@@ -97,7 +97,7 @@ class HashTable {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
 
-    if (!slot->IsValid()) {
+    if (slot->data_handle_ == INVALID_HANDLE) {
       slot->data_handle_ = data_handle;
       count_++;
       return;
@@ -124,7 +124,7 @@ class HashTable {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
 
-    if (!slot->IsValid()) {
+    if (slot->data_handle_ == INVALID_HANDLE) {
       return false;
     }
 
