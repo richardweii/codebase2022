@@ -74,6 +74,9 @@ bool LocalEngine::alive() { return client_->Alive(); }
 bool LocalEngine::write(const std::string key, const std::string value) {
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
+  if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
+    LOG_INFO("write %lu", stat::write_times.load(std::memory_order_relaxed));
+  }
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
@@ -89,6 +92,9 @@ bool LocalEngine::write(const std::string key, const std::string value) {
 bool LocalEngine::read(const std::string key, std::string &value) {
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
+  if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
+    LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
+  }
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
