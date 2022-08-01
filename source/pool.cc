@@ -25,7 +25,7 @@ Pool::Pool(size_t cache_size, uint8_t shard, RDMAClient *client) : client_(clien
 }
 
 Pool::~Pool() {
-  hash_index_->PrintCounter();
+  // hash_index_->PrintCounter();
   delete cache_;
   delete handler_;
   delete hash_index_;

@@ -54,7 +54,7 @@ class HashTable {
  public:
   static uint32_t Hash(Tp key);
 
-  HashTable(size_t size, HashHandler<Tp> *handler, bool latch = false) : handler_(handler), size_(size), latch_(latch) {
+  HashTable(size_t size, HashHandler<Tp> *handler) : handler_(handler), size_(size) {
     int logn = 0;
     while (size >= 2) {
       size /= 2;
@@ -62,10 +62,7 @@ class HashTable {
     }
     size_ = PrimeList[logn];
     slots_ = new HashNode<Tp>[size_];
-    if (latch_) {
-      slot_latch_ = new SpinLatch[size_];
-    }
-    counter_ = new uint8_t[size_]{0};
+    // counter_ = new uint8_t[size_]{0};
   };
 
   ~HashTable() {
@@ -87,32 +84,26 @@ class HashTable {
   HashNode<Tp> *Find(const Tp &key) {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
-    if (latch_) rlock(index);
     if (slot->data_handle_ == INVALID_HANDLE) {
-      if (latch_) rUnlock(index);
       return nullptr;
     }
 
     while (slot != nullptr) {
       if (key == handler_->GetKey(slot->data_handle_)) {
-        if (latch_) rUnlock(index);
         return slot;
       }
       slot = slot->next_;
     }
-    if (latch_) rUnlock(index);
     return nullptr;
   }
 
   void Insert(const Tp &key, uint64_t data_handle) {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
-    if (latch_) wlock(index);
     if (slot->data_handle_ == INVALID_HANDLE) {
       slot->data_handle_ = data_handle;
       count_++;
-      counter_[index]++;
-      if (latch_) wUnlock(index);
+      // counter_[index]++;
       return;
     }
 
@@ -121,7 +112,6 @@ class HashTable {
       if (key == handler_->GetKey(slot->data_handle_)) {
         // duplicate
         LOG_DEBUG("slot data_handle %lx, data_handle %lx", slot->data_handle_, data_handle);
-        if (latch_) wUnlock(index);
         return;
       }
       slot = slot->next_;
@@ -132,17 +122,14 @@ class HashTable {
     slots_[index].next_ = new HashNode<Tp>(data_handle);
     slots_[index].next_->next_ = slot;
     count_++;
-    counter_[index]++;
-    if (latch_) wUnlock(index);
+    // counter_[index]++;
   }
 
   bool Remove(const Tp &key) {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
-    if (latch_) wlock(index);
 
     if (slot->data_handle_ == INVALID_HANDLE) {
-      if (latch_) wUnlock(index);
       return false;
     }
 
@@ -157,8 +144,7 @@ class HashTable {
         slot->next_ = nullptr;
       }
       count_--;
-      counter_[index]--;
-      if (latch_) wUnlock(index);
+      // counter_[index]--;
       return true;
     }
 
@@ -169,48 +155,40 @@ class HashTable {
         front->next_ = slot->next_;
         delete slot;
         count_--;
-        if (latch_) wUnlock(index);
-        counter_[index]--;
+        // counter_[index]--;
         return true;
       }
       front = slot;
       slot = slot->next_;
     }
     // cannot find
-    if (latch_) wUnlock(index);
     return false;
   }
 
   size_t SlotSize() const { return size_; }
   size_t Count() const { return count_; }
 
-  void PrintCounter() {
-    std::vector<uint32_t> count(255, 0);
-    for (size_t i = 0; i < size_; i++) {
-      for (int j = 0; j <= counter_[i]; j++) {
-        count[j]++;
-      }
-    }
-    LOG_INFO("@@@@@@@@@@@@@@@@@@@@ Hash Table @@@@@@@@@@@@@@@@");
-    for (int i = 0; i < 15; i++) {
-      LOG_INFO("bucket size %d: %d", i, count[i]);
-    }
-  }
+  // void PrintCounter() {
+  //   std::vector<uint32_t> count(255, 0);
+  //   for (size_t i = 0; i < size_; i++) {
+  //     for (int j = 0; j <= counter_[i]; j++) {
+  //       count[j]++;
+  //     }
+  //   }
+  //   LOG_INFO("@@@@@@@@@@@@@@@@@@@@ Hash Table @@@@@@@@@@@@@@@@");
+  //   for (int i = 0; i < 15; i++) {
+  //     LOG_INFO("bucket size %d: %d", i, count[i]);
+  //   }
+  // }
 
  private:
-  void rlock(int index) { slot_latch_[index].RLock(); }
-  void rUnlock(int index) { slot_latch_[index].RUnlock(); }
-  void wlock(int index) { slot_latch_[index].WLock(); }
-  void wUnlock(int index) { slot_latch_[index].WUnlock(); }
-
   constexpr static uint32_t hash_seed_ = 0xf6ec23d9;
   HashHandler<Tp> *handler_;
   HashNode<Tp> *slots_ = nullptr;
-  SpinLatch *slot_latch_ = nullptr;
   size_t count_ = 0;
   size_t size_ = 0;
   bool latch_ = false;
-  uint8_t *counter_ = nullptr;
+  // uint8_t *counter_ = nullptr;
 };
 
 template <>
