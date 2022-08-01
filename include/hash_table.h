@@ -208,25 +208,4 @@ template <>
 inline uint32_t HashTable<uint64_t>::Hash(uint64_t key) {
   return key;
 }
-
-template <>
-inline HashNode<Slice> *HashTable<Slice>::Find(const Slice &key) {
-  uint32_t index = Hash(key) % size_;
-  HashNode<Slice> *slot = &slots_[index];
-  if (slot->data_handle_ == INVALID_HANDLE) {
-    return nullptr;
-  }
-  __uint128_t *a;
-  __uint128_t *b;
-  while (slot != nullptr) {
-    a = (__uint128_t *)key.data();
-    b = (__uint128_t *)handler_->GetKey(slot->data_handle_).data();
-    if (*a == *b) {
-      return slot;
-    }
-    slot = slot->next_;
-  }
-  return nullptr;
-}
-
 }  // namespace kv

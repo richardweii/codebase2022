@@ -62,7 +62,7 @@ constexpr size_t kKeyNum = 16 * 100;          // 16 * 12 * 32K key
 constexpr size_t kCacheSize = 2 * 16 * 1024;  // 32KB cache
 #else
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;              // 16 * 12M key
-constexpr size_t kCacheSize = (size_t)3 * 1024 * 1024 * 1024;  // 2GB cache
+constexpr size_t kCacheSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB cache
 #endif
 
 constexpr int kAlign = 8;  // kAlign show be powers of 2, say 2, 4 ,8, 16, 32, ...
