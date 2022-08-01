@@ -4,8 +4,10 @@
 #include <cstdint>
 #include <vector>
 #include "config.h"
+#include "util/defer.h"
 #include "util/hash.h"
 #include "util/logging.h"
+#include "util/rwlock.h"
 #include "util/slice.h"
 
 namespace kv {
@@ -52,7 +54,7 @@ class HashTable {
  public:
   static uint32_t Hash(Tp key);
 
-  HashTable(size_t size, HashHandler<Tp> *handler) : handler_(handler), size_(size) {
+  HashTable(size_t size, HashHandler<Tp> *handler, bool latch = false) : handler_(handler), size_(size), latch_(latch) {
     int logn = 0;
     while (size >= 2) {
       size /= 2;
@@ -60,6 +62,9 @@ class HashTable {
     }
     size_ = PrimeList[logn];
     slots_ = new HashNode<Tp>[size_];
+    if (latch_) {
+      slot_latch_ = new SpinLatch[size_];
+    }
   };
 
   ~HashTable() {
@@ -81,26 +86,31 @@ class HashTable {
   HashNode<Tp> *Find(const Tp &key) {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
+    if (latch_) rlock(index);
     if (slot->data_handle_ == INVALID_HANDLE) {
+      if (latch_) rUnlock(index);
       return nullptr;
     }
 
     while (slot != nullptr) {
       if (key == handler_->GetKey(slot->data_handle_)) {
+        if (latch_) rUnlock(index);
         return slot;
       }
       slot = slot->next_;
     }
+    if (latch_) rUnlock(index);
     return nullptr;
   }
 
   void Insert(const Tp &key, uint64_t data_handle) {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
-
+    if (latch_) wlock(index);
     if (slot->data_handle_ == INVALID_HANDLE) {
       slot->data_handle_ = data_handle;
       count_++;
+      if (latch_) wUnlock(index);
       return;
     }
 
@@ -109,6 +119,7 @@ class HashTable {
       if (key == handler_->GetKey(slot->data_handle_)) {
         // duplicate
         LOG_DEBUG("slot data_handle %lx, data_handle %lx", slot->data_handle_, data_handle);
+        if (latch_) wUnlock(index);
         return;
       }
       slot = slot->next_;
@@ -119,13 +130,16 @@ class HashTable {
     slots_[index].next_ = new HashNode<Tp>(data_handle);
     slots_[index].next_->next_ = slot;
     count_++;
+    if (latch_) wUnlock(index);
   }
 
   bool Remove(const Tp &key) {
     uint32_t index = Hash(key) % size_;
     HashNode<Tp> *slot = &slots_[index];
+    if (latch_) wlock(index);
 
     if (slot->data_handle_ == INVALID_HANDLE) {
+      if (latch_) wUnlock(index);
       return false;
     }
 
@@ -140,6 +154,7 @@ class HashTable {
         slot->next_ = nullptr;
       }
       count_--;
+      if (latch_) wUnlock(index);
       return true;
     }
 
@@ -150,12 +165,14 @@ class HashTable {
         front->next_ = slot->next_;
         delete slot;
         count_--;
+        if (latch_) wUnlock(index);
         return true;
       }
       front = slot;
       slot = slot->next_;
     }
     // cannot find
+    if (latch_) wUnlock(index);
     return false;
   }
 
@@ -163,11 +180,18 @@ class HashTable {
   size_t Count() const { return count_; }
 
  private:
+  void rlock(int index) { slot_latch_[index].RLock(); }
+  void rUnlock(int index) { slot_latch_[index].RUnlock(); }
+  void wlock(int index) { slot_latch_[index].WLock(); }
+  void wUnlock(int index) { slot_latch_[index].WUnlock(); }
+
   constexpr static uint32_t hash_seed_ = 0xf6ec23d9;
   HashHandler<Tp> *handler_;
   HashNode<Tp> *slots_ = nullptr;
+  SpinLatch *slot_latch_ = nullptr;
   size_t count_ = 0;
   size_t size_ = 0;
+  bool latch_ = false;
 };
 
 template <>

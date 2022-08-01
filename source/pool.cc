@@ -21,7 +21,7 @@ namespace kv {
 Pool::Pool(size_t cache_size, uint8_t shard, RDMAClient *client) : client_(client), shard_(shard) {
   cache_ = new Cache(cache_size);
   handler_ = new PoolHashHandler(&keys_);
-  hash_index_ = new HashTable<Slice>(kKeyNum / kPoolShardNum, handler_);
+  hash_index_ = new HashTable<Slice>(kKeyNum / kPoolShardNum, handler_, true);
 }
 
 Pool::~Pool() {
@@ -48,8 +48,6 @@ bool Pool::Read(const Slice &key, std::string &val) {
   Addr addr;
   {
     // existence
-    latch_.RLock();
-    defer { latch_.RUnlock(); };
     auto node = hash_index_->Find(key);
     if (node == nullptr) {
 #ifdef STAT
@@ -63,7 +61,10 @@ bool Pool::Read(const Slice &key, std::string &val) {
     val.resize(kValueLength);
 
     // cache
+    latch_.RLock();
     CacheEntry *entry = cache_->Lookup(addr);
+    latch_.RUnlock();
+
     if (entry != nullptr) {
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
@@ -75,9 +76,10 @@ bool Pool::Read(const Slice &key, std::string &val) {
   }
   {
     latch_.WLock();
-    defer { latch_.WUnlock(); };
     CacheEntry *entry = cache_->Lookup(addr);
     if (entry != nullptr) {
+      latch_.WUnlock();
+
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
@@ -88,6 +90,7 @@ bool Pool::Read(const Slice &key, std::string &val) {
 
     // cache miss
     CacheEntry *victim = replacement(addr);
+    latch_.WUnlock();
     memcpy((char *)val.data(), victim->Data()->at(addr.CacheOff()), kValueLength);
     cache_->Release(victim);
     return true;
@@ -97,13 +100,14 @@ bool Pool::Read(const Slice &key, std::string &val) {
 bool Pool::Write(const Slice &key, const Slice &val) {
   {
     // for cache
-    latch_.RLock();
-    defer { latch_.RUnlock(); };
     auto node = hash_index_->Find(key);
     if (node != nullptr) {
       Addr addr = handler_->GetAddr(node->Handle());
       // cache
+      latch_.RLock();
       CacheEntry *entry = cache_->Lookup(addr);
+      latch_.RUnlock();
+
       if (entry != nullptr) {
 #ifdef STAT
         stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
@@ -117,7 +121,6 @@ bool Pool::Write(const Slice &key, const Slice &val) {
   }
   {
     latch_.WLock();
-    defer { latch_.WUnlock(); };
     auto node = hash_index_->Find(key);
     if (node == nullptr) {
       Addr addr(cur_block_id_, cur_kv_off_);
@@ -128,6 +131,7 @@ bool Pool::Write(const Slice &key, const Slice &val) {
         LOG_INFO("Finish insert.");
       }
 #endif
+      latch_.WUnlock();
       return true;
     }
 
@@ -136,6 +140,7 @@ bool Pool::Write(const Slice &key, const Slice &val) {
     // cache
     CacheEntry *entry = cache_->Lookup(addr);
     if (entry != nullptr) {
+      latch_.WUnlock();
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
@@ -146,6 +151,7 @@ bool Pool::Write(const Slice &key, const Slice &val) {
     }
     // cache miss
     CacheEntry *victim = replacement(addr);
+    latch_.WUnlock();
     memcpy(victim->Data()->at(addr.CacheOff()), val.data(), val.size());
     victim->Dirty = true;
     cache_->Release(victim);

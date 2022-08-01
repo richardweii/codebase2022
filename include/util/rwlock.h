@@ -55,7 +55,7 @@ class SpinLatch {
 
   void RLock() {
     while (true) {
-      int8_t lock = lock_.load();
+      int8_t lock = lock_.load(std::memory_order_relaxed);
       if (lock + 1 > 0) {
         if (lock_.compare_exchange_weak(lock, lock + 1, std::memory_order_acquire)) {
           return;
