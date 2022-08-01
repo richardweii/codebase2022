@@ -5,8 +5,9 @@
 
 int main() {
   std::vector<int> counter(101, 0);
+  Zipf zipf(100, 0x1231, 2);
   for (int i = 0; i < 1000; i++) {
-    int num = zipf(100, 2.12);
+    int num = zipf.Next();
     LOG_DEBUG("Zipf %d", num);
     counter[num]++;
   }
