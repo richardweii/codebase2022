@@ -46,9 +46,9 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
 void LocalEngine::stop() {
   client_->Stop();
   delete client_;
-  // for (int i = 0; i < kPoolShardNum; i++) {
-  //   delete pool_[i];
-  // }
+  for (int i = 0; i < kPoolShardNum; i++) {
+    delete pool_[i];
+  }
   LOG_INFO(" ========== Performance Statistics ============");
   LOG_INFO(" Total read %ld times, write %ld times", stat::read_times.load(), stat::write_times.load());
   LOG_INFO(" Unique insert %ld  times", stat::insert_num.load());

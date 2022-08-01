@@ -168,6 +168,8 @@ class Cache NOCOPYABLE {
       perror("ibv_derge_mr failed.");
       LOG_ERROR("ibv_derge_mr failed.");
     }
+    LOG_INFO("cache hash table");
+    hash_table_->PrintCounter();
     delete[] lines_;
     delete handler_;
     delete hash_table_;

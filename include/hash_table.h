@@ -65,6 +65,7 @@ class HashTable {
     if (latch_) {
       slot_latch_ = new SpinLatch[size_];
     }
+    counter_ = new uint8_t[size_]{0};
   };
 
   ~HashTable() {
@@ -110,6 +111,7 @@ class HashTable {
     if (slot->data_handle_ == INVALID_HANDLE) {
       slot->data_handle_ = data_handle;
       count_++;
+      counter_[index]++;
       if (latch_) wUnlock(index);
       return;
     }
@@ -130,6 +132,7 @@ class HashTable {
     slots_[index].next_ = new HashNode<Tp>(data_handle);
     slots_[index].next_->next_ = slot;
     count_++;
+    counter_[index]++;
     if (latch_) wUnlock(index);
   }
 
@@ -154,6 +157,7 @@ class HashTable {
         slot->next_ = nullptr;
       }
       count_--;
+      counter_[index]--;
       if (latch_) wUnlock(index);
       return true;
     }
@@ -166,6 +170,7 @@ class HashTable {
         delete slot;
         count_--;
         if (latch_) wUnlock(index);
+        counter_[index]--;
         return true;
       }
       front = slot;
@@ -178,6 +183,19 @@ class HashTable {
 
   size_t SlotSize() const { return size_; }
   size_t Count() const { return count_; }
+
+  void PrintCounter() {
+    std::vector<uint32_t> count(255, 0);
+    for (size_t i = 0; i < size_; i++) {
+      for (int j = 0; j <= counter_[i]; j++) {
+        count[j]++;
+      }
+    }
+    LOG_INFO("@@@@@@@@@@@@@@@@@@@@ Hash Table @@@@@@@@@@@@@@@@");
+    for (int i = 0; i < 15; i++) {
+      LOG_INFO("bucket size %d: %d", i, count[i]);
+    }
+  }
 
  private:
   void rlock(int index) { slot_latch_[index].RLock(); }
@@ -192,6 +210,7 @@ class HashTable {
   size_t count_ = 0;
   size_t size_ = 0;
   bool latch_ = false;
+  uint8_t *counter_ = nullptr;
 };
 
 template <>

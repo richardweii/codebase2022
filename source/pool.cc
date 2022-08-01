@@ -21,10 +21,11 @@ namespace kv {
 Pool::Pool(size_t cache_size, uint8_t shard, RDMAClient *client) : client_(client), shard_(shard) {
   cache_ = new Cache(cache_size);
   handler_ = new PoolHashHandler(&keys_);
-  hash_index_ = new HashTable<Slice>(kKeyNum / kPoolShardNum, handler_, true);
+  hash_index_ = new HashTable<Slice>(kKeyNum / kPoolShardNum, handler_);
 }
 
 Pool::~Pool() {
+  hash_index_->PrintCounter();
   delete cache_;
   delete handler_;
   delete hash_index_;
@@ -100,11 +101,11 @@ bool Pool::Read(const Slice &key, std::string &val) {
 bool Pool::Write(const Slice &key, const Slice &val) {
   {
     // for cache
+    latch_.RLock();
     auto node = hash_index_->Find(key);
     if (node != nullptr) {
       Addr addr = handler_->GetAddr(node->Handle());
       // cache
-      latch_.RLock();
       CacheEntry *entry = cache_->Lookup(addr);
       latch_.RUnlock();
 
@@ -117,6 +118,8 @@ bool Pool::Write(const Slice &key, const Slice &val) {
         cache_->Release(entry);
         return true;
       }
+    } else {
+      latch_.RUnlock();
     }
   }
   {
