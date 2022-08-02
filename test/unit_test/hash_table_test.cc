@@ -24,7 +24,7 @@ class DummyHandler : public HashHandler<Slice> {
 
 void TestBasic2() {
   std::vector<DummyEntry> entries;
-  DummyHandler *handler =  new DummyHandler(&entries);
+  DummyHandler *handler = new DummyHandler(&entries);
   HashTable<Slice> table(1023, handler);
   for (int i = 0; i < 1023; i++) {
     entries.emplace_back();

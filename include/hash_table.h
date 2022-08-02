@@ -19,6 +19,8 @@ constexpr static const unsigned long PrimeList[] = {
     201326611ul, 402653189ul, 805306457ul, 1610612741ul, 3221225473ul, 4294967291ul};
 
 constexpr static uint64_t INVALID_HANDLE = ~0;
+constexpr static uint32_t FINGERPRINT_MASK = 0x3ff;
+constexpr static uint64_t DATA_HANDLE_MASK = ~0xffc0000000000000;
 
 template <typename Tp>
 class HashHandler {
@@ -42,7 +44,9 @@ class HashNode {
 
   bool IsValid() const { return data_handle_ != INVALID_HANDLE; }
 
-  uint64_t Handle() const { return data_handle_; }
+  uint64_t Handle() const { return data_handle_ & DATA_HANDLE_MASK; }
+
+  uint32_t Fingerprint() const { return data_handle_ >> 54; }
 
  private:
   HashNode *next_ = nullptr;
@@ -82,14 +86,17 @@ class HashTable {
   }
 
   HashNode<Tp> *Find(const Tp &key) {
-    uint32_t index = Hash(key) % size_;
+    uint32_t hash = Hash(key);
+    uint32_t index = hash % size_;
+    uint32_t fpt = hash & FINGERPRINT_MASK;
+
     HashNode<Tp> *slot = &slots_[index];
     if (slot->data_handle_ == INVALID_HANDLE) {
       return nullptr;
     }
 
     while (slot != nullptr) {
-      if (key == handler_->GetKey(slot->data_handle_)) {
+      if (fpt == slot->Fingerprint() && key == handler_->GetKey(slot->Handle())) {
         return slot;
       }
       slot = slot->next_;
@@ -98,7 +105,12 @@ class HashTable {
   }
 
   void Insert(const Tp &key, uint64_t data_handle) {
-    uint32_t index = Hash(key) % size_;
+    uint32_t hash = Hash(key);
+    uint32_t index = hash % size_;
+    uint32_t fpt = hash & FINGERPRINT_MASK;
+
+    data_handle |= ((uint64_t)fpt << 54);
+
     HashNode<Tp> *slot = &slots_[index];
     if (slot->data_handle_ == INVALID_HANDLE) {
       slot->data_handle_ = data_handle;
@@ -109,7 +121,7 @@ class HashTable {
 
     // find
     while (slot != nullptr) {
-      if (key == handler_->GetKey(slot->data_handle_)) {
+      if (fpt == slot->Fingerprint() && key == handler_->GetKey(slot->Handle())) {
         // duplicate
         LOG_DEBUG("slot data_handle %lx, data_handle %lx", slot->data_handle_, data_handle);
         return;
@@ -126,7 +138,10 @@ class HashTable {
   }
 
   bool Remove(const Tp &key) {
-    uint32_t index = Hash(key) % size_;
+    uint32_t hash = Hash(key);
+    uint32_t index = hash % size_;
+    uint32_t fpt = hash & FINGERPRINT_MASK;
+
     HashNode<Tp> *slot = &slots_[index];
 
     if (slot->data_handle_ == INVALID_HANDLE) {
@@ -134,7 +149,7 @@ class HashTable {
     }
 
     // head
-    if (key == handler_->GetKey(slot->data_handle_)) {
+    if (fpt == slot->Fingerprint() && key == handler_->GetKey(slot->Handle())) {
       if (slot->next_ != nullptr) {
         HashNode<Tp> *tmp = slot->next_;
         *slot = *slot->next_;
@@ -151,7 +166,7 @@ class HashTable {
     // find
     HashNode<Tp> *front = slot;
     while (slot != nullptr) {
-      if (key == handler_->GetKey(slot->data_handle_)) {
+      if (fpt == slot->Fingerprint() && key == handler_->GetKey(slot->Handle())) {
         front->next_ = slot->next_;
         delete slot;
         count_--;
