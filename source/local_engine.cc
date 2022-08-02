@@ -77,6 +77,9 @@ bool LocalEngine::write(const std::string key, const std::string value) {
   if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
     LOG_INFO("write %lu", stat::write_times.load(std::memory_order_relaxed));
   }
+  if (stat::write_times.load(std::memory_order_relaxed) < 1000) {
+    LOG_INFO("key %.16s", key.c_str());
+  }
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
