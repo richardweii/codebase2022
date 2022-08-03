@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 #include "config.h"
 #include "util/defer.h"
@@ -217,4 +218,61 @@ template <>
 inline uint32_t HashTable<uint64_t>::Hash(uint64_t key) {
   return key;
 }
+
+// template <typename Tp>
+// class CuckooHashTable {
+//  public:
+//   static uint32_t Hash(Tp key);
+
+//   CuckooHashTable(size_t size, HashHandler<Tp> *) {
+//     int logn = 0;
+//     while (size >= 2) {
+//       size /= 2;
+//       logn++;
+//     }
+//     size_ = PrimeList[logn];
+//     slots0_ = new Slot[size_];
+//     slots1_ = new Slot[size_];
+//     memset(slots0_, 0, sizeof(Slot) * size_);
+//     memset(slots1_, 0, sizeof(Slot) * size_);
+//   }
+
+//   ~CuckooHashTable() {
+//     delete slots0_;
+//     delete slots1_;
+//   }
+
+//   uint64_t Find(const Tp &key, uint32_t hash0);
+//   void Insert(const Tp &key, uint32_t hash0, uint64_t data_handle) {}
+//   bool Remove(const Tp &key, uint32_t hash0);
+
+//  private:
+//   bool reHash(const Tp &key, )
+//   struct Slot {
+//     uint32_t hasher : 1;
+//     uint32_t fingerprint : 9;
+//     uint64_t data_handle : 54;
+//   };
+//   Slot *slots0_;
+//   Slot *slots1_;
+//   size_t size_;
+//   HashHandler<Tp> *handler_;
+//   constexpr static uint32_t hash_seed_ = 3145739;
+// };
+
+// template <>
+// inline uint32_t CuckooHashTable<Slice>::Hash(Slice key) {
+//   return kv::Hash(key.data(), key.size(), hash_seed_);
+// }
+
+// template <>
+// inline uint32_t CuckooHashTable<uint32_t>::Hash(uint32_t key) {
+//   return key;
+// }
+
+// template <>
+// inline uint32_t CuckooHashTable<uint64_t>::Hash(uint64_t key) {
+//   return key;
+// }
+
 }  // namespace kv
