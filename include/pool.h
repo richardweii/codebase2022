@@ -30,8 +30,8 @@ class Pool NOCOPYABLE {
 
   void Init();
 
-  bool Read(const Slice &key, std::string &val);
-  bool Write(const Slice &key, const Slice &val);
+  bool Read(const Slice &key, uint32_t hash, std::string &val);
+  bool Write(const Slice &key, uint32_t hash, const Slice &val);
 
  private:
   void writeNew(const Slice &key, const Slice &val);

@@ -104,10 +104,10 @@ CacheEntry *Cache::Insert(Addr addr) {
 
   if (victim->Valid()) {
     // remove from old hash table
-    hash_table_->Remove(victim->Addr.RawAddr());
+    hash_table_->Remove(victim->Addr.RawAddr(), victim->Addr.RawAddr());
   }
   // add to hash table
-  hash_table_->Insert(addr.RawAddr(), handler_->GenHandle(addr.RawAddr(), fid));
+  hash_table_->Insert(addr.RawAddr(), addr.RawAddr(), handler_->GenHandle(addr.RawAddr(), fid));
 
   // if (victim->Valid()) {
   replacer_->Pin(fid);
@@ -120,7 +120,7 @@ void Cache::Release(CacheEntry *entry) { replacer_->Unpin(entry->fid_); }
 
 CacheEntry *Cache::Lookup(Addr addr) {
   addr.RoundUp();
-  auto node = hash_table_->Find(addr.RawAddr());
+  auto node = hash_table_->Find(addr.RawAddr(), addr.RawAddr());
   if (node == nullptr) {
     return nullptr;
   }

@@ -83,7 +83,7 @@ bool LocalEngine::write(const std::string key, const std::string value) {
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  return pool_[index]->Write(Slice(key), Slice(value));
+  return pool_[index]->Write(Slice(key), hash, Slice(value));
 }
 
 /**
@@ -101,7 +101,7 @@ bool LocalEngine::read(const std::string key, std::string &value) {
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  return pool_[index]->Read(Slice(key), value);
+  return pool_[index]->Read(Slice(key), hash, value);
 }
 
 }  // namespace kv

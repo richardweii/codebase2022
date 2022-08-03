@@ -32,24 +32,24 @@ void TestBasic2() {
     entries.back().value = to_string(i * 2);
   }
   for (int i = 0; i < 1023; i++) {
-    table.Insert(entries[i].key, i);
+    table.Insert(entries[i].key, table.Hash(entries[i].key), i);
   }
   LOG_ASSERT(table.Count() == 1023, "expect 1023 got %zu", table.Count());
 
   for (int i = 0; i < 1023; i++) {
-    auto node = table.Find(entries[i].key);
+    auto node = table.Find(entries[i].key, table.Hash(entries[i].key));
     ASSERT(node != nullptr, "expected %d", i);
     EXPECT(node->Handle() == (uint64_t)i, "got %lu", node->Handle())
   }
 
   for (int i = 0; i < 1023; i++) {
-    table.Remove(entries[i].key);
-    auto node = table.Find(entries[i].key);
+    table.Remove(entries[i].key, table.Hash(entries[i].key));
+    auto node = table.Find(entries[i].key, table.Hash(entries[i].key));
     ASSERT(node == nullptr, "node %d", i);
     LOG_ASSERT(table.Count() == (uint32_t)1022 - i, "expect %d got %zu", 1022 - i, table.Count());
 
     for (int j = i + 1; j < 1023; j++) {
-      auto node = table.Find(entries[j].key);
+      auto node = table.Find(entries[j].key, table.Hash(entries[j].key));
       ASSERT(node != nullptr, "");
       EXPECT(node->Handle() == (uint64_t)j, "got %lu", node->Handle())
     }

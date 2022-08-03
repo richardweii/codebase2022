@@ -85,8 +85,7 @@ class HashTable {
     delete[] slots_;
   }
 
-  HashNode<Tp> *Find(const Tp &key) {
-    uint32_t hash = Hash(key);
+  HashNode<Tp> *Find(const Tp &key, uint32_t hash) {
     uint32_t index = hash % size_;
     uint32_t fpt = hash & FINGERPRINT_MASK;
 
@@ -104,8 +103,7 @@ class HashTable {
     return nullptr;
   }
 
-  void Insert(const Tp &key, uint64_t data_handle) {
-    uint32_t hash = Hash(key);
+  void Insert(const Tp &key, uint32_t hash, uint64_t data_handle) {
     uint32_t index = hash % size_;
     uint32_t fpt = hash & FINGERPRINT_MASK;
 
@@ -137,8 +135,7 @@ class HashTable {
     // counter_[index]++;
   }
 
-  bool Remove(const Tp &key) {
-    uint32_t hash = Hash(key);
+  bool Remove(const Tp &key, uint32_t hash) {
     uint32_t index = hash % size_;
     uint32_t fpt = hash & FINGERPRINT_MASK;
 
@@ -197,7 +194,7 @@ class HashTable {
   // }
 
  private:
-  constexpr static uint32_t hash_seed_ = 0xf6ec23d9;
+  constexpr static uint32_t hash_seed_ = kPoolHashSeed;
   HashHandler<Tp> *handler_;
   HashNode<Tp> *slots_ = nullptr;
   size_t count_ = 0;

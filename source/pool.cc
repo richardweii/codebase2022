@@ -45,11 +45,11 @@ void Pool::Init() {
   write_line_->Dirty = true;
 }
 
-bool Pool::Read(const Slice &key, std::string &val) {
+bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   Addr addr;
   {
     // existence
-    auto node = hash_index_->Find(key);
+    auto node = hash_index_->Find(key, hash);
     if (node == nullptr) {
 #ifdef STAT
       stat::read_miss.fetch_add(1);
@@ -98,11 +98,11 @@ bool Pool::Read(const Slice &key, std::string &val) {
   }
 }
 
-bool Pool::Write(const Slice &key, const Slice &val) {
+bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
   {
     // for cache
     latch_.RLock();
-    auto node = hash_index_->Find(key);
+    auto node = hash_index_->Find(key, hash);
     if (node != nullptr) {
       Addr addr = handler_->GetAddr(node->Handle());
       // cache
@@ -124,10 +124,10 @@ bool Pool::Write(const Slice &key, const Slice &val) {
   }
   {
     latch_.WLock();
-    auto node = hash_index_->Find(key);
+    auto node = hash_index_->Find(key, hash);
     if (node == nullptr) {
       Addr addr(cur_block_id_, cur_kv_off_);
-      hash_index_->Insert(key, handler_->GenHandle(addr));
+      hash_index_->Insert(key, hash, handler_->GenHandle(addr));
       writeNew(key, val);
 #ifdef STAT
       if (stat::insert_num == 160000001) {
