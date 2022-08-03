@@ -89,6 +89,7 @@ class Pool NOCOPYABLE {
   RDMAClient *client_ = nullptr;
 
   uint8_t shard_;
+  char padding[38 + 64];
   SpinLatch latch_;
 };
 
