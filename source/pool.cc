@@ -41,28 +41,29 @@ void Pool::Init() {
   LOG_ASSERT(ret == 0, "Alloc first block failed.");
   Addr addr(cur_block_id_, cur_kv_off_);
   write_line_ = cache_->Insert(addr);
+  cache_->Pin(write_line_);
   write_line_->Addr = addr;
   write_line_->Dirty = true;
+  cache_->Release(write_line_, true);
 }
 
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   Addr addr;
-  {
+  {  // lockfree phase
     // existence
     auto node = hash_index_->Find(key, hash);
     if (node == nullptr) {
 #ifdef STAT
       stat::read_miss.fetch_add(1);
 #endif
-
       return false;
     }
     addr = handler_->GetAddr(node->Handle());
 
     // cache
-    latch_.RLock();
+    // latch_.RLock();
     CacheEntry *entry = cache_->Lookup(addr);
-    latch_.RUnlock();
+    // latch_.RUnlock();
 
     if (entry != nullptr) {
 #ifdef STAT
@@ -91,21 +92,18 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     CacheEntry *victim = replacement(addr);
     latch_.WUnlock();
     memcpy((char *)val.data(), victim->Data()->at(addr.CacheOff()), kValueLength);
-    cache_->Release(victim);
+    cache_->Release(victim, true);
     return true;
   }
 }
 
 bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
-  {
-    // for cache
-    latch_.RLock();
+  {  // lockfree phase
     auto node = hash_index_->Find(key, hash);
     if (node != nullptr) {
       Addr addr = handler_->GetAddr(node->Handle());
       // cache
-      CacheEntry *entry = cache_->Lookup(addr);
-      latch_.RUnlock();
+      CacheEntry *entry = cache_->Lookup(addr, true);
 
       if (entry != nullptr) {
 #ifdef STAT
@@ -113,11 +111,9 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 #endif
         memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
         entry->Dirty = true;
-        cache_->Release(entry);
+        cache_->Release(entry, true);
         return true;
       }
-    } else {
-      latch_.RUnlock();
     }
   }
   {
@@ -155,7 +151,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
     latch_.WUnlock();
     memcpy(victim->Data()->at(addr.CacheOff()), val.data(), val.size());
     victim->Dirty = true;
-    cache_->Release(victim);
+    cache_->Release(victim, true);
     return true;
   }
 }
@@ -205,8 +201,9 @@ void Pool::writeNew(const Slice &key, const Slice &val) {
 
   if (cache_kv_off_ == kCacheValueNum) {
     Addr new_cache_line(cur_block_id_, cur_kv_off_);
-    cache_->Release(write_line_);
+    cache_->UnPin(write_line_);
     write_line_ = cache_->Insert(new_cache_line);
+    cache_->Pin(write_line_);
     if (write_line_->Dirty) {
       auto batch = client_->BeginBatch();
       auto ret = writeToRemote(write_line_, &batch);
@@ -217,6 +214,7 @@ void Pool::writeNew(const Slice &key, const Slice &val) {
     write_line_->Addr = new_cache_line;
     write_line_->Dirty = true;
     cache_kv_off_ = 0;
+    cache_->Release(write_line_, true);
   }
 }
 

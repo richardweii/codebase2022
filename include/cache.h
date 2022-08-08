@@ -3,6 +3,7 @@
 #include <infiniband/verbs.h>
 #include <sys/types.h>
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <list>
@@ -35,14 +36,13 @@ class CacheEntry {
   friend class Cache;
   kv::Addr Addr;
   bool Dirty = false;
+
   CacheLine *Data() const { return line_; }
-  bool Valid() const { return valid_; }
 
  private:
   CacheEntry() = default;
   CacheLine *line_ = nullptr;
   int fid_ = INVALID_FRAME_ID;
-  bool valid_ = false;
 };
 
 class LRUReplacer {
@@ -103,17 +103,47 @@ class ClockReplacer {
     return *frame_id != INVALID_FRAME_ID;
   }
 
-  // thread-safe
-  void Pin(FrameId frame_id) { frames_[frame_id].ref_ = true; }
+  bool GetFrame(FrameId *frame_id) {
+    if (free_list_.empty()) {
+      return false;
+    }
+    *frame_id = free_list_.front();
+    free_list_.pop_front();
+    return true;
+  }
 
   // thread-safe
-  void Unpin(FrameId frame_id) { frames_[frame_id].ref_ = true; }
+  void Pin(FrameId frame_id) {
+    assert(!frames_[frame_id].pin_);
+    frames_[frame_id].pin_ = true;
+  }
+
+  // thread-safe
+  void Unpin(FrameId frame_id) {
+    assert(frames_[frame_id].pin_);
+    frames_[frame_id].pin_ = false;
+  }
+
+  bool Ref(FrameId frame_id) {
+    if (frames_[frame_id].victim_) {
+      return false;
+    }
+    frames_[frame_id].ref_ = true;
+    return true;
+  }
+
+  void UnRef(FrameId frame_id) {
+    frames_[frame_id].ref_ = true;
+    frames_[frame_id].victim_ = false;
+  }
 
  private:
   struct Frame {
     Frame() = default;
     FrameId frame_ = INVALID_FRAME_ID;
-    volatile bool ref_;
+    bool pin_ = false;
+    bool victim_ = false;
+    bool ref_;
   };
 
   int walk() {
@@ -125,12 +155,13 @@ class ClockReplacer {
   FrameId pop() {
     while (true) {
       uint8_t tmp = 0;
-      if (frames_[hand_].ref_ == false) {
+      if (!frames_[hand_].pin_ && !frames_[hand_].ref_) {
+        frames_[hand_].victim_ = true;
         break;
-      } else {
+      } else if (!frames_[hand_].pin_) {
         frames_[hand_].ref_ = false;
-        walk();
       }
+      walk();
     }
     return walk();
   }
@@ -179,11 +210,14 @@ class Cache NOCOPYABLE {
   // return a cacheHandle used to write new data to it, if old data is dirty, need to write to remote first
   CacheEntry *Insert(Addr addr);
 
-  void Release(CacheEntry *entry);
+  void Release(CacheEntry *entry, bool writer = false);
 
-  CacheEntry *Lookup(Addr addr);
+  CacheEntry *Lookup(Addr addr, bool writer = false);
 
   ibv_mr *MR() const { return mr_; }
+
+  void Pin(CacheEntry *entry) { replacer_->Pin(entry->fid_); }
+  void UnPin(CacheEntry *entry) { replacer_->Unpin(entry->fid_); }
 
  private:
   class CacheHashTableHanler : public HashHandler<uint32_t> {

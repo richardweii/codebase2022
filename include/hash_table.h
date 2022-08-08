@@ -129,9 +129,9 @@ class HashTable {
     }
 
     // insert into head
-    slot = slots_[index].next_;
-    slots_[index].next_ = new HashNode<Tp>(data_handle);
-    slots_[index].next_->next_ = slot;
+    slot = new HashNode<Tp>(data_handle);
+    slot->next_ = slots_[index].next_;
+    slots_[index].next_ = slot;
     count_++;
     // counter_[index]++;
   }

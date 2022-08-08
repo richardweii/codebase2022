@@ -94,6 +94,11 @@ class SpinLatch {
     }
   }
 
+  bool TryWLock() {
+    int8_t lock = 0;
+    return lock_.compare_exchange_weak(lock, 1, std::memory_order_acquire);
+  }
+
   void WUnlock() { lock_.fetch_xor(1, std::memory_order_release); }
 
   void RLock() {
@@ -101,6 +106,15 @@ class SpinLatch {
     while (lock & 1) {
       lock = lock_.load(std::memory_order_relaxed);
     }
+  }
+
+  bool TryRLock() {
+    int8_t lock = lock_.fetch_add(2, std::memory_order_acquire);
+    auto succ = !(lock_.load(std::memory_order_relaxed) & 1);
+    if (!succ) {
+      lock_.fetch_add(-2, std::memory_order_release);
+    }
+    return succ;
   }
 
   void RUnlock() { lock_.fetch_add(-2, std::memory_order_release); }

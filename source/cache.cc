@@ -97,39 +97,54 @@ FrameId LRUReplacer::pop() {
 CacheEntry *Cache::Insert(Addr addr) {
   addr.RoundUp();
   FrameId fid;
+  if (replacer_->GetFrame(&fid)) {
+    CacheEntry *new_entry = &entries_[fid];
+    // add to hash table
+    hash_table_->Insert(addr.RawAddr(), addr.RawAddr(), handler_->GenHandle(addr.RawAddr(), fid));
+
+    // if (victim->Valid()) {
+    replacer_->Ref(fid);
+    return new_entry;
+  }
+
   auto succ = replacer_->Victim(&fid);
   assert(succ);
 
   CacheEntry *victim = &entries_[fid];
 
-  if (victim->Valid()) {
-    // remove from old hash table
-    hash_table_->Remove(victim->Addr.RawAddr(), victim->Addr.RawAddr());
-  }
+  // remove from old hash table
+  hash_table_->Remove(victim->Addr.RawAddr(), victim->Addr.RawAddr());
+
   // add to hash table
   hash_table_->Insert(addr.RawAddr(), addr.RawAddr(), handler_->GenHandle(addr.RawAddr(), fid));
 
   // if (victim->Valid()) {
-  replacer_->Pin(fid);
+  replacer_->Ref(fid);
   // }
-  victim->valid_ = true;
   return victim;
 }
 
-void Cache::Release(CacheEntry *entry) { replacer_->Unpin(entry->fid_); }
+void Cache::Release(CacheEntry *entry, bool writer) {
+  replacer_->UnRef(entry->fid_);
+}
 
-CacheEntry *Cache::Lookup(Addr addr) {
+CacheEntry *Cache::Lookup(Addr addr, bool writer) {
   addr.RoundUp();
-  auto node = hash_table_->Find(addr.RawAddr(), addr.RawAddr());
-  if (node == nullptr) {
-    return nullptr;
-  }
+  while (true) {
+    auto node = hash_table_->Find(addr.RawAddr(), addr.RawAddr());
+    if (node == nullptr) {
+      return nullptr;
+    }
 
-  FrameId fid = handler_->GetFrameId(node->Handle());
-  LOG_ASSERT(addr == entries_[fid].Addr, "Unmatched key. expect %u, got %u", addr.RawAddr(),
-             entries_[fid].Addr.RawAddr());
-  replacer_->Pin(fid);
-  return &entries_[fid];
+    FrameId fid = handler_->GetFrameId(node->Handle());
+    if (!replacer_->Ref(fid) || !(addr == entries_[fid].Addr)) {
+      continue;
+    }
+    LOG_ASSERT(addr == entries_[fid].Addr, "Unmatched key. expect %u, got %u", addr.RawAddr(),
+               entries_[fid].Addr.RawAddr());
+
+    return &entries_[fid];
+  }
 }
 
 }  // namespace kv
