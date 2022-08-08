@@ -96,7 +96,7 @@ int main() {
               auto succ = local_engine->read(k[i * write_op_per_thread + j].to_string(), value);
               EXPECT(succ, "[thread %d] failed to read %d", i, i * write_op_per_thread + j);
               auto cmp = memcmp(value.c_str(), k[i * write_op_per_thread + j].key, 16);
-              EXPECT(cmp == 0, "expect %16s, got %16s", k[i * write_op_per_thread + j].key, value.c_str());
+              EXPECT(cmp == 0, "expect %.16s, got %.16s", k[i * write_op_per_thread + j].key, value.c_str());
             }
             LOG_INFO("End read thread %d", i);
           },
@@ -146,7 +146,7 @@ int main() {
               auto succ = local_engine->read(k[i * write_op_per_thread + j].to_string(), value);
               EXPECT(succ, "[thread %d] failed to read %d", i, i * write_op_per_thread + j);
               auto cmp = memcmp(value.c_str(), k[i * write_op_per_thread + j].key, 16);
-              EXPECT(cmp == 0, "expect %16s, got %16s", k[i * write_op_per_thread + j].key, value.c_str());
+              EXPECT(cmp == 0, "expect %.16s, got %.16s", k[i * write_op_per_thread + j].key, value.c_str());
             }
             LOG_INFO("End read thread %d", i);
           },

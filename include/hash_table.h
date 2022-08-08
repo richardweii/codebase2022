@@ -19,60 +19,36 @@ constexpr static const unsigned long PrimeList[] = {
     393241ul,    786433ul,    1572869ul,   3145739ul,    6291469ul,    12582917ul,  25165843ul, 50331653ul, 100663319ul,
     201326611ul, 402653189ul, 805306457ul, 1610612741ul, 3221225473ul, 4294967291ul};
 
-constexpr static uint64_t INVALID_HANDLE = ~0;
-constexpr static uint32_t FINGERPRINT_MASK = 0x3ff;
-constexpr static uint64_t DATA_HANDLE_MASK = ~0xffc0000000000000;
-
-template <typename Tp>
-class HashHandler {
+class KeyBlock {
  public:
-  virtual ~HashHandler(){};
-  virtual Tp GetKey(uint64_t data_handle) = 0;
+  char *GetKey(int index) {
+    assert(index < kBlockValueNum);
+    return &data_[index * kKeyLength];
+  }
+
+  void SetKey(int index, const Slice &key) {
+    assert(index < kBlockValueNum);
+    memcpy(&data_[index * kKeyLength], key.data(), key.size());
+  }
+  char data_[kBlockValueNum * kKeyLength];
 };
 
-template <typename Tp>
-class HashTable;
-
-template <typename Tp>
-class HashNode {
- public:
-  friend class HashTable<Tp>;
-  HashNode() = default;
-  HashNode(uint64_t data_handle) : data_handle_(data_handle){};
-
-  HashNode *Next() const { return next_; }
-  void SetNext(HashNode *next) { next_ = next; }
-
-  bool IsValid() const { return data_handle_ != INVALID_HANDLE; }
-
-  uint64_t Handle() const { return data_handle_ & DATA_HANDLE_MASK; }
-
-  uint32_t Fingerprint() const { return data_handle_ >> 54; }
-
- private:
-  HashNode *next_ = nullptr;
-  uint64_t data_handle_ = INVALID_HANDLE;
-};
-
-template <typename Tp>
 class HashTable {
  public:
-  static uint32_t Hash(Tp key);
-
-  HashTable(size_t size, HashHandler<Tp> *handler) : handler_(handler), size_(size) {
+  HashTable(size_t size, std::vector<KeyBlock *> *keys) : keys_(keys) {
     int logn = 0;
     while (size >= 2) {
       size /= 2;
       logn++;
     }
     size_ = PrimeList[logn];
-    slots_ = new HashNode<Tp>[size_];
+    slots_ = new HashNode[size_];
     // counter_ = new uint8_t[size_]{0};
   };
 
   ~HashTable() {
-    HashNode<Tp> *slot;
-    HashNode<Tp> *next;
+    HashNode *slot;
+    HashNode *next;
     for (size_t i = 0; i < size_; i++) {
       if (slots_[i].next_ != nullptr) {
         slot = slots_[i].next_;
@@ -86,33 +62,36 @@ class HashTable {
     delete[] slots_;
   }
 
-  HashNode<Tp> *Find(const Tp &key, uint32_t hash) {
+  Addr Find(const Slice &key, uint32_t hash) {
     uint32_t index = hash % size_;
-    uint32_t fpt = hash & FINGERPRINT_MASK;
+    uint8_t fpt = hash;
+    Addr addr;
+    HashNode *slot = &slots_[index];
 
-    HashNode<Tp> *slot = &slots_[index];
-    if (slot->data_handle_ == INVALID_HANDLE) {
-      return nullptr;
+    if (slot->addr == Addr::INVALID_ADDR) {
+      return Addr::INVALID_ADDR;
     }
 
     while (slot != nullptr) {
-      if (fpt == slot->Fingerprint() && key == handler_->GetKey(slot->Handle())) {
-        return slot;
+      addr = slot->addr;
+      if (fpt == slot->fingerprint &&
+          (memcmp(key.data(), keys_->at(addr.BlockId())->GetKey(addr.BlockOff()), kKeyLength) == 0)) {
+        return slot->addr;
       }
       slot = slot->next_;
     }
-    return nullptr;
+    return Addr::INVALID_ADDR;
   }
 
-  void Insert(const Tp &key, uint32_t hash, uint64_t data_handle) {
+  void Insert(const Slice &key, uint32_t hash, Addr addr) {
     uint32_t index = hash % size_;
-    uint32_t fpt = hash & FINGERPRINT_MASK;
+    uint8_t fpt = hash;
+    Addr tmp_addr;
 
-    data_handle |= ((uint64_t)fpt << 54);
-
-    HashNode<Tp> *slot = &slots_[index];
-    if (slot->data_handle_ == INVALID_HANDLE) {
-      slot->data_handle_ = data_handle;
+    HashNode *slot = &slots_[index];
+    if (slot->addr == Addr::INVALID_ADDR) {
+      slot->addr = addr;
+      slot->fingerprint = fpt;
       count_++;
       // counter_[index]++;
       return;
@@ -120,66 +99,25 @@ class HashTable {
 
     // find
     while (slot != nullptr) {
-      if (fpt == slot->Fingerprint() && key == handler_->GetKey(slot->Handle())) {
+      tmp_addr = slot->addr;
+      if (fpt == slot->fingerprint &&
+          (memcmp(key.data(), keys_->at(addr.BlockId())->GetKey(addr.BlockOff()), kKeyLength) == 0)) {
         // duplicate
-        LOG_DEBUG("slot data_handle %lx, data_handle %lx", slot->data_handle_, data_handle);
+        LOG_DEBUG("slot addr %x, addr %x", slot->addr.RawAddr(), addr.RawAddr());
         return;
       }
       slot = slot->next_;
     }
 
     // insert into head
-    slot = new HashNode<Tp>(data_handle);
+    slot = new HashNode;
+    slot->addr = addr;
+    slot->fingerprint = fpt;
     slot->next_ = slots_[index].next_;
     slots_[index].next_ = slot;
     count_++;
     // counter_[index]++;
   }
-
-  bool Remove(const Tp &key, uint32_t hash) {
-    uint32_t index = hash % size_;
-    uint32_t fpt = hash & FINGERPRINT_MASK;
-
-    HashNode<Tp> *slot = &slots_[index];
-
-    if (slot->data_handle_ == INVALID_HANDLE) {
-      return false;
-    }
-
-    // head
-    if (fpt == slot->Fingerprint() && key == handler_->GetKey(slot->Handle())) {
-      if (slot->next_ != nullptr) {
-        HashNode<Tp> *tmp = slot->next_;
-        *slot = *slot->next_;
-        delete tmp;
-      } else {
-        slot->data_handle_ = INVALID_HANDLE;
-        slot->next_ = nullptr;
-      }
-      count_--;
-      // counter_[index]--;
-      return true;
-    }
-
-    // find
-    HashNode<Tp> *front = slot;
-    while (slot != nullptr) {
-      if (fpt == slot->Fingerprint() && key == handler_->GetKey(slot->Handle())) {
-        front->next_ = slot->next_;
-        delete slot;
-        count_--;
-        // counter_[index]--;
-        return true;
-      }
-      front = slot;
-      slot = slot->next_;
-    }
-    // cannot find
-    return false;
-  }
-
-  size_t SlotSize() const { return size_; }
-  size_t Count() const { return count_; }
 
   // void PrintCounter() {
   //   std::vector<uint32_t> count(255, 0);
@@ -195,84 +133,17 @@ class HashTable {
   // }
 
  private:
-  constexpr static uint32_t hash_seed_ = kPoolHashSeed;
-  HashHandler<Tp> *handler_;
-  HashNode<Tp> *slots_ = nullptr;
+  struct HashNode {
+    uint8_t fingerprint;
+    Addr addr = Addr::INVALID_ADDR;
+    HashNode *next_ = nullptr;
+  };
+
+  std::vector<KeyBlock *> *keys_ = nullptr;
+  HashNode *slots_ = nullptr;
   size_t count_ = 0;
   size_t size_ = 0;
-  bool latch_ = false;
   // uint8_t *counter_ = nullptr;
 };
-
-template <>
-inline uint32_t HashTable<Slice>::Hash(Slice key) {
-  return kv::Hash(key.data(), key.size(), hash_seed_);
-}
-
-template <>
-inline uint32_t HashTable<uint32_t>::Hash(uint32_t key) {
-  return key;
-}
-
-template <>
-inline uint32_t HashTable<uint64_t>::Hash(uint64_t key) {
-  return key;
-}
-
-// template <typename Tp>
-// class CuckooHashTable {
-//  public:
-//   static uint32_t Hash(Tp key);
-
-//   CuckooHashTable(size_t size, HashHandler<Tp> *) {
-//     int logn = 0;
-//     while (size >= 2) {
-//       size /= 2;
-//       logn++;
-//     }
-//     size_ = PrimeList[logn];
-//     slots0_ = new Slot[size_];
-//     slots1_ = new Slot[size_];
-//     memset(slots0_, 0, sizeof(Slot) * size_);
-//     memset(slots1_, 0, sizeof(Slot) * size_);
-//   }
-
-//   ~CuckooHashTable() {
-//     delete slots0_;
-//     delete slots1_;
-//   }
-
-//   uint64_t Find(const Tp &key, uint32_t hash0);
-//   void Insert(const Tp &key, uint32_t hash0, uint64_t data_handle) {}
-//   bool Remove(const Tp &key, uint32_t hash0);
-
-//  private:
-//   bool reHash(const Tp &key, )
-//   struct Slot {
-//     uint32_t hasher : 1;
-//     uint32_t fingerprint : 9;
-//     uint64_t data_handle : 54;
-//   };
-//   Slot *slots0_;
-//   Slot *slots1_;
-//   size_t size_;
-//   HashHandler<Tp> *handler_;
-//   constexpr static uint32_t hash_seed_ = 3145739;
-// };
-
-// template <>
-// inline uint32_t CuckooHashTable<Slice>::Hash(Slice key) {
-//   return kv::Hash(key.data(), key.size(), hash_seed_);
-// }
-
-// template <>
-// inline uint32_t CuckooHashTable<uint32_t>::Hash(uint32_t key) {
-//   return key;
-// }
-
-// template <>
-// inline uint32_t CuckooHashTable<uint64_t>::Hash(uint64_t key) {
-//   return key;
-// }
 
 }  // namespace kv

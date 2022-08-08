@@ -20,14 +20,12 @@ namespace kv {
 
 Pool::Pool(size_t cache_size, uint8_t shard, RDMAClient *client) : client_(client), shard_(shard) {
   cache_ = new Cache(cache_size);
-  handler_ = new PoolHashHandler(&keys_);
-  hash_index_ = new HashTable<Slice>(kKeyNum / kPoolShardNum, handler_);
+  hash_index_ = new HashTable(kKeyNum / kPoolShardNum, &keys_);
 }
 
 Pool::~Pool() {
   // hash_index_->PrintCounter();
   delete cache_;
-  delete handler_;
   delete hash_index_;
   for (size_t i = 0; i < keys_.size(); i++) {
     delete keys_[i];
@@ -51,14 +49,13 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   Addr addr;
   {  // lockfree phase
     // existence
-    auto node = hash_index_->Find(key, hash);
-    if (node == nullptr) {
+    addr = hash_index_->Find(key, hash);
+    if (addr == Addr::INVALID_ADDR) {
 #ifdef STAT
       stat::read_miss.fetch_add(1);
 #endif
       return false;
     }
-    addr = handler_->GetAddr(node->Handle());
 
     // cache
     // latch_.RLock();
@@ -99,10 +96,8 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 
 bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
   {  // lockfree phase
-    auto node = hash_index_->Find(key, hash);
-    if (node != nullptr) {
-      Addr addr = handler_->GetAddr(node->Handle());
-      // cache
+    Addr addr = hash_index_->Find(key, hash);
+    if (addr != Addr::INVALID_ADDR) {
       CacheEntry *entry = cache_->Lookup(addr, true);
 
       if (entry != nullptr) {
@@ -118,10 +113,10 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
   }
   {
     latch_.WLock();
-    auto node = hash_index_->Find(key, hash);
-    if (node == nullptr) {
+    Addr addr = hash_index_->Find(key, hash);
+    if (addr == Addr::INVALID_ADDR) {
       Addr addr(cur_block_id_, cur_kv_off_);
-      hash_index_->Insert(key, hash, handler_->GenHandle(addr));
+      hash_index_->Insert(key, hash, addr);
       writeNew(key, val);
 #ifdef STAT
       if (stat::insert_num == 160000001) {
@@ -131,9 +126,6 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
       latch_.WUnlock();
       return true;
     }
-
-    Addr addr = handler_->GetAddr(node->Handle());
-
     // cache
     CacheEntry *entry = cache_->Lookup(addr);
     if (entry != nullptr) {

@@ -100,7 +100,7 @@ CacheEntry *Cache::Insert(Addr addr) {
   if (replacer_->GetFrame(&fid)) {
     CacheEntry *new_entry = &entries_[fid];
     // add to hash table
-    hash_table_->Insert(addr.RawAddr(), addr.RawAddr(), handler_->GenHandle(addr.RawAddr(), fid));
+    hash_table_->Insert(addr.RawAddr(), fid);
 
     // if (victim->Valid()) {
     replacer_->Ref(fid);
@@ -113,10 +113,10 @@ CacheEntry *Cache::Insert(Addr addr) {
   CacheEntry *victim = &entries_[fid];
 
   // remove from old hash table
-  hash_table_->Remove(victim->Addr.RawAddr(), victim->Addr.RawAddr());
+  hash_table_->Remove(victim->Addr.RawAddr(), victim->fid_);
 
   // add to hash table
-  hash_table_->Insert(addr.RawAddr(), addr.RawAddr(), handler_->GenHandle(addr.RawAddr(), fid));
+  hash_table_->Insert(addr.RawAddr(), fid);
 
   // if (victim->Valid()) {
   replacer_->Ref(fid);
@@ -124,19 +124,16 @@ CacheEntry *Cache::Insert(Addr addr) {
   return victim;
 }
 
-void Cache::Release(CacheEntry *entry, bool writer) {
-  replacer_->UnRef(entry->fid_);
-}
+void Cache::Release(CacheEntry *entry, bool writer) { replacer_->UnRef(entry->fid_); }
 
 CacheEntry *Cache::Lookup(Addr addr, bool writer) {
   addr.RoundUp();
   while (true) {
-    auto node = hash_table_->Find(addr.RawAddr(), addr.RawAddr());
-    if (node == nullptr) {
+    auto fid = hash_table_->Find(addr.RawAddr());
+    if (fid == INVALID_FRAME_ID) {
       return nullptr;
     }
 
-    FrameId fid = handler_->GetFrameId(node->Handle());
     if (!replacer_->Ref(fid) || !(addr == entries_[fid].Addr)) {
       continue;
     }

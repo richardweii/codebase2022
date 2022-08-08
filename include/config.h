@@ -73,6 +73,7 @@ constexpr uint32_t CACHE_MASK = uint32_t(~0) << (kCacheLineBit - kValueBit);
 
 class Addr {
  public:
+  constexpr static uint32_t INVALID_ADDR = (-1);
   kv::BlockId BlockId() const { return addr_ >> (kValueBlockBit - kValueBit); }
   uint32_t CacheLine() const { return (addr_ & (~BLOCKID_MASK)) >> (kCacheLineBit - kValueBit); }
   uint32_t BlockOff() const { return addr_ & (~BLOCKID_MASK); }
@@ -100,9 +101,10 @@ class Addr {
   Addr(uint32_t key_index) { addr_ = key_index; }
 
   bool operator==(const Addr &addr) { return addr.addr_ == addr_; }
+  bool operator!=(const Addr &addr) { return addr.addr_ != addr_; }
 
  private:
-  uint32_t addr_ = 0;
+  uint32_t addr_ = INVALID_ADDR;
 };
 
 }  // namespace kv

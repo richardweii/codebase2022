@@ -171,6 +171,117 @@ class ClockReplacer {
   std::list<FrameId> free_list_;
 };
 
+class FrameHashTable {
+ public:
+  FrameHashTable(size_t size) {
+    int logn = 0;
+    while (size >= 2) {
+      size /= 2;
+      logn++;
+    }
+    size_ = PrimeList[logn];
+    slots_ = new Slot[size_];
+    // counter_ = new uint8_t[size_]{0};
+  }
+
+  FrameId Find(uint32_t addr) {
+    uint32_t index = addr % size_;
+
+    Slot *slot = &slots_[index];
+    if (slot->addr_ == Addr::INVALID_ADDR) {
+      return INVALID_FRAME_ID;
+    }
+
+    while (slot != nullptr) {
+      if (addr == slot->addr_) {
+        return slot->frame_;
+      }
+      slot = slot->next_;
+    }
+    return INVALID_FRAME_ID;
+  }
+
+  void Insert(uint32_t addr, FrameId frame) {
+    uint32_t index = addr % size_;
+    Slot *slot = &slots_[index];
+    if (slot->addr_ == Addr::INVALID_ADDR) {
+      slot->addr_ = addr;
+      slot->frame_ = frame;
+      // counter_[index]++;
+      return;
+    }
+
+    // find
+    while (slot != nullptr) {
+      if (addr == slot->addr_) {
+        // duplicate
+        LOG_DEBUG("slot addr %x, addr %x", slot->addr_, addr);
+        return;
+      }
+      slot = slot->next_;
+    }
+
+    // insert into head
+    slot = new Slot();
+    slot->addr_ = addr;
+    slot->frame_ = frame;
+    slot->next_ = slots_[index].next_;
+    slots_[index].next_ = slot;
+    // counter_[index]++;
+  }
+
+  bool Remove(uint32_t addr, FrameId frame) {
+    uint32_t index = addr % size_;
+
+    Slot *slot = &slots_[index];
+
+    if (slot->addr_ == Addr::INVALID_ADDR) {
+      return false;
+    }
+
+    // head
+    if (addr == slot->addr_) {
+      if (slot->next_ != nullptr) {
+        Slot *tmp = slot->next_;
+        *slot = *slot->next_;
+        delete tmp;
+      } else {
+        slot->addr_ = Addr::INVALID_ADDR;
+        slot->frame_ = INVALID_FRAME_ID;
+        slot->next_ = nullptr;
+      }
+      // counter_[index]--;
+      return true;
+    }
+
+    // find
+    Slot *front = slot;
+    while (slot != nullptr) {
+      if (addr == slot->addr_) {
+        front->next_ = slot->next_;
+        delete slot;
+        // counter_[index]--;
+        return true;
+      }
+      front = slot;
+      slot = slot->next_;
+    }
+    // cannot find
+    return false;
+  }
+
+  ~FrameHashTable() { delete[] slots_; }
+
+ private:
+  struct Slot {
+    uint32_t addr_ = Addr::INVALID_ADDR;
+    uint32_t frame_;
+    Slot *next_ = nullptr;
+  };
+  Slot *slots_;
+  size_t size_;
+};
+
 class Cache NOCOPYABLE {
  public:
   Cache(size_t cache_size) : cache_line_num_(cache_size / kCacheLineSize) {
@@ -180,9 +291,8 @@ class Cache NOCOPYABLE {
       entries_[i].line_ = &lines_[i];
       entries_[i].fid_ = i;
     }
-    handler_ = new CacheHashTableHanler();
     replacer_ = new ClockReplacer(cache_line_num_);
-    hash_table_ = new HashTable<uint32_t>(cache_line_num_, handler_);
+    hash_table_ = new FrameHashTable(cache_line_num_);
   }
 
   bool Init(ibv_pd *pd) {
@@ -202,7 +312,6 @@ class Cache NOCOPYABLE {
     LOG_INFO("cache hash table");
     // hash_table_->PrintCounter();
     delete[] lines_;
-    delete handler_;
     delete hash_table_;
     delete replacer_;
   }
@@ -220,20 +329,13 @@ class Cache NOCOPYABLE {
   void UnPin(CacheEntry *entry) { replacer_->Unpin(entry->fid_); }
 
  private:
-  class CacheHashTableHanler : public HashHandler<uint32_t> {
-   public:
-    uint32_t GetKey(uint64_t data_handle) override { return data_handle >> 32; }
-    uint32_t GetFrameId(uint64_t data_handle) { return data_handle & 0xffffffff; }
-    uint64_t GenHandle(uint32_t key_index, FrameId fid) { return (uint64_t)key_index << 32 | fid; }
-  };
 
   size_t cache_line_num_;
   CacheLine *lines_ = nullptr;
   CacheEntry *entries_ = nullptr;
   ibv_mr *mr_ = nullptr;
 
-  CacheHashTableHanler *handler_ = nullptr;
-  HashTable<uint32_t> *hash_table_ = nullptr;
+  FrameHashTable *hash_table_ = nullptr;
 
   // LRU
   ClockReplacer *replacer_ = nullptr;

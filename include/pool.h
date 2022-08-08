@@ -44,40 +44,11 @@ class Pool NOCOPYABLE {
 
   int allocNewBlock();
 
-  class KeyBlock {
-   public:
-    Slice GetKey(int index) {
-      assert(index < kBlockValueNum);
-      return Slice(&data_[index * kKeyLength], kKeyLength);
-    }
-
-    void SetKey(int index, const Slice &key) {
-      assert(index < kBlockValueNum);
-      memcpy(&data_[index * kKeyLength], key.data(), key.size());
-    }
-    char data_[kBlockValueNum * kKeyLength];
-  };
-
-  class PoolHashHandler : public HashHandler<Slice> {
-   public:
-    PoolHashHandler(std::vector<KeyBlock *> *keys) : keys_(keys) {}
-    Slice GetKey(uint64_t data_handle) override {
-      Addr addr(data_handle);
-      return keys_->at(addr.BlockId())->GetKey(addr.BlockOff());
-    }
-
-    uint64_t GenHandle(const Addr &addr) { return addr.RawAddr(); }
-    std::vector<KeyBlock *> *keys_ = nullptr;
-
-    Addr GetAddr(uint64_t data_handle) { return data_handle; }
-  };
-
   CacheEntry *write_line_ = nullptr;
   uint32_t cache_kv_off_ = 0;
 
   std::vector<KeyBlock *> keys_;
-  PoolHashHandler *handler_ = nullptr;
-  HashTable<Slice> *hash_index_ = nullptr;
+  HashTable *hash_index_ = nullptr;
 
   std::unordered_map<BlockId, MemoryAccess> global_addr_table_;
   MemoryAccess cur_block_;
