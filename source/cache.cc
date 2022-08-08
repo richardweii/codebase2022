@@ -94,13 +94,13 @@ FrameId LRUReplacer::pop() {
   return ret;
 }
 
-CacheEntry *Cache::Insert(Addr addr) {
-  addr.RoundUp();
+CacheEntry *Cache::Insert(ID id) {
+  id = Identifier::RoundUp(id);
   FrameId fid;
   if (replacer_->GetFrame(&fid)) {
     CacheEntry *new_entry = &entries_[fid];
     // add to hash table
-    hash_table_->Insert(addr.RawAddr(), fid);
+    hash_table_->Insert(id, fid);
 
     // if (victim->Valid()) {
     replacer_->Ref(fid);
@@ -113,10 +113,10 @@ CacheEntry *Cache::Insert(Addr addr) {
   CacheEntry *victim = &entries_[fid];
 
   // remove from old hash table
-  hash_table_->Remove(victim->Addr.RawAddr(), victim->fid_);
+  hash_table_->Remove(victim->ID, victim->fid_);
 
   // add to hash table
-  hash_table_->Insert(addr.RawAddr(), fid);
+  hash_table_->Insert(id, fid);
 
   // if (victim->Valid()) {
   replacer_->Ref(fid);
@@ -126,19 +126,18 @@ CacheEntry *Cache::Insert(Addr addr) {
 
 void Cache::Release(CacheEntry *entry, bool writer) { replacer_->UnRef(entry->fid_); }
 
-CacheEntry *Cache::Lookup(Addr addr, bool writer) {
-  addr.RoundUp();
+CacheEntry *Cache::Lookup(ID id, bool writer) {
+  id = Identifier::RoundUp(id);
   while (true) {
-    auto fid = hash_table_->Find(addr.RawAddr());
+    auto fid = hash_table_->Find(id);
     if (fid == INVALID_FRAME_ID) {
       return nullptr;
     }
 
-    if (!replacer_->Ref(fid) || !(addr == entries_[fid].Addr)) {
+    if (!replacer_->Ref(fid) || !(id == entries_[fid].ID)) {
       continue;
     }
-    LOG_ASSERT(addr == entries_[fid].Addr, "Unmatched key. expect %u, got %u", addr.RawAddr(),
-               entries_[fid].Addr.RawAddr());
+    LOG_ASSERT(id == entries_[fid].ID, "Unmatched key. expect %u, got %u", id, entries_[fid].ID);
 
     return &entries_[fid];
   }

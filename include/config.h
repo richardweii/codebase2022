@@ -24,6 +24,8 @@ constexpr BlockId INVALID_BLOCK_ID = -1;
 using FrameId = int32_t;
 constexpr FrameId INVALID_FRAME_ID = -1;
 
+using ID = uint32_t;
+
 constexpr int kRPCWorkerNum = 4;
 constexpr int kOneSideWorkerNum = 16;
 
@@ -68,43 +70,22 @@ constexpr size_t kCacheSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB cache
 constexpr int kAlign = 8;  // kAlign show be powers of 2, say 2, 4 ,8, 16, 32, ...
 inline constexpr int roundUp(unsigned int nBytes) { return ((nBytes) + (kAlign - 1)) & ~(kAlign - 1); }
 
+namespace Identifier {
+constexpr static ID INVALID_ID = (-1);
 constexpr uint32_t BLOCKID_MASK = uint32_t(~0) << (kValueBlockBit - kValueBit);
 constexpr uint32_t CACHE_MASK = uint32_t(~0) << (kCacheLineBit - kValueBit);
 
-class Addr {
- public:
-  constexpr static uint32_t INVALID_ADDR = (-1);
-  kv::BlockId BlockId() const { return addr_ >> (kValueBlockBit - kValueBit); }
-  uint32_t CacheLine() const { return (addr_ & (~BLOCKID_MASK)) >> (kCacheLineBit - kValueBit); }
-  uint32_t BlockOff() const { return addr_ & (~BLOCKID_MASK); }
-  uint32_t CacheOff() const { return addr_ & (~CACHE_MASK); }
+static inline kv::BlockId GetBlockId(ID id) { return id >> (kValueBlockBit - kValueBit); }
+static inline uint32_t CacheLine(ID id) { return (id & (~BLOCKID_MASK)) >> (kCacheLineBit - kValueBit); }
+static inline uint32_t BlockOff(ID id) { return id & (~BLOCKID_MASK); }
+static inline uint32_t CacheOff(ID id) { return id & (~CACHE_MASK); }
 
-  void SetBlockId(kv::BlockId id) {
-    assert(id <= (kv::BlockId)((uint32_t(~0) >> (kValueBlockBit - kValueBit))));
-    addr_ |= (id < (kValueBlockBit - kValueBit));
-  }
-  void SetBlockOff(uint32_t off) {
-    assert(off <= (~BLOCKID_MASK));
-    addr_ |= (off & (~BLOCKID_MASK));
-  }
+// round up cache line
+static inline ID RoundUp(ID id) { return id & CACHE_MASK; }
 
-  // round up cache line
-  Addr RoundUp() {
-    addr_ &= CACHE_MASK;
-    return addr_;
-  }
-
-  uint32_t RawAddr() const { return addr_; }
-
-  Addr() = default;
-  Addr(kv::BlockId id, uint32_t off) { addr_ = (id << (kValueBlockBit - kValueBit)) | (off & (~BLOCKID_MASK)); }
-  Addr(uint32_t key_index) { addr_ = key_index; }
-
-  bool operator==(const Addr &addr) { return addr.addr_ == addr_; }
-  bool operator!=(const Addr &addr) { return addr.addr_ != addr_; }
-
- private:
-  uint32_t addr_ = INVALID_ADDR;
-};
+static inline ID Gen(kv::BlockId id, uint32_t off) {
+  return (id << (kValueBlockBit - kValueBit)) | (off & (~BLOCKID_MASK));
+}
+}  // namespace Identifier
 
 }  // namespace kv
