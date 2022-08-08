@@ -99,6 +99,7 @@ bool LocalEngine::read(const std::string key, std::string &value) {
     LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
   }
 #endif
+  value.resize(kValueLength);
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   return pool_[index]->Read(Slice(key), hash, value);

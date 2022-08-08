@@ -59,8 +59,6 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     }
     addr = handler_->GetAddr(node->Handle());
 
-    val.resize(kValueLength);
-
     // cache
     latch_.RLock();
     CacheEntry *entry = cache_->Lookup(addr);
