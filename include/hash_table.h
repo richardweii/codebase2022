@@ -50,7 +50,7 @@ class HashTable {
       size /= 2;
       logn++;
     }
-    size_ = PrimeList[logn + 1];
+    size_ = PrimeList[logn];
     slots_ = new ID[size_]{Identifier::INVALID_ID};
     memset(slots_, 0xff, size_ * sizeof(ID));
     // counter_ = new uint8_t[size_]{};
