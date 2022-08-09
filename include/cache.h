@@ -34,7 +34,7 @@ class CacheLine {
 class CacheEntry {
  public:
   friend class Cache;
-  kv::ID ID;
+  kv::Addr Addr;
   bool Dirty = false;
 
   CacheLine *Data() const { return line_; }
@@ -184,7 +184,7 @@ class FrameHashTable {
     uint32_t index = addr % size_;
 
     Slot *slot = &slots_[index];
-    if (slot->addr_ == Identifier::INVALID_ID) {
+    if (slot->addr_ == Addr::INVALID_ADDR) {
       return INVALID_FRAME_ID;
     }
 
@@ -200,7 +200,7 @@ class FrameHashTable {
   void Insert(uint32_t addr, FrameId frame) {
     uint32_t index = addr % size_;
     Slot *slot = &slots_[index];
-    if (slot->addr_ == Identifier::INVALID_ID) {
+    if (slot->addr_ == Addr::INVALID_ADDR) {
       slot->addr_ = addr;
       slot->frame_ = frame;
       // counter_[index]++;
@@ -231,7 +231,7 @@ class FrameHashTable {
 
     Slot *slot = &slots_[index];
 
-    if (slot->addr_ == Identifier::INVALID_ID) {
+    if (slot->addr_ == Addr::INVALID_ADDR) {
       return false;
     }
 
@@ -242,7 +242,7 @@ class FrameHashTable {
         *slot = *slot->next_;
         delete tmp;
       } else {
-        slot->addr_ = Identifier::INVALID_ID;
+        slot->addr_ = Addr::INVALID_ADDR;
         slot->frame_ = INVALID_FRAME_ID;
         slot->next_ = nullptr;
       }
@@ -270,7 +270,7 @@ class FrameHashTable {
 
  private:
   struct Slot {
-    uint32_t addr_ = Identifier::INVALID_ID;
+    uint32_t addr_ = Addr::INVALID_ADDR;
     uint32_t frame_;
     Slot *next_ = nullptr;
   };
@@ -314,11 +314,11 @@ class Cache NOCOPYABLE {
   }
 
   // return a cacheHandle used to write new data to it, if old data is dirty, need to write to remote first
-  CacheEntry *Insert(ID addr);
+  CacheEntry *Insert(Addr addr);
 
   void Release(CacheEntry *entry);
 
-  CacheEntry *Lookup(ID addr);
+  CacheEntry *Lookup(Addr addr, bool writer = false);
 
   ibv_mr *MR() const { return mr_; }
 
@@ -326,6 +326,7 @@ class Cache NOCOPYABLE {
   void UnPin(CacheEntry *entry) { replacer_->Unpin(entry->fid_); }
 
  private:
+
   size_t cache_line_num_;
   CacheLine *lines_ = nullptr;
   CacheEntry *entries_ = nullptr;

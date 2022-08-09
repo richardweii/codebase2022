@@ -37,20 +37,20 @@ void Pool::Init() {
   LOG_ASSERT(succ, "Init cache failed.");
   auto ret = allocNewBlock();
   LOG_ASSERT(ret == 0, "Alloc first block failed.");
-  ID id = Identifier::Gen(cur_block_id_, cur_kv_off_);
-  write_line_ = cache_->Insert(id);
+  Addr addr(cur_block_id_, cur_kv_off_);
+  write_line_ = cache_->Insert(addr);
   cache_->Pin(write_line_);
-  write_line_->ID = id;
+  write_line_->Addr = addr;
   write_line_->Dirty = true;
   cache_->Release(write_line_);
 }
 
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
-  ID id;
+  Addr addr;
   {  // lockfree phase
     // existence
-    id = hash_index_->Find(key, hash);
-    if (id == Identifier::INVALID_ID) {
+    addr = hash_index_->Find(key, hash);
+    if (addr == Addr::INVALID_ADDR) {
 #ifdef STAT
       stat::read_miss.fetch_add(1);
 #endif
@@ -59,36 +59,36 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 
     // cache
     // latch_.RLock();
-    CacheEntry *entry = cache_->Lookup(id);
+    CacheEntry *entry = cache_->Lookup(addr);
     // latch_.RUnlock();
 
     if (entry != nullptr) {
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      memcpy((char *)val.data(), entry->Data()->at(Identifier::CacheOff(id)), kValueLength);
+      memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
       cache_->Release(entry);
       return true;
     }
   }
   {
     latch_.WLock();
-    CacheEntry *entry = cache_->Lookup(id);
+    CacheEntry *entry = cache_->Lookup(addr);
     if (entry != nullptr) {
       latch_.WUnlock();
 
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      memcpy((char *)val.data(), entry->Data()->at(Identifier::CacheOff(id)), kValueLength);
+      memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
       cache_->Release(entry);
       return true;
     }
 
     // cache miss
-    CacheEntry *victim = replacement(id);
+    CacheEntry *victim = replacement(addr);
     latch_.WUnlock();
-    memcpy((char *)val.data(), victim->Data()->at(Identifier::CacheOff(id)), kValueLength);
+    memcpy((char *)val.data(), victim->Data()->at(addr.CacheOff()), kValueLength);
     cache_->Release(victim);
     return true;
   }
@@ -96,15 +96,14 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 
 bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
   {  // lockfree phase
-    ID id = hash_index_->Find(key, hash);
-    if (id != Identifier::INVALID_ID) {
-      CacheEntry *entry = cache_->Lookup(id);
-
+    Addr addr = hash_index_->Find(key, hash);
+    if (addr != Addr::INVALID_ADDR) {
+      CacheEntry *entry = cache_->Lookup(addr, true);
       if (entry != nullptr) {
 #ifdef STAT
         stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-        memcpy(entry->Data()->at(Identifier::CacheOff(id)), val.data(), val.size());
+        memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
         entry->Dirty = true;
         cache_->Release(entry);
         return true;
@@ -113,11 +112,10 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
   }
   {
     latch_.WLock();
-    ID id = hash_index_->Find(key, hash);
-    if (id == Identifier::INVALID_ID) {
-      ID new_id = Identifier::Gen(cur_block_id_, cur_kv_off_);
-      keys_[cur_block_id_]->SetKey(new_id, key);
-      hash_index_->Insert(key, hash, new_id);
+    Addr addr = hash_index_->Find(key, hash);
+    if (addr == Addr::INVALID_ADDR) {
+      Addr addr(cur_block_id_, cur_kv_off_);
+      hash_index_->Insert(key, hash, addr);
       writeNew(key, val);
 #ifdef STAT
       if (stat::insert_num == 160000001) {
@@ -128,28 +126,28 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
       return true;
     }
     // cache
-    CacheEntry *entry = cache_->Lookup(id);
+    CacheEntry *entry = cache_->Lookup(addr);
     if (entry != nullptr) {
       latch_.WUnlock();
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      memcpy(entry->Data()->at(Identifier::CacheOff(id)), val.data(), val.size());
+      memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
       entry->Dirty = true;
       cache_->Release(entry);
       return true;
     }
     // cache miss
-    CacheEntry *victim = replacement(id);
+    CacheEntry *victim = replacement(addr);
     latch_.WUnlock();
-    memcpy(victim->Data()->at(Identifier::CacheOff(id)), val.data(), val.size());
+    memcpy(victim->Data()->at(addr.CacheOff()), val.data(), val.size());
     victim->Dirty = true;
     cache_->Release(victim);
     return true;
   }
 }
 
-CacheEntry *Pool::replacement(ID id) {
+CacheEntry *Pool::replacement(Addr addr) {
   // miss
 #ifdef STAT
   stat::replacement.fetch_add(1);
@@ -157,21 +155,20 @@ CacheEntry *Pool::replacement(ID id) {
     LOG_INFO("Replacement %ld", stat::replacement.load(std::memory_order_relaxed));
   }
 #endif
-  CacheEntry *victim = cache_->Insert(id);
+  CacheEntry *victim = cache_->Insert(addr);
   auto batch = client_->BeginBatch();
   if (victim->Dirty) {
 #ifdef STAT
     stat::dirty_write.fetch_add(1);
 #endif
     auto ret = writeToRemote(victim, &batch);
-    LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", Identifier::GetBlockId(victim->ID),
-               Identifier::CacheLine(victim->ID));
+    LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", victim->Addr.BlockId(),
+               victim->Addr.CacheLine());
   }
-  auto ret = readFromRemote(victim, id, &batch);
+  auto ret = readFromRemote(victim, addr, &batch);
   ret = batch.FinishBatch();
-  LOG_ASSERT(ret == 0, "read cache block %d, line %d from remote failed.", Identifier::GetBlockId(id),
-             Identifier::CacheLine(id));
-  victim->ID = Identifier::RoundUp(id);
+  LOG_ASSERT(ret == 0, "read cache block %d, line %d from remote failed.", addr.BlockId(), addr.CacheLine());
+  victim->Addr = addr.RoundUp();
   victim->Dirty = false;
   return victim;
 }
@@ -180,6 +177,7 @@ void Pool::writeNew(const Slice &key, const Slice &val) {
 #ifdef STAT
   stat::insert_num.fetch_add(1);
 #endif
+  keys_[cur_block_id_]->SetKey(cur_kv_off_, key);
   memcpy(write_line_->Data()->at(cache_kv_off_), val.data(), val.size());
   cache_kv_off_++;
   cur_kv_off_++;
@@ -193,7 +191,7 @@ void Pool::writeNew(const Slice &key, const Slice &val) {
   }
 
   if (cache_kv_off_ == kCacheValueNum) {
-    ID new_cache_line = Identifier::Gen(cur_block_id_, cur_kv_off_);
+    Addr new_cache_line(cur_block_id_, cur_kv_off_);
     cache_->UnPin(write_line_);
     write_line_ = cache_->Insert(new_cache_line);
     cache_->Pin(write_line_);
@@ -201,10 +199,10 @@ void Pool::writeNew(const Slice &key, const Slice &val) {
       auto batch = client_->BeginBatch();
       auto ret = writeToRemote(write_line_, &batch);
       ret = batch.FinishBatch();
-      LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", Identifier::GetBlockId(write_line_->ID),
-                 Identifier::CacheLine(write_line_->ID));
+      LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", write_line_->Addr.BlockId(),
+                 write_line_->Addr.CacheLine());
     }
-    write_line_->ID = new_cache_line;
+    write_line_->Addr = new_cache_line;
     write_line_->Dirty = true;
     cache_kv_off_ = 0;
     cache_->Release(write_line_);
@@ -235,16 +233,16 @@ int Pool::allocNewBlock() {
 }
 
 int Pool::writeToRemote(CacheEntry *entry, RDMAManager::Batch *batch) {
-  BlockId bid = Identifier::GetBlockId(entry->ID);
-  uint32_t cache_line_off = Identifier::CacheLine(entry->ID);
+  BlockId bid = entry->Addr.BlockId();
+  uint32_t cache_line_off = entry->Addr.CacheLine();
   MemoryAccess &access = global_addr_table_.at(bid);
   return batch->RemoteWrite(entry->Data(), cache_->MR()->lkey, sizeof(CacheLine),
                             access.addr + sizeof(CacheLine) * cache_line_off, access.rkey);
 }
 
-int Pool::readFromRemote(CacheEntry *entry, ID id, RDMAManager::Batch *batch) {
-  BlockId bid = Identifier::GetBlockId(id);
-  uint32_t cache_line_off = Identifier::CacheLine(id);
+int Pool::readFromRemote(CacheEntry *entry, Addr addr, RDMAManager::Batch *batch) {
+  BlockId bid = addr.BlockId();
+  uint32_t cache_line_off = addr.CacheLine();
   MemoryAccess &access = global_addr_table_.at(bid);
   return batch->RemoteRead(entry->Data(), cache_->MR()->lkey, sizeof(CacheLine),
                            access.addr + sizeof(CacheLine) * cache_line_off, access.rkey);

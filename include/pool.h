@@ -38,9 +38,9 @@ class Pool NOCOPYABLE {
 
   int writeToRemote(CacheEntry *entry, RDMAManager::Batch *batch);
 
-  int readFromRemote(CacheEntry *entry, ID id, RDMAManager::Batch *batch);
+  int readFromRemote(CacheEntry *entry, Addr addr, RDMAManager::Batch *batch);
 
-  CacheEntry *replacement(ID id);
+  CacheEntry *replacement(Addr addr);
 
   int allocNewBlock();
 

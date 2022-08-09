@@ -21,83 +21,100 @@ constexpr static const unsigned long PrimeList[] = {
 
 class KeyBlock {
  public:
-  struct Entry {
-    char key[kKeyLength];
-    ID id = Identifier::INVALID_ID;
-    ID next_ = Identifier::INVALID_ID;
-  };
-
-  Entry *GetEnt(ID id) {
-    int index = Identifier::BlockOff(id);
+  char *GetKey(int index) {
     assert(index < kBlockValueNum);
-    return &data_[index];
+    return &data_[index * kKeyLength];
   }
 
-  void SetKey(ID id, const Slice &key) {
-    int index = Identifier::BlockOff(id);
+  void SetKey(int index, const Slice &key) {
     assert(index < kBlockValueNum);
-    data_[index].id = id;
-    memcpy(data_[index].key, key.data(), key.size());
+    memcpy(&data_[index * kKeyLength], key.data(), key.size());
   }
-  Entry data_[kBlockValueNum];
+  char data_[kBlockValueNum * kKeyLength];
 };
 
 class HashTable {
  public:
-  HashTable(size_t size, std::vector<KeyBlock *> *ents) : ents_(ents) {
+  HashTable(size_t size, std::vector<KeyBlock *> *keys) : keys_(keys) {
     int logn = 0;
     while (size >= 2) {
       size /= 2;
       logn++;
     }
-    size_ = PrimeList[logn + 1];
-    slots_ = new ID[size_]{Identifier::INVALID_ID};
-    memset(slots_, 0xff, size_ * sizeof(ID));
-    // counter_ = new uint8_t[size_]{};
+    size_ = PrimeList[logn];
+    slots_ = new HashNode[size_];
+    // counter_ = new uint8_t[size_]{0};
   };
 
-  ~HashTable() { delete[] slots_; }
-
-  ID Find(const Slice &key, uint32_t hash) {
-    uint32_t index = hash % size_;
-    ID id = slots_[index];
-
-    while (id != Identifier::INVALID_ID) {
-      auto *ent = ents_->at(Identifier::GetBlockId(id))->GetEnt(id);
-      if (memcmp(key.data(), ent->key, kKeyLength) == 0) {
-        return id;
+  ~HashTable() {
+    HashNode *slot;
+    HashNode *next;
+    for (size_t i = 0; i < size_; i++) {
+      if (slots_[i].next_ != nullptr) {
+        slot = slots_[i].next_;
+        while (slot != nullptr) {
+          next = slot->next_;
+          delete slot;
+          slot = next;
+        }
       }
-      id = ent->next_;
     }
-    return Identifier::INVALID_ID;
+    delete[] slots_;
   }
 
-  void Insert(const Slice &key, uint32_t hash, ID id) {
+  Addr Find(const Slice &key, uint32_t hash) {
     uint32_t index = hash % size_;
-    auto *new_ent = ents_->at(Identifier::GetBlockId(id))->GetEnt(id);
+    uint8_t fpt = hash;
+    Addr addr;
+    HashNode *slot = &slots_[index];
 
-    ID tmp = slots_[index];
-    if (tmp == Identifier::INVALID_ID) {
-      slots_[index] = id;
+    if (slot->addr == Addr::INVALID_ADDR) {
+      return Addr::INVALID_ADDR;
+    }
+
+    while (slot != nullptr) {
+      addr = slot->addr;
+      if (fpt == slot->fingerprint &&
+          (memcmp(key.data(), keys_->at(addr.BlockId())->GetKey(addr.BlockOff()), kKeyLength) == 0)) {
+        return slot->addr;
+      }
+      slot = slot->next_;
+    }
+    return Addr::INVALID_ADDR;
+  }
+
+  void Insert(const Slice &key, uint32_t hash, Addr addr) {
+    uint32_t index = hash % size_;
+    uint8_t fpt = hash;
+    Addr tmp_addr;
+
+    HashNode *slot = &slots_[index];
+    if (slot->addr == Addr::INVALID_ADDR) {
+      slot->addr = addr;
+      slot->fingerprint = fpt;
       count_++;
       // counter_[index]++;
       return;
     }
 
     // find
-    while (tmp != Identifier::INVALID_ID) {
-      auto *ent = ents_->at(Identifier::GetBlockId(tmp))->GetEnt(tmp);
-      if (memcmp(key.data(), ent->key, kKeyLength) == 0) {
+    while (slot != nullptr) {
+      tmp_addr = slot->addr;
+      if (fpt == slot->fingerprint &&
+          (memcmp(key.data(), keys_->at(addr.BlockId())->GetKey(addr.BlockOff()), kKeyLength) == 0)) {
         // duplicate
-        LOG_DEBUG("slot id %x, id %x", ent->id, id);
+        LOG_DEBUG("slot addr %x, addr %x", slot->addr.RawAddr(), addr.RawAddr());
         return;
       }
-      tmp = ent->next_;
+      slot = slot->next_;
     }
 
     // insert into head
-    new_ent->next_ = slots_[index];
-    slots_[index] = id;
+    slot = new HashNode;
+    slot->addr = addr;
+    slot->fingerprint = fpt;
+    slot->next_ = slots_[index].next_;
+    slots_[index].next_ = slot;
     count_++;
     // counter_[index]++;
   }
@@ -116,8 +133,14 @@ class HashTable {
   // }
 
  private:
-  std::vector<KeyBlock *> *ents_ = nullptr;
-  ID *slots_ = nullptr;
+  struct HashNode {
+    uint8_t fingerprint;
+    Addr addr = Addr::INVALID_ADDR;
+    HashNode *next_ = nullptr;
+  };
+
+  std::vector<KeyBlock *> *keys_ = nullptr;
+  HashNode *slots_ = nullptr;
   size_t count_ = 0;
   size_t size_ = 0;
   // uint8_t *counter_ = nullptr;
