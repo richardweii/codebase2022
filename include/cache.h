@@ -124,25 +124,22 @@ class ClockReplacer {
     frames_[frame_id].pin_ = false;
   }
 
-  bool Ref(FrameId frame_id) {
-    if (frames_[frame_id].victim_) {
-      return false;
-    }
+  void Ref(FrameId frame_id) {
     frames_[frame_id].ref_ = true;
-    return true;
   }
 
-  void UnRef(FrameId frame_id) {
-    frames_[frame_id].ref_ = true;
-    frames_[frame_id].victim_ = false;
-  }
+  // void UnRef(FrameId frame_id, bool victim) {
+  //   frames_[frame_id].ref_ = true;
+  //   if (victim) {
+  //     frames_[frame_id].victim_ = false;
+  //   }
+  // }
 
  private:
   struct Frame {
     Frame() = default;
     FrameId frame_ = INVALID_FRAME_ID;
     bool pin_ = false;
-    bool victim_ = false;
     bool ref_;
   };
 
@@ -156,7 +153,6 @@ class ClockReplacer {
     while (true) {
       uint8_t tmp = 0;
       if (!frames_[hand_].pin_ && !frames_[hand_].ref_) {
-        frames_[hand_].victim_ = true;
         break;
       } else if (!frames_[hand_].pin_) {
         frames_[hand_].ref_ = false;
@@ -309,7 +305,8 @@ class Cache NOCOPYABLE {
       perror("ibv_derge_mr failed.");
       LOG_ERROR("ibv_derge_mr failed.");
     }
-    LOG_INFO("cache hash table");
+    // LOG_INFO("cache hash table");
+    // LOG_INFO("cache lookup conflict %u", lookup_count_);
     // hash_table_->PrintCounter();
     delete[] lines_;
     delete hash_table_;
@@ -319,9 +316,9 @@ class Cache NOCOPYABLE {
   // return a cacheHandle used to write new data to it, if old data is dirty, need to write to remote first
   CacheEntry *Insert(ID addr);
 
-  void Release(CacheEntry *entry, bool writer = false);
+  void Release(CacheEntry *entry);
 
-  CacheEntry *Lookup(ID addr, bool writer = false);
+  CacheEntry *Lookup(ID addr);
 
   ibv_mr *MR() const { return mr_; }
 
@@ -338,5 +335,6 @@ class Cache NOCOPYABLE {
 
   // LRU
   ClockReplacer *replacer_ = nullptr;
+  // uint32_t lookup_count_ = 0;
 };
 }  // namespace kv

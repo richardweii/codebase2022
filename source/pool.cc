@@ -42,7 +42,7 @@ void Pool::Init() {
   cache_->Pin(write_line_);
   write_line_->ID = id;
   write_line_->Dirty = true;
-  cache_->Release(write_line_, true);
+  cache_->Release(write_line_);
 }
 
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
@@ -89,7 +89,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     CacheEntry *victim = replacement(id);
     latch_.WUnlock();
     memcpy((char *)val.data(), victim->Data()->at(Identifier::CacheOff(id)), kValueLength);
-    cache_->Release(victim, true);
+    cache_->Release(victim);
     return true;
   }
 }
@@ -98,7 +98,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
   {  // lockfree phase
     ID id = hash_index_->Find(key, hash);
     if (id != Identifier::INVALID_ID) {
-      CacheEntry *entry = cache_->Lookup(id, true);
+      CacheEntry *entry = cache_->Lookup(id);
 
       if (entry != nullptr) {
 #ifdef STAT
@@ -106,7 +106,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 #endif
         memcpy(entry->Data()->at(Identifier::CacheOff(id)), val.data(), val.size());
         entry->Dirty = true;
-        cache_->Release(entry, true);
+        cache_->Release(entry);
         return true;
       }
     }
@@ -144,7 +144,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
     latch_.WUnlock();
     memcpy(victim->Data()->at(Identifier::CacheOff(id)), val.data(), val.size());
     victim->Dirty = true;
-    cache_->Release(victim, true);
+    cache_->Release(victim);
     return true;
   }
 }
@@ -207,7 +207,7 @@ void Pool::writeNew(const Slice &key, const Slice &val) {
     write_line_->ID = new_cache_line;
     write_line_->Dirty = true;
     cache_kv_off_ = 0;
-    cache_->Release(write_line_, true);
+    cache_->Release(write_line_);
   }
 }
 

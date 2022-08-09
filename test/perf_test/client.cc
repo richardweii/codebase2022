@@ -23,36 +23,7 @@ constexpr int write_op_per_thread = kKeyNum / thread_num;
 constexpr int read_write_mix_op = 64 * 1024 * 1024;
 constexpr int M = 1024 * 1024;
 
-int main() {
-  LocalEngine *local_engine = new LocalEngine();
-  // ip 必须写具体ip，不能直接写localhost和127.0.0.1
-  local_engine->start("192.168.200.22", "12344");
-  std::vector<std::thread> threads;
-  std::mutex zipf_mutex;
-
-  LOG_INFO(" ============= gen key and zipf index ===============>");
-  auto keys = genPerfKey(kKeyNum);
-  int *zipf_index = new int[read_write_mix_op * thread_num];
-  LOG_INFO(" start gen zipf key...");
-  for (int i = 0; i < thread_num; i++) {
-    threads.emplace_back(
-        [i](int *zipf_index) {
-          LOG_INFO("Start gen zipf key index %d", i);
-          Zipf zipf(kKeyNum, 0x123ab324 * (i + 1), 2);
-          for (int j = 0; j < read_write_mix_op; j++) {
-            zipf_index[read_write_mix_op * i + j] = zipf.Next();
-          }
-          LOG_INFO("End gen zipf key index %d", i);
-        },
-        zipf_index);
-  }
-  for (auto &th : threads) {
-    th.join();
-  }
-  threads.clear();
-
-  LOG_INFO(" end gen zipf key!");
-
+void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, std::vector<std::thread> &threads) {
   LOG_INFO(" ============= part1 ==============>");
   {
     LOG_INFO(" @@@@@@@@@@@@@ round 1 @@@@@@@@@@@@@@@");
@@ -161,7 +132,9 @@ int main() {
     auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
     std::cout << "Total time:" << count * 1.0 / 1000 / 1000 << "s" << std::endl;
   }
+}
 
+void part2(LocalEngine *local_engine, TestKey *keys, int *zipf_index, std::vector<std::thread> &threads) {
   LOG_INFO(" ============= start read & write ===============>");
   {
     auto time_now = TIME_NOW;
@@ -206,6 +179,41 @@ int main() {
     auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
     std::cout << "Total time:" << count * 1.0 / 1000 / 1000 << "s" << std::endl;
   }
+}
+
+int main() {
+  LocalEngine *local_engine = new LocalEngine();
+  // ip 必须写具体ip，不能直接写localhost和127.0.0.1
+  local_engine->start("192.168.200.22", "12344");
+  std::vector<std::thread> threads;
+  std::mutex zipf_mutex;
+
+  LOG_INFO(" ============= gen key and zipf index ===============>");
+  auto keys = genPerfKey(kKeyNum);
+  int *zipf_index = new int[read_write_mix_op * thread_num];
+  LOG_INFO(" start gen zipf key...");
+  for (int i = 0; i < thread_num; i++) {
+    threads.emplace_back(
+        [i](int *zipf_index) {
+          LOG_INFO("Start gen zipf key index %d", i);
+          Zipf zipf(kKeyNum, 0x123ab324 * (i + 1), 2);
+          for (int j = 0; j < read_write_mix_op; j++) {
+            zipf_index[read_write_mix_op * i + j] = zipf.Next();
+          }
+          LOG_INFO("End gen zipf key index %d", i);
+        },
+        zipf_index);
+  }
+  for (auto &th : threads) {
+    th.join();
+  }
+  threads.clear();
+
+  LOG_INFO(" end gen zipf key!");
+
+  part1(local_engine, keys, zipf_index, threads);
+  part2(local_engine, keys, zipf_index, threads);
+
   local_engine->stop();
   delete local_engine;
   return 0;

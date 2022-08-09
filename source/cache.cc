@@ -124,9 +124,9 @@ CacheEntry *Cache::Insert(ID id) {
   return victim;
 }
 
-void Cache::Release(CacheEntry *entry, bool writer) { replacer_->UnRef(entry->fid_); }
+void Cache::Release(CacheEntry *entry) { replacer_->Ref(entry->fid_); }
 
-CacheEntry *Cache::Lookup(ID id, bool writer) {
+CacheEntry *Cache::Lookup(ID id) {
   id = Identifier::RoundUp(id);
   while (true) {
     auto fid = hash_table_->Find(id);
@@ -134,11 +134,12 @@ CacheEntry *Cache::Lookup(ID id, bool writer) {
       return nullptr;
     }
 
-    if (!replacer_->Ref(fid) || !(id == entries_[fid].ID)) {
+    if (!(id == entries_[fid].ID)) {
+      // lookup_count_++;
       continue;
     }
     LOG_ASSERT(id == entries_[fid].ID, "Unmatched key. expect %u, got %u", id, entries_[fid].ID);
-
+    replacer_->Ref(fid);
     return &entries_[fid];
   }
 }

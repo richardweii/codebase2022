@@ -50,7 +50,7 @@ class HashTable {
       size /= 2;
       logn++;
     }
-    size_ = PrimeList[logn];
+    size_ = PrimeList[logn + 1];
     slots_ = new ID[size_]{Identifier::INVALID_ID};
     memset(slots_, 0xff, size_ * sizeof(ID));
     // counter_ = new uint8_t[size_]{};
@@ -105,9 +105,9 @@ class HashTable {
   // void PrintCounter() {
   //   std::vector<uint32_t> count(255, 0);
   //   for (size_t i = 0; i < size_; i++) {
-  //     for (int j = 0; j <= counter_[i]; j++) {
-  //       count[j]++;
-  //     }
+  //     // for (int j = 0; j <= counter_[i]; j++) {
+  //     count[counter_[i]]++;
+  //     // }
   //   }
   //   LOG_INFO("@@@@@@@@@@@@@@@@@@@@ Hash Table @@@@@@@@@@@@@@@@");
   //   for (int i = 0; i < 15; i++) {
@@ -120,7 +120,7 @@ class HashTable {
   ID *slots_ = nullptr;
   size_t count_ = 0;
   size_t size_ = 0;
-  uint8_t *counter_ = nullptr;
+  // uint8_t *counter_ = nullptr;
 };
 
 }  // namespace kv
