@@ -113,7 +113,7 @@ CacheEntry *Cache::Insert(Addr addr) {
   CacheEntry *victim = &entries_[fid];
 
   // remove from old hash table
-  hash_table_->Remove(victim->Addr.RawAddr(), victim->fid_);
+  hash_table_->Remove(victim->Addr, victim->fid_);
 
   // add to hash table
   hash_table_->Insert(addr.RawAddr(), fid);
@@ -134,11 +134,11 @@ CacheEntry *Cache::Lookup(Addr addr, bool writer) {
       return nullptr;
     }
 
-    if (!(addr == entries_[fid].Addr)) {
+    if (!(addr.RawAddr() == entries_[fid].Addr)) {
       // lookup_count_++;
       continue;
     }
-    LOG_ASSERT(addr == entries_[fid].Addr, "Unmatched key. expect %u, got %u", addr.RawAddr(), entries_[fid].Addr.RawAddr());
+    LOG_ASSERT(addr == entries_[fid].Addr, "Unmatched key. expect %u, got %u", addr.RawAddr(), entries_[fid].Addr);
     replacer_->Ref(fid);
     return &entries_[fid];
   }

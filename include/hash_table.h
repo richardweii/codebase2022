@@ -63,6 +63,7 @@ class HashTable {
   }
 
   Addr Find(const Slice &key, uint32_t hash) {
+    hash >>= kPoolShardBits;
     uint32_t index = hash % size_;
     uint8_t fpt = hash;
     Addr addr;
@@ -84,6 +85,7 @@ class HashTable {
   }
 
   void Insert(const Slice &key, uint32_t hash, Addr addr) {
+    hash >>= kPoolShardBits;
     uint32_t index = hash % size_;
     uint8_t fpt = hash;
     Addr tmp_addr;

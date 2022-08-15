@@ -34,7 +34,7 @@ class CacheLine {
 class CacheEntry {
  public:
   friend class Cache;
-  kv::Addr Addr;
+  uint32_t Addr;
   bool Dirty = false;
 
   CacheLine *Data() const { return line_; }
@@ -124,9 +124,7 @@ class ClockReplacer {
     frames_[frame_id].pin_ = false;
   }
 
-  void Ref(FrameId frame_id) {
-    frames_[frame_id].ref_ = true;
-  }
+  void Ref(FrameId frame_id) { frames_[frame_id].ref_ = true; }
 
   // void UnRef(FrameId frame_id, bool victim) {
   //   frames_[frame_id].ref_ = true;
@@ -239,7 +237,9 @@ class FrameHashTable {
     if (addr == slot->addr_) {
       if (slot->next_ != nullptr) {
         Slot *tmp = slot->next_;
-        *slot = *slot->next_;
+        slot->addr_ = tmp->addr_;
+        slot->frame_ = tmp->frame_;
+        slot->next_ = tmp->next_;
         delete tmp;
       } else {
         slot->addr_ = Addr::INVALID_ADDR;
@@ -326,7 +326,6 @@ class Cache NOCOPYABLE {
   void UnPin(CacheEntry *entry) { replacer_->Unpin(entry->fid_); }
 
  private:
-
   size_t cache_line_num_;
   CacheLine *lines_ = nullptr;
   CacheEntry *entries_ = nullptr;

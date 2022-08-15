@@ -17,8 +17,9 @@
 using namespace kv;
 using namespace std;
 
+constexpr int insert_num = 160000000;
 constexpr int thread_num = 16;
-constexpr int write_op_per_thread = kKeyNum / thread_num;
+constexpr int write_op_per_thread = insert_num / thread_num;
 // constexpr int read_write_mix_op = 64 * 100;
 constexpr int read_write_mix_op = 64 * 1024 * 1024;
 constexpr int M = 1024 * 1024;
@@ -189,14 +190,14 @@ int main() {
   std::mutex zipf_mutex;
 
   LOG_INFO(" ============= gen key and zipf index ===============>");
-  auto keys = genPerfKey(kKeyNum);
+  auto keys = genPerfKey(insert_num);
   int *zipf_index = new int[read_write_mix_op * thread_num];
   LOG_INFO(" start gen zipf key...");
   for (int i = 0; i < thread_num; i++) {
     threads.emplace_back(
         [i](int *zipf_index) {
           LOG_INFO("Start gen zipf key index %d", i);
-          Zipf zipf(kKeyNum, 0x123ab324 * (i + 1), 2);
+          Zipf zipf(insert_num, 0x123ab324 * (i + 1), 2);
           for (int j = 0; j < read_write_mix_op; j++) {
             zipf_index[read_write_mix_op * i + j] = zipf.Next();
           }

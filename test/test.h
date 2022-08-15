@@ -33,18 +33,18 @@ struct TestKey {
 };
 
 inline TestKey *genPerfKey(int num) {
-  mt19937 gen;
-  gen.seed(random_device()());
-  uniform_int_distribution<mt19937::result_type> dist;
   TestKey *keys = new TestKey[num];
 
+  int a[4];
   for (int i = 0; i < num; i++) {
     if (i % 10000000 == 0) {
       LOG_INFO("cur i %d", i);
     }
-    auto &&tmp = to_string(dist(gen));
-    tmp.resize(16);
-    memcpy(keys[i].key, tmp.c_str(), 16);
+    a[0] = 0x12341234;
+    a[1] = i;
+    a[2] = 0x45674567;
+    a[3] = 0;
+    memcpy(keys[i].key, a, 16);
   }
   return keys;
 }

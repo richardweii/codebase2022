@@ -3,16 +3,14 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <atomic>
 #include <cstdint>
 #include "config.h"
-#include <atomic>
 #include "msg.h"
 #include "pool.h"
 #include "rdma_client.h"
 #include "rdma_manager.h"
 #include "rdma_server.h"
-
-
 
 namespace kv {
 /* Abstract base engine */
@@ -39,7 +37,7 @@ class LocalEngine : public Engine {
   bool read(const std::string key, std::string &value);
 
  private:
-  static uint32_t Shard(uint32_t hash) { return hash >> (32 - kPoolShardBits); }
+  static uint32_t Shard(uint32_t hash) { return hash % (1 << kPoolShardBits); }
 
   Pool *pool_[kPoolShardNum];
   RDMAClient *client_;
@@ -55,7 +53,7 @@ class RemoteEngine : public Engine {
   bool alive() override;
 
  private:
-  static uint32_t Shard(uint32_t hash) { return hash >> (32 - kPoolShardBits); }
+  static uint32_t Shard(uint32_t hash) { return hash % (1 << kPoolShardBits); }
   void handler(RPCTask *task);
 
   kv::RDMAServer *server_;

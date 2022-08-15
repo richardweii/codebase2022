@@ -40,7 +40,7 @@ void Pool::Init() {
   Addr addr(cur_block_id_, cur_kv_off_);
   write_line_ = cache_->Insert(addr);
   cache_->Pin(write_line_);
-  write_line_->Addr = addr;
+  write_line_->Addr = addr.RawAddr();
   write_line_->Dirty = true;
   cache_->Release(write_line_);
 }
@@ -162,13 +162,13 @@ CacheEntry *Pool::replacement(Addr addr) {
     stat::dirty_write.fetch_add(1);
 #endif
     auto ret = writeToRemote(victim, &batch);
-    LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", victim->Addr.BlockId(),
-               victim->Addr.CacheLine());
+    LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", Addr(victim->Addr).BlockId(),
+               Addr(victim->Addr).CacheLine());
   }
   auto ret = readFromRemote(victim, addr, &batch);
   ret = batch.FinishBatch();
   LOG_ASSERT(ret == 0, "read cache block %d, line %d from remote failed.", addr.BlockId(), addr.CacheLine());
-  victim->Addr = addr.RoundUp();
+  victim->Addr = addr.RoundUp().RawAddr();
   victim->Dirty = false;
   return victim;
 }
@@ -199,10 +199,10 @@ void Pool::writeNew(const Slice &key, const Slice &val) {
       auto batch = client_->BeginBatch();
       auto ret = writeToRemote(write_line_, &batch);
       ret = batch.FinishBatch();
-      LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", write_line_->Addr.BlockId(),
-                 write_line_->Addr.CacheLine());
+      LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", Addr(write_line_->Addr).BlockId(),
+                 Addr(write_line_->Addr).CacheLine());
     }
-    write_line_->Addr = new_cache_line;
+    write_line_->Addr = new_cache_line.RawAddr();
     write_line_->Dirty = true;
     cache_kv_off_ = 0;
     cache_->Release(write_line_);
@@ -233,8 +233,9 @@ int Pool::allocNewBlock() {
 }
 
 int Pool::writeToRemote(CacheEntry *entry, RDMAManager::Batch *batch) {
-  BlockId bid = entry->Addr.BlockId();
-  uint32_t cache_line_off = entry->Addr.CacheLine();
+  Addr ad = entry->Addr;
+  BlockId bid = ad.BlockId();
+  uint32_t cache_line_off = ad.CacheLine();
   MemoryAccess &access = global_addr_table_.at(bid);
   return batch->RemoteWrite(entry->Data(), cache_->MR()->lkey, sizeof(CacheLine),
                             access.addr + sizeof(CacheLine) * cache_line_off, access.rkey);
