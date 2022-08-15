@@ -2,6 +2,7 @@
 #include <rdma/rdma_cma.h>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include "assert.h"
 #include "atomic"
@@ -36,6 +37,14 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
     pool_[i] = new Pool(cache_size, i, client_);
     pool_[i]->Init();
   }
+
+  auto watcher = std::thread([]() {
+    sleep(600);
+    fflush(stdout);
+    abort();
+  });
+  watcher.detach();
+
   return true;
 }
 
@@ -81,7 +90,7 @@ bool LocalEngine::write(const std::string key, const std::string value) {
     LOG_INFO("key %.16s", key.c_str());
   }
 #endif
-  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
+  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   return pool_[index]->Write(Slice(key), hash, Slice(value));
 }
@@ -100,7 +109,7 @@ bool LocalEngine::read(const std::string key, std::string &value) {
   }
 #endif
   value.resize(kValueLength);
-  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
+  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   return pool_[index]->Read(Slice(key), hash, value);
 }
