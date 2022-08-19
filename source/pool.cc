@@ -103,8 +103,12 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 #ifdef STAT
         stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-        memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
-        entry->Dirty = true;
+        if (!entry->Dirty) {
+          entry->Dirty = true;
+        }
+        if (memcmp(entry->Data()->at(addr.CacheOff()), val.data(), val.size()) != 0) {
+          memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
+        }
         cache_->Release(entry);
         return true;
       }
@@ -132,8 +136,12 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
-      entry->Dirty = true;
+      if (!entry->Dirty) {
+        entry->Dirty = true;
+      }
+      if (memcmp(entry->Data()->at(addr.CacheOff()), val.data(), val.size()) != 0) {
+        memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
+      }
       cache_->Release(entry);
       return true;
     }
