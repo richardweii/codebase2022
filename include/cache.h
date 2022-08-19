@@ -124,7 +124,7 @@ class ClockReplacer {
     frames_[frame_id].pin_ = false;
   }
 
-  void Ref(FrameId frame_id) { frames_[frame_id].ref_ = true; }
+  void Ref(FrameId frame_id) { if (!frames_[frame_id].ref_) frames_[frame_id].ref_ = true; }
 
   // void UnRef(FrameId frame_id, bool victim) {
   //   frames_[frame_id].ref_ = true;
