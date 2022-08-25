@@ -17,6 +17,48 @@
 7. 自己写server/client测试的时候，如果复用同一个工程，注意在server/client编译时候得加link对应库文件；
 8. 测试数据中保证value的长度为16byte的倍数，因此加解密过程中不需要对value进行padding
 
+
+## 复赛测试相关流程
+### 新增接口
+1. deleteK 依据key删除记录；
+2. set_aes 初始化加密方法环境，会在start后调用，如果有加密需求；
+3. get_aes 获得加密信息，用作评测程序加密正确性判断
+4. 修改write接口为bool write(const std::string &key, const std::string &value, bool use_aes = false)
+   当use_aes = true时，需要writre加密数据，**read接口需要返回加密后的value**
+```c++
+  // ... init env
+  if (!kv_imp->start(rdma_addr, rdma_port)) {
+    //......
+    exit(EXIT_FAILURE);
+  }
+  /* Init aes key message. */
+  if(!kv_imp->set_aes()) {
+    //......
+    exit(EXIT_FAILURE);
+  }
+  /*Get aes key message. */
+  crypto_message_t *aes_msg = kv_imp->get_aes();
+  int m_ctxsize;
+  IppsAESSpec* pAES = nullptr;
+  /*Set aes context message. */
+  set_crypt_context(aes_msg, &pAES, m_ctxsize);
+  /* Testing Correctness Phase. */
+  // ...
+```
+
+### 测验流程
+0. 数据加密测试（不计入时间），和初赛流程一致，定长数据；后续测试不加密
+1. 16个线程每个线程写12M的数据进入，value会存在几个长度，保证最大的数据量控制在26个G左右。这部分将value的长度写在key的某个字节或者固定某个线程写固定长度？
+2. 16个线程读取12M的数据，判断是否长度以及数量一致
+3. update 其中一部分的数据，比如其中10%的数据，同时判断数据的长度，保证最大的数据量
+4. 每个线程read这部分数据并进行正确性验证
+5. delete其中一部分数据
+6. read这部分数据，验证是否已经删除
+7. 重新写入部分数据量，并且更新这部分长度
+8. 新这部分数据的读测试
+9. 16个线程每个线程读写64M数据，hot data。
+
+
 ## 1. 赛题背景 / 2. 赛题描述
 参见相关网页
 
