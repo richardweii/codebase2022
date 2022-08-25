@@ -15,13 +15,16 @@
     解决方法是用rdma link delete NAME命令，删掉无法使用的网卡；
 6. 模拟环境单次注册内存，到64M就会失败，erdma单次可以注册2G；
 7. 自己写server/client测试的时候，如果复用同一个工程，注意在server/client编译时候得加link对应库文件；
+8. 测试数据中保证value的长度为16byte的倍数，因此加解密过程中不需要对value进行padding
 
 ## 1. 赛题背景 / 2. 赛题描述
 参见相关网页
 
 ## 3. 参数程序 
 ### 3.1 程序目标 
-实现LocalEngine类（位于local节点），重载Start, Read, Write, Stop函数来实现引擎主节点的启动、读取、写入、停止功能。
+实现LocalEngine类（位于local节点），重载Start, Read, Write, Delete, Stop函数来实现引擎主节点的启动、读取、写入、停止功能。
+实现set_aes函数初始化加密过程中所需要的必要信息，实现get_aes函数返回加密需要的信息，评测程序会根据get_aes返回的内容，自适应的选择对应的算法，进行评测。
+在正确性验证阶段，评测程序会调用Write函数, 将标识位use_aes设置为true，选手根据标志位，实现加密，将加密后的数据写入内存。
 
 实现RemoteEngine类（位于remote节点），重载Start, Stop函数来实现引擎远端节点的启动、停止功能。
 
