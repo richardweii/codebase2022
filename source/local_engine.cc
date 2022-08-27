@@ -75,12 +75,91 @@ void LocalEngine::stop() {
 bool LocalEngine::alive() { return client_->Alive(); }
 
 /**
+ * @brief set context of aes, include encode algorithm, key, counter...
+ * 
+ * @return true for success
+ * @return false 
+ */
+bool LocalEngine::set_aes()
+{
+  aes_.algo = CTR;
+
+  // key
+  Ipp8u key[16] = {0xff,0xee,0xdd,0xcc,0xbb,0xaa,0x99,0x88, 0x77,0x66,0x55,0x44,0x33,0x22,0x11,0x00}; 
+  aes_.key_len = 16;
+  aes_.key = (Ipp8u *)malloc(sizeof(Ipp8u) * aes_.key_len);
+  memcpy(aes_.key, key, aes_.key_len);
+
+  // counter
+  aes_.blk_size = 16;
+  aes_.counter_len = 16;
+  Ipp8u ctr[aes_.blk_size] = {0x0f,0x0e,0x0d,0x0c,0x0b,0x0a,0x09,0x08, 0x07,0x06,0x05,0x04,0x03,0x02,0x01,0x00}; 
+  aes_.counter = (Ipp8u *)malloc(sizeof(Ipp8u) * aes_.blk_size);
+  memcpy(aes_.counter, ctr, sizeof(ctr)); 
+
+  // iv <no-use>
+  aes_.piv = nullptr;
+  aes_.piv_len = 0;
+
+  // counter bit
+  aes_.counter_bit = 64;
+  return true;
+}
+
+crypto_message_t* LocalEngine::get_aes()
+{
+  return &aes_;
+}
+
+char* LocalEngine::encrypt(const char *value, size_t len)
+{
+  Ipp8u *plain = (Ipp8u *)malloc(sizeof(Ipp8u) * len);
+  memset(plain, 0, len);
+  memcpy(plain, value, len);
+
+  int ctxSize; // AES context size 
+  ippsAESGetSize(&ctxSize); // evaluating AES context size
+  // allocate memory for AES context 
+  IppsAESSpec* ctx = (IppsAESSpec*)( new Ipp8u [ctxSize] );
+  ippsAESInit(aes_.key, aes_.key_len, ctx, ctxSize);
+  Ipp8u ctr[aes_.blk_size];
+  memcpy(ctr, aes_.counter, aes_.counter_len); 
+  // allocate memory for ciph 
+  Ipp8u ciph[len]; 
+  
+  ippsAESEncryptCTR(plain, ciph, len, ctx, ctr, aes_.counter_bit);
+  memcpy(plain, ciph, len);
+
+  return (char *)plain;
+}
+
+char* LocalEngine::decrypt(const char *value, size_t len)
+{
+  Ipp8u *ciph = (Ipp8u *)malloc(sizeof(Ipp8u) * len);
+  memset(ciph, 0, len);
+  memcpy(ciph, value, len);
+
+  int ctxSize; // AES context size 
+  ippsAESGetSize(&ctxSize); // evaluating AES context size
+  // allocate memory for AES context 
+  IppsAESSpec* ctx = (IppsAESSpec*)( new Ipp8u [ctxSize] );
+  ippsAESInit(aes_.key, aes_.key_len, ctx, ctxSize);
+  Ipp8u ctr[aes_.blk_size];
+  memcpy(ctr, aes_.counter, aes_.counter_len); 
+
+  Ipp8u deciph[len]; 
+  ippsAESDecryptCTR(ciph, deciph, len, ctx, ctr, aes_.counter_bit);
+  memcpy(ciph, deciph, len);
+  return (char *)ciph;
+}
+
+/**
  * @description: put a key-value pair to engine
  * @param {string} key
  * @param {string} value
  * @return {bool} true for success
  */
-bool LocalEngine::write(const std::string key, const std::string value) {
+bool LocalEngine::write(const std::string &key, const std::string &value, bool use_aes) {
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
   if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
@@ -92,6 +171,13 @@ bool LocalEngine::write(const std::string key, const std::string value) {
 #endif
   uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
+
+  if (use_aes)
+  {
+    char *value_str = encrypt(value.data(), value.length());
+    return pool_[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
+  }
+
   return pool_[index]->Write(Slice(key), hash, Slice(value));
 }
 
@@ -101,7 +187,7 @@ bool LocalEngine::write(const std::string key, const std::string value) {
  * @param {string} &value
  * @return {bool}  true for success
  */
-bool LocalEngine::read(const std::string key, std::string &value) {
+bool LocalEngine::read(const std::string &key, std::string &value) {
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
   if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
