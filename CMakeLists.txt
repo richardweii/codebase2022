@@ -21,6 +21,7 @@ message("Build Type: ${CMAKE_BUILD_TYPE} ${CMAKE_CXX_FLAGS}")
 set(CMAKE_INSTALL_PREFIX ${CMAKE_BINARY_DIR}/polarkv)
 MESSAGE("Install prefix is: ${CMAKE_INSTALL_PREFIX}")
 
+include_directories($ENV{CPATH})
 add_subdirectory(include)
 add_subdirectory(source)
 add_subdirectory(test)
