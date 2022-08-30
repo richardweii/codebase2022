@@ -19,133 +19,146 @@ constexpr static const unsigned long PrimeList[] = {
     393241ul,    786433ul,    1572869ul,   3145739ul,    6291469ul,    12582917ul,  25165843ul, 50331653ul, 100663319ul,
     201326611ul, 402653189ul, 805306457ul, 1610612741ul, 3221225473ul, 4294967291ul};
 
-class KeyBlock {
+class Slot {
  public:
-  char *GetKey(int index) {
-    assert(index < kBlockValueNum);
-    return &data_[index * kKeyLength];
-  }
+  constexpr static int INVALID_SLOT_ID = -1;
+  void SetKey(const Slice &s) { memcpy(_key, s.data(), kKeyLength); }
+  void SetAddr(Addr addr) { _addr = addr; }
+  void SetNext(int next) { _next.store(next, std::memory_order_relaxed); }
 
-  void SetKey(int index, const Slice &key) {
-    assert(index < kBlockValueNum);
-    memcpy(&data_[index * kKeyLength], key.data(), key.size());
-  }
-  char data_[kBlockValueNum * kKeyLength];
+  const char *Key() const { return _key; }
+  kv::Addr Addr() const { return _addr; }
+  int Next() const { return _next.load(std::memory_order_relaxed); }
+
+ private:
+  char _key[kKeyLength];
+  kv::Addr _addr = INVALID_ADDR;
+  std::atomic_int _next = {-1};  // next hashtable node or next free slot
 };
 
 class HashTable {
  public:
-  HashTable(size_t size, std::vector<KeyBlock *> *keys) : keys_(keys) {
+  HashTable(size_t size, Slot *slots) : _slots(slots) {
     int logn = 0;
     while (size >= 2) {
       size /= 2;
       logn++;
     }
-    size_ = PrimeList[logn];
-    slots_ = new HashNode[size_];
-    // counter_ = new uint8_t[size_]{0};
+    _size = PrimeList[logn];
+    _bucket = new std::atomic_int[_size];
+
+    // init bucket
+    for (auto i = _size - 1; i >= 0; i--) {
+      _bucket[i].store(-1, std::memory_order_relaxed);
+    }
+    counter_ = new uint8_t[_size]{0};
   };
 
   ~HashTable() {
-    HashNode *slot;
-    HashNode *next;
-    for (size_t i = 0; i < size_; i++) {
-      if (slots_[i].next_ != nullptr) {
-        slot = slots_[i].next_;
-        while (slot != nullptr) {
-          next = slot->next_;
-          delete slot;
-          slot = next;
-        }
-      }
-    }
-    delete[] slots_;
+    // PrintCounter();
+    delete[] _bucket;
   }
 
   Addr Find(const Slice &key, uint32_t hash) {
     hash >>= kPoolShardBits;
-    uint32_t index = hash % size_;
-    uint8_t fpt = hash;
-    Addr addr;
-    HashNode *slot = &slots_[index];
+    uint32_t index = hash % _size;
+    int slot_id = _bucket[index];
 
-    if (slot->addr == Addr::INVALID_ADDR) {
-      return Addr::INVALID_ADDR;
-    }
-
-    while (slot != nullptr) {
-      addr = slot->addr;
-      if (fpt == slot->fingerprint &&
-          (memcmp(key.data(), keys_->at(addr.BlockId())->GetKey(addr.BlockOff()), kKeyLength) == 0)) {
-        return slot->addr;
+    Slot *slot = nullptr;
+    while (slot_id != Slot::INVALID_SLOT_ID) {
+      slot = &_slots[slot_id];
+      if ((memcmp(key.data(), slot->Key(), kKeyLength) == 0)) {
+        return slot->Addr();
       }
-      slot = slot->next_;
+      slot_id = slot->Next();
     }
-    return Addr::INVALID_ADDR;
+    return INVALID_ADDR;
   }
 
-  void Insert(const Slice &key, uint32_t hash, Addr addr) {
+  // DO NOT check duplicate
+  bool Insert(const Slice &key, uint32_t hash, int new_slot_id) {
     hash >>= kPoolShardBits;
-    uint32_t index = hash % size_;
-    uint8_t fpt = hash;
-    Addr tmp_addr;
+    uint32_t index = hash % _size;
 
-    HashNode *slot = &slots_[index];
-    if (slot->addr == Addr::INVALID_ADDR) {
-      slot->addr = addr;
-      slot->fingerprint = fpt;
-      count_++;
-      // counter_[index]++;
-      return;
+    int slot_id = _bucket[index];
+    if (slot_id == Slot::INVALID_SLOT_ID) {
+      _bucket[index].store(new_slot_id, std::memory_order_relaxed);
+      _count++;
+      counter_[index]++;
+      return true;
+    }
+
+    Slot *slot = nullptr;
+#ifdef TEST_CONFIG
+    // find
+    while (slot_id != Slot::INVALID_SLOT_ID) {
+      slot = &_slots[slot_id];
+      if ((memcmp(key.data(), slot->Key(), kKeyLength) == 0)) {
+        LOG_DEBUG("duplicate of slot %d", new_slot_id);
+        return false;
+      }
+    }
+#endif
+
+    // insert into head
+    slot = &_slots[new_slot_id];
+    slot->SetNext(_bucket[index].load(std::memory_order_relaxed));
+
+    _bucket[index].store(new_slot_id, std::memory_order_relaxed);
+    _count++;
+    counter_[index]++;
+    return true;
+  }
+
+  int Remove(const Slice &key, uint32_t hash) {
+    hash >>= kPoolShardBits;
+    uint32_t index = hash % _size;
+
+    int slot_id = _bucket[index];
+    if (slot_id == Slot::INVALID_SLOT_ID) {
+      return Slot::INVALID_SLOT_ID;
+    }
+
+    // head
+    Slot *slot = &_slots[slot_id];
+    if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
+      _bucket[index].store(slot->Next(), std::memory_order_relaxed);
+      counter_[index]--;
+      return slot_id;
     }
 
     // find
-    while (slot != nullptr) {
-      tmp_addr = slot->addr;
-      if (fpt == slot->fingerprint &&
-          (memcmp(key.data(), keys_->at(addr.BlockId())->GetKey(addr.BlockOff()), kKeyLength) == 0)) {
-        // duplicate
-        LOG_DEBUG("slot addr %x, addr %x", slot->addr.RawAddr(), addr.RawAddr());
-        return;
+    int front_slot_id = slot_id;
+    int cur_slot_id = slot->Next();
+    while (cur_slot_id != Slot::INVALID_SLOT_ID) {
+      slot = &_slots[cur_slot_id];
+      if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
+        _slots[front_slot_id].SetNext(slot->Next());
+        counter_[index]--;
+        return cur_slot_id;
       }
-      slot = slot->next_;
     }
-
-    // insert into head
-    slot = new HashNode;
-    slot->addr = addr;
-    slot->fingerprint = fpt;
-    slot->next_ = slots_[index].next_;
-    slots_[index].next_ = slot;
-    count_++;
-    // counter_[index]++;
+    // cannot find
+    return Slot::INVALID_SLOT_ID;
   }
 
-  // void PrintCounter() {
-  //   std::vector<uint32_t> count(255, 0);
-  //   for (size_t i = 0; i < size_; i++) {
-  //     // for (int j = 0; j <= counter_[i]; j++) {
-  //     count[counter_[i]]++;
-  //     // }
-  //   }
-  //   LOG_INFO("@@@@@@@@@@@@@@@@@@@@ Hash Table @@@@@@@@@@@@@@@@");
-  //   for (int i = 0; i < 15; i++) {
-  //     LOG_INFO("bucket size %d: %d", i, count[i]);
-  //   }
-  // }
+  void PrintCounter() {
+    std::vector<uint32_t> count(255, 0);
+    for (size_t i = 0; i < _size; i++) {
+      count[counter_[i]]++;
+    }
+    LOG_INFO("@@@@@@@@@@@@@@@@@@@@ Hash Table @@@@@@@@@@@@@@@@");
+    for (int i = 0; i < 15; i++) {
+      LOG_INFO("bucket size %d: %d", i, count[i]);
+    }
+  }
 
  private:
-  struct HashNode {
-    uint8_t fingerprint;
-    Addr addr = Addr::INVALID_ADDR;
-    HashNode *next_ = nullptr;
-  };
-
-  std::vector<KeyBlock *> *keys_ = nullptr;
-  HashNode *slots_ = nullptr;
-  size_t count_ = 0;
-  size_t size_ = 0;
-  // uint8_t *counter_ = nullptr;
+  Slot *_slots = nullptr;
+  std::atomic_int *_bucket = nullptr;
+  size_t _count = 0;
+  size_t _size = 0;
+  uint8_t *counter_ = nullptr;
 };
 
 }  // namespace kv

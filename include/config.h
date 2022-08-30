@@ -18,8 +18,8 @@ namespace kv {
 #define RDMA_TIMEOUT_US 10000000  // 10s
 #define RDMA_BATCH_US 100         // 100us
 
-using BlockId = int32_t;
-constexpr BlockId INVALID_BLOCK_ID = -1;
+using PageId = int32_t;
+constexpr PageId INVALID_PAGE_ID = -1;
 
 using FrameId = int32_t;
 constexpr FrameId INVALID_FRAME_ID = -1;
@@ -39,72 +39,45 @@ constexpr int kPoolShardBits = 7;
 constexpr int kPoolShardNum = 1 << kPoolShardBits;
 
 constexpr int kKeyLength = 16;
-constexpr int kValueLength = 128;
+constexpr int kValueAlign = 16;
 constexpr int kValueBit = 7;
 
 #ifdef TEST_CONFIG
-constexpr int kValueBlockBit = 10 + 4;                // 16KB
-constexpr int kValueBlockSize = 1 << kValueBlockBit;  // value memory register unit
-constexpr int kCacheLineBit = 10;
-constexpr int kCacheLineSize = 1 << kCacheLineBit;  // 1KB
+constexpr int kPageSizeBit = 10;
+constexpr int kPageSize = 1 << kPageSizeBit;  // 1KB
 #else
-constexpr int kValueBlockBit = 27;                    //
-constexpr int kValueBlockSize = 1 << kValueBlockBit;  // 128MB, value memory register unit
-constexpr int kCacheLineBit = 17;
-constexpr int kCacheLineSize = 1 << kCacheLineBit;             // 64KB
+constexpr int kPageSizeBit = 16;
+constexpr int kPageSize = 1 << kPageSizeBit;  // 64KB
 #endif
-
-constexpr int kBlockValueNum = kValueBlockSize / kValueLength;
-constexpr int kCacheValueNum = kCacheLineSize / kValueLength;
 
 #ifdef TEST_CONFIG
-constexpr size_t kKeyNum = 16 * 100;          // 16 * 12 * 32K key
-constexpr size_t kCacheSize = 2 * 16 * 1024;  // 32KB cache
+constexpr size_t kKeyNum = 12 * 16 * 16;              // 16 * 12 * 32K key
+constexpr size_t kPoolSize = (size_t)32 * 16 * 1024;  // 512KB remote pool
+constexpr size_t kBufferPoolSize = 2 * 16 * 1024;     // 32KB cache
 #else
-constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;              // 16 * 12M key
-constexpr size_t kCacheSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB cache
+
+constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                   // 16 * 12M key
+constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remote pool
+constexpr size_t kBufferPoolSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB cache
 #endif
 
-constexpr int kAlign = 8;  // kAlign show be powers of 2, say 2, 4 ,8, 16, 32, ...
-inline constexpr int roundUp(unsigned int nBytes) { return ((nBytes) + (kAlign - 1)) & ~(kAlign - 1); }
+using Addr = int32_t;
 
-constexpr uint32_t BLOCKID_MASK = uint32_t(~0) << (kValueBlockBit - kValueBit);
-constexpr uint32_t CACHE_MASK = uint32_t(~0) << (kCacheLineBit - kValueBit);
+constexpr Addr INVALID_ADDR = (-1);
+constexpr uint32_t PAGE_BIT = 16;  // MAX 64 * 1024
+constexpr uint32_t PAGE_MASK = 0xffff;
+constexpr uint32_t OFF_BIT = 12;  // MAX 4096
+constexpr uint32_t OFF_MASK = 0xfff;
 
-class Addr {
+class AddrParser {
  public:
-  constexpr static uint32_t INVALID_ADDR = (-1);
-  kv::BlockId BlockId() const { return addr_ >> (kValueBlockBit - kValueBit); }
-  uint32_t CacheLine() const { return (addr_ & (~BLOCKID_MASK)) >> (kCacheLineBit - kValueBit); }
-  uint32_t BlockOff() const { return addr_ & (~BLOCKID_MASK); }
-  uint32_t CacheOff() const { return addr_ & (~CACHE_MASK); }
-
-  void SetBlockId(kv::BlockId id) {
-    assert(id <= (kv::BlockId)((uint32_t(~0) >> (kValueBlockBit - kValueBit))));
-    addr_ |= (id < (kValueBlockBit - kValueBit));
+  static kv::PageId PageId(Addr addr) { return (addr >> OFF_BIT) & PAGE_MASK; }
+  static uint32_t Off(Addr addr) { return addr & OFF_MASK; }
+  static Addr GenAddrFrom(kv::PageId id, uint32_t off ) {
+    assert(id < PAGE_MASK);
+    assert(off < OFF_MASK);
+    return (id << OFF_BIT) | off;
   }
-  void SetBlockOff(uint32_t off) {
-    assert(off <= (~BLOCKID_MASK));
-    addr_ |= (off & (~BLOCKID_MASK));
-  }
-
-  // round up cache line
-  Addr RoundUp() {
-    addr_ &= CACHE_MASK;
-    return addr_;
-  }
-
-  uint32_t RawAddr() const { return addr_; }
-
-  Addr() = default;
-  Addr(kv::BlockId id, uint32_t off) { addr_ = (id << (kValueBlockBit - kValueBit)) | (off & (~BLOCKID_MASK)); }
-  Addr(uint32_t key_index) { addr_ = key_index; }
-
-  bool operator==(const Addr &addr) { return addr.addr_ == addr_; }
-  bool operator!=(const Addr &addr) { return addr.addr_ != addr_; }
-
- private:
-  uint32_t addr_ = INVALID_ADDR;
 };
 
 }  // namespace kv
