@@ -12,8 +12,6 @@
 #include "pool.h"
 #include "rdma_client.h"
 #include "stat.h"
-#include "util/filter.h"
-#include "util/get_clock.h"
 #include "util/hash.h"
 #include "util/logging.h"
 #include "util/slice.h"
@@ -27,19 +25,21 @@ namespace kv {
  * @return {bool} true for success
  */
 bool LocalEngine::start(const std::string addr, const std::string port) {
-  constexpr size_t cache_size = kCacheSize / kPoolShardNum;
-  LOG_INFO("Create %d pool, each pool with %lu MB cache", kPoolShardNum, cache_size / 1024 / 1024);
-  client_ = new RDMAClient();
-  if (!client_->Init(addr, port)) return false;
-  client_->Start();
+  constexpr size_t buffer_pool_size = kBufferPoolSize / kPoolShardingNum;
+  LOG_INFO("Create %d pool, each pool with %lu MB cache", kPoolShardingNum, buffer_pool_size / 1024 / 1024);
+  _client = new RDMAClient();
+  if (!_client->Init(addr, port)) return false;
+  _client->Start();
 
-  for (int i = 0; i < kPoolShardNum; i++) {
-    pool_[i] = new Pool(cache_size, i, client_);
-    pool_[i]->Init();
+  Arena::getInstance().Init(64 * 1024 * 1024); // 64MB;
+
+  for (int i = 0; i < kPoolShardingNum; i++) {
+    _pool[i] = new Pool(i, _client);
+    _pool[i]->Init();
   }
 
   auto watcher = std::thread([]() {
-    sleep(300);
+    sleep(1200);
     fflush(stdout);
     abort();
   });
@@ -53,9 +53,9 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
  * @return {void}
  */
 void LocalEngine::stop() {
-  client_->Stop();
-  delete client_;
-  // for (int i = 0; i < kPoolShardNum; i++) {
+  _client->Stop();
+  delete _client;
+  // for (int i = 0; i < kPoolShardingNum; i++) {
   //   delete pool_[i];
   // }
   LOG_INFO(" ========== Performance Statistics ============");
@@ -72,83 +72,77 @@ void LocalEngine::stop() {
  * @description: get engine alive state
  * @return {bool}  true for alive
  */
-bool LocalEngine::alive() { return client_->Alive(); }
+bool LocalEngine::alive() { return _client->Alive(); }
 
 /**
  * @brief set context of aes, include encode algorithm, key, counter...
- * 
+ *
  * @return true for success
- * @return false 
+ * @return false
  */
-bool LocalEngine::set_aes()
-{
-  aes_.algo = CTR;
+bool LocalEngine::set_aes() {
+  _aes.algo = CTR;
 
   // key
-  Ipp8u key[16] = {0xff,0xee,0xdd,0xcc,0xbb,0xaa,0x99,0x88, 0x77,0x66,0x55,0x44,0x33,0x22,0x11,0x00}; 
-  aes_.key_len = 16;
-  aes_.key = (Ipp8u *)malloc(sizeof(Ipp8u) * aes_.key_len);
-  memcpy(aes_.key, key, aes_.key_len);
+  Ipp8u key[16] = {0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00};
+  _aes.key_len = 16;
+  _aes.key = (Ipp8u *)malloc(sizeof(Ipp8u) * _aes.key_len);
+  memcpy(_aes.key, key, _aes.key_len);
 
   // counter
-  aes_.blk_size = 16;
-  aes_.counter_len = 16;
-  Ipp8u ctr[] = {0x0f,0x0e,0x0d,0x0c,0x0b,0x0a,0x09,0x08, 0x07,0x06,0x05,0x04,0x03,0x02,0x01,0x00}; 
-  aes_.counter = (Ipp8u *)malloc(sizeof(Ipp8u) * aes_.blk_size);
-  memcpy(aes_.counter, ctr, sizeof(ctr)); 
+  _aes.blk_size = 16;
+  _aes.counter_len = 16;
+  Ipp8u ctr[] = {0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00};
+  _aes.counter = (Ipp8u *)malloc(sizeof(Ipp8u) * _aes.blk_size);
+  memcpy(_aes.counter, ctr, sizeof(ctr));
 
   // iv <no-use>
-  aes_.piv = nullptr;
-  aes_.piv_len = 0;
+  _aes.piv = nullptr;
+  _aes.piv_len = 0;
 
   // counter bit
-  aes_.counter_bit = 64;
+  _aes.counter_bit = 64;
   return true;
 }
 
-crypto_message_t* LocalEngine::get_aes()
-{
-  return &aes_;
-}
+crypto_message_t *LocalEngine::get_aes() { return &_aes; }
 
-char* LocalEngine::encrypt(const char *value, size_t len)
-{
+char *LocalEngine::encrypt(const char *value, size_t len) {
   Ipp8u *plain = (Ipp8u *)malloc(sizeof(Ipp8u) * len);
   memset(plain, 0, len);
   memcpy(plain, value, len);
 
-  int ctxSize; // AES context size 
-  ippsAESGetSize(&ctxSize); // evaluating AES context size
-  // allocate memory for AES context 
-  IppsAESSpec* ctx = (IppsAESSpec*)( new Ipp8u [ctxSize] );
-  ippsAESInit(aes_.key, aes_.key_len, ctx, ctxSize);
-  Ipp8u ctr[aes_.blk_size];
-  memcpy(ctr, aes_.counter, aes_.counter_len); 
-  // allocate memory for ciph 
-  Ipp8u ciph[len]; 
-  
-  ippsAESEncryptCTR(plain, ciph, len, ctx, ctr, aes_.counter_bit);
+  int ctxSize;               // AES context size
+  ippsAESGetSize(&ctxSize);  // evaluating AES context size
+  // allocate memory for AES context
+  IppsAESSpec *ctx = (IppsAESSpec *)(new Ipp8u[ctxSize]);
+  ippsAESInit(_aes.key, _aes.key_len, ctx, ctxSize);
+  Ipp8u ctr[_aes.blk_size];
+  memcpy(ctr, _aes.counter, _aes.counter_len);
+  // allocate memory for ciph
+  Ipp8u ciph[len];
+
+  ippsAESEncryptCTR(plain, ciph, len, ctx, ctr, _aes.counter_bit);
   memcpy(plain, ciph, len);
 
   return (char *)plain;
 }
 
-char* LocalEngine::decrypt(const char *value, size_t len)
-{
+char *LocalEngine::decrypt(const char *value, size_t len) {
   Ipp8u *ciph = (Ipp8u *)malloc(sizeof(Ipp8u) * len);
   memset(ciph, 0, len);
   memcpy(ciph, value, len);
 
-  int ctxSize; // AES context size 
-  ippsAESGetSize(&ctxSize); // evaluating AES context size
-  // allocate memory for AES context 
-  IppsAESSpec* ctx = (IppsAESSpec*)( new Ipp8u [ctxSize] );
-  ippsAESInit(aes_.key, aes_.key_len, ctx, ctxSize);
-  Ipp8u ctr[aes_.blk_size];
-  memcpy(ctr, aes_.counter, aes_.counter_len); 
+  int ctxSize;               // AES context size
+  ippsAESGetSize(&ctxSize);  // evaluating AES context size
+  // allocate memory for AES context
+  IppsAESSpec *ctx = (IppsAESSpec *)(new Ipp8u[ctxSize]);
+  ippsAESInit(_aes.key, _aes.key_len, ctx, ctxSize);
+  Ipp8u ctr[_aes.blk_size];
+  memcpy(ctr, _aes.counter, _aes.counter_len);
 
-  Ipp8u deciph[len]; 
-  ippsAESDecryptCTR(ciph, deciph, len, ctx, ctr, aes_.counter_bit);
+  Ipp8u deciph[len];
+  ippsAESDecryptCTR(ciph, deciph, len, ctx, ctr, _aes.counter_bit);
   memcpy(ciph, deciph, len);
   return (char *)ciph;
 }
@@ -172,13 +166,12 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
 
-  if (use_aes)
-  {
+  if (use_aes) {
     char *value_str = encrypt(value.data(), value.length());
-    return pool_[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
+    return _pool[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
   }
 
-  return pool_[index]->Write(Slice(key), hash, Slice(value));
+  return _pool[index]->Write(Slice(key), hash, Slice(value));
 }
 
 /**
@@ -194,10 +187,15 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
     LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
   }
 #endif
-  value.resize(kValueLength);
   uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  return pool_[index]->Read(Slice(key), hash, value);
+  return _pool[index]->Read(Slice(key), hash, value);
+}
+
+bool LocalEngine::deleteK(const std::string &key) {
+  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
+  int index = Shard(hash);
+  return _pool[index]->Delete(Slice(key), hash);
 }
 
 }  // namespace kv

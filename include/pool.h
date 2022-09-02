@@ -7,11 +7,11 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
-#include "cache.h"
+#include "buffer_pool.h"
 #include "config.h"
 #include "hash_table.h"
+#include "page_manager.h"
 #include "rdma_client.h"
-#include "rdma_manager.h"
 #include "util/nocopy.h"
 #include "util/rwlock.h"
 #include "util/slice.h"
@@ -20,48 +20,48 @@ namespace kv {
 
 class Pool NOCOPYABLE {
  public:
-  /**
-   * @brief Construct a new Pool object
-   *
-   * @param cache_size cache data size
-   */
-  Pool(size_t cache_size, uint8_t shard, RDMAClient *client);
+  Pool(uint8_t shard, RDMAClient *client);
   ~Pool();
 
   void Init();
 
   bool Read(const Slice &key, uint32_t hash, std::string &val);
   bool Write(const Slice &key, uint32_t hash, const Slice &val);
+  bool Delete(const Slice &key, uint32_t hash);
 
  private:
-  void writeNew(const Slice &key, const Slice &val);
+  void writeNew(const Slice &key, uint32_t hash, const Slice &val);
 
-  int writeToRemote(CacheEntry *entry, RDMAManager::Batch *batch);
+  void unmountPage(uint8_t slab_class);
 
-  int readFromRemote(CacheEntry *entry, Addr addr, RDMAManager::Batch *batch);
+  PageEntry *mountNewPage(uint8_t slab_class);
 
-  CacheEntry *replacement(Addr addr);
+  PageEntry *replacement(Addr addr, uint8_t slab_class);
 
-  int allocNewBlock();
+  void modifyLength(KeySlot *slot, const Slice &val);
 
-  CacheEntry *write_line_ = nullptr;
-  uint32_t cache_kv_off_ = 0;
+  int writeToRemote(PageEntry *entry, RDMAManager::Batch *batch);
 
-  std::vector<KeyBlock *> keys_;
-  HashTable *hash_index_ = nullptr;
+  int readFromRemote(PageEntry *entry, Addr addr, RDMAManager::Batch *batch);
 
-  std::unordered_map<BlockId, MemoryAccess> global_addr_table_;
-  MemoryAccess cur_block_;
-  BlockId cur_block_id_ = 0;
-  uint32_t cur_kv_off_ = 0;
+  KeySlot _slots[kKeyNum / kPoolShardingNum];
+  int _free_slot_head = -1;  // TODO: lock-free linked list
 
-  Cache *cache_ = nullptr;
+  HashTable *_hash_index = nullptr;
 
-  RDMAClient *client_ = nullptr;
+  PageEntry *_allocing_pages[kSlabSizeMax + 1];
 
-  uint8_t shard_;
-  char padding[38 + 64];
-  SpinLatch latch_;
+  MemoryAccess _rdma_access;
+
+  BufferPool *_buffer_pool = nullptr;
+
+  PageManager *_page_manager = nullptr;
+
+  RDMAClient *_client = nullptr;
+
+  uint8_t _shard;
+  char padding[38 + 64];  // TODO: reset padding
+  SpinLatch _latch;
 };
 
 class RemotePool NOCOPYABLE {
@@ -91,7 +91,7 @@ class RemotePool NOCOPYABLE {
     friend class RemotePool;
     const char *Data() const { return data_; }
     bool Init(ibv_pd *pd) {
-      mr_ = ibv_reg_mr(pd, data_, kValueBlockSize, RDMA_MR_FLAG);
+      mr_ = ibv_reg_mr(pd, data_, kPoolSize / kPoolShardingNum, RDMA_MR_FLAG);
       if (mr_ == nullptr) {
         LOG_ERROR("Register memory failed.");
         return false;
@@ -102,7 +102,7 @@ class RemotePool NOCOPYABLE {
     uint32_t Lkey() const { return mr_->lkey; }
 
    private:
-    char data_[kValueBlockSize];
+    char data_[kPoolSize / kPoolShardingNum];
     ibv_mr *mr_ = nullptr;
   };
   std::vector<ValueBlock *> blocks_;

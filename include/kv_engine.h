@@ -6,19 +6,17 @@
 #include <atomic>
 #include <cstdint>
 #include "config.h"
+#include "ippcp.h"
 #include "msg.h"
 #include "pool.h"
 #include "rdma_client.h"
 #include "rdma_manager.h"
 #include "rdma_server.h"
-#include "ippcp.h"
 
 namespace kv {
 
 /* Encryption algorithm competitor can choose. */
-enum aes_algorithm {
-  CTR=0, CBC, CBC_CS1, CBC_CS2, CBC_CS3, CFB, OFB
-};
+enum aes_algorithm { CTR = 0, CBC, CBC_CS1, CBC_CS2, CBC_CS3, CFB, OFB };
 
 /* Algorithm relate message. */
 typedef struct crypto_message_t {
@@ -32,7 +30,6 @@ typedef struct crypto_message_t {
   Ipp32u blk_size;
   Ipp32u counter_bit;
 } crypto_message_t;
-
 
 /* Abstract base engine */
 class Engine {
@@ -54,25 +51,25 @@ class LocalEngine : public Engine {
   void stop() override;
   bool alive() override;
 
-/* Init aes context message. */
+  /* Init aes context message. */
   bool set_aes();
   /* Evaluation problem will call this function. */
-  crypto_message_t* get_aes();
+  crypto_message_t *get_aes();
 
-  char* encrypt(const char *value, size_t len);
-  char* decrypt(const char *value, size_t len);
-  
+  char *encrypt(const char *value, size_t len);  // for debug
+  char *decrypt(const char *value, size_t len);  // for debug
+
   bool write(const std::string &key, const std::string &value, bool use_aes = false);
   bool read(const std::string &key, std::string &value);
   /** The delete interface */
   bool deleteK(const std::string &key);
 
  private:
-  static uint32_t Shard(uint32_t hash) { return hash % (1 << kPoolShardBits); }
+  static uint32_t Shard(uint32_t hash) { return hash % (1 << kPoolShardingBits); }
 
-  crypto_message_t aes_;
-  Pool *pool_[kPoolShardNum];
-  RDMAClient *client_;
+  crypto_message_t _aes;
+  Pool *_pool[kPoolShardingNum];
+  RDMAClient *_client;
 };
 
 /* Remote-side engine */
@@ -85,12 +82,12 @@ class RemoteEngine : public Engine {
   bool alive() override;
 
  private:
-  static uint32_t Shard(uint32_t hash) { return hash % (1 << kPoolShardBits); }
+  static uint32_t Shard(uint32_t hash) { return hash % (1 << kPoolShardingBits); }
   void handler(RPCTask *task);
 
-  kv::RDMAServer *server_;
-  volatile bool stop_;
-  RemotePool *pool_[kPoolShardNum];
+  kv::RDMAServer *_server;
+  volatile bool _stop;
+  RemotePool *_pool[kPoolShardingNum];
 };
 
 }  // namespace kv

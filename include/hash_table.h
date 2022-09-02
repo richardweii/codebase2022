@@ -19,7 +19,7 @@ constexpr static const unsigned long PrimeList[] = {
     393241ul,    786433ul,    1572869ul,   3145739ul,    6291469ul,    12582917ul,  25165843ul, 50331653ul, 100663319ul,
     201326611ul, 402653189ul, 805306457ul, 1610612741ul, 3221225473ul, 4294967291ul};
 
-class Slot {
+class KeySlot {
  public:
   constexpr static int INVALID_SLOT_ID = -1;
   void SetKey(const Slice &s) { memcpy(_key, s.data(), kKeyLength); }
@@ -38,7 +38,7 @@ class Slot {
 
 class HashTable {
  public:
-  HashTable(size_t size, Slot *slots) : _slots(slots) {
+  HashTable(size_t size, KeySlot *slots) : _slots(slots) {
     int logn = 0;
     while (size >= 2) {
       size /= 2;
@@ -48,7 +48,7 @@ class HashTable {
     _bucket = new std::atomic_int[_size];
 
     // init bucket
-    for (auto i = _size - 1; i >= 0; i--) {
+    for (size_t i = 0; i < _size; i++) {
       _bucket[i].store(-1, std::memory_order_relaxed);
     }
     counter_ = new uint8_t[_size]{0};
@@ -59,39 +59,39 @@ class HashTable {
     delete[] _bucket;
   }
 
-  Addr Find(const Slice &key, uint32_t hash) {
-    hash >>= kPoolShardBits;
+  KeySlot* Find(const Slice &key, uint32_t hash) {
+    hash >>= kPoolShardingBits;
     uint32_t index = hash % _size;
     int slot_id = _bucket[index];
 
-    Slot *slot = nullptr;
-    while (slot_id != Slot::INVALID_SLOT_ID) {
+    KeySlot *slot = nullptr;
+    while (slot_id != KeySlot::INVALID_SLOT_ID) {
       slot = &_slots[slot_id];
       if ((memcmp(key.data(), slot->Key(), kKeyLength) == 0)) {
-        return slot->Addr();
+        return slot;
       }
       slot_id = slot->Next();
     }
-    return INVALID_ADDR;
+    return nullptr;
   }
 
   // DO NOT check duplicate
   bool Insert(const Slice &key, uint32_t hash, int new_slot_id) {
-    hash >>= kPoolShardBits;
+    hash >>= kPoolShardingBits;
     uint32_t index = hash % _size;
 
     int slot_id = _bucket[index];
-    if (slot_id == Slot::INVALID_SLOT_ID) {
+    if (slot_id == KeySlot::INVALID_SLOT_ID) {
       _bucket[index].store(new_slot_id, std::memory_order_relaxed);
       _count++;
       counter_[index]++;
       return true;
     }
 
-    Slot *slot = nullptr;
+    KeySlot *slot = nullptr;
 #ifdef TEST_CONFIG
     // find
-    while (slot_id != Slot::INVALID_SLOT_ID) {
+    while (slot_id != KeySlot::INVALID_SLOT_ID) {
       slot = &_slots[slot_id];
       if ((memcmp(key.data(), slot->Key(), kKeyLength) == 0)) {
         LOG_DEBUG("duplicate of slot %d", new_slot_id);
@@ -111,16 +111,16 @@ class HashTable {
   }
 
   int Remove(const Slice &key, uint32_t hash) {
-    hash >>= kPoolShardBits;
+    hash >>= kPoolShardingBits;
     uint32_t index = hash % _size;
 
     int slot_id = _bucket[index];
-    if (slot_id == Slot::INVALID_SLOT_ID) {
-      return Slot::INVALID_SLOT_ID;
+    if (slot_id == KeySlot::INVALID_SLOT_ID) {
+      return KeySlot::INVALID_SLOT_ID;
     }
 
     // head
-    Slot *slot = &_slots[slot_id];
+    KeySlot *slot = &_slots[slot_id];
     if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
       _bucket[index].store(slot->Next(), std::memory_order_relaxed);
       counter_[index]--;
@@ -130,7 +130,7 @@ class HashTable {
     // find
     int front_slot_id = slot_id;
     int cur_slot_id = slot->Next();
-    while (cur_slot_id != Slot::INVALID_SLOT_ID) {
+    while (cur_slot_id != KeySlot::INVALID_SLOT_ID) {
       slot = &_slots[cur_slot_id];
       if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
         _slots[front_slot_id].SetNext(slot->Next());
@@ -139,7 +139,7 @@ class HashTable {
       }
     }
     // cannot find
-    return Slot::INVALID_SLOT_ID;
+    return KeySlot::INVALID_SLOT_ID;
   }
 
   void PrintCounter() {
@@ -154,7 +154,7 @@ class HashTable {
   }
 
  private:
-  Slot *_slots = nullptr;
+  KeySlot *_slots = nullptr;
   std::atomic_int *_bucket = nullptr;
   size_t _count = 0;
   size_t _size = 0;

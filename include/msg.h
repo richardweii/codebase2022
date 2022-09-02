@@ -69,7 +69,6 @@ CHECK_RDMA_MSG_SIZE(StopResponse);
 
 struct AllocRequest : public RequestsMsg {
   uint64_t size;
-  BlockId bid;
   uint8_t shard;
 };
 CHECK_RDMA_MSG_SIZE(AllocRequest);
@@ -80,34 +79,6 @@ struct AllocResponse : public ResponseMsg {
 };
 CHECK_RDMA_MSG_SIZE(AllocResponse);
 
-struct CreateIndexRequest : public RequestsMsg {
-  uint8_t shard;
-  BlockId id;
-};
-CHECK_RDMA_MSG_SIZE(CreateIndexRequest);
-
-struct LookupRequest : public RequestsMsg {
-  char key[kKeyLength];
-};
-CHECK_RDMA_MSG_SIZE(LookupRequest);
-
-struct LookupResponse : public ResponseMsg {
-  uint64_t addr;
-  uint32_t rkey;
-};
-CHECK_RDMA_MSG_SIZE(LookupResponse);
-
-struct FetchRequest : public RequestsMsg {
-  uint8_t shard;
-  BlockId id;
-};
-CHECK_RDMA_MSG_SIZE(FetchRequest);
-
-struct FetchResponse : public ResponseMsg {
-  uint64_t addr;
-  uint32_t rkey;
-};
-CHECK_RDMA_MSG_SIZE(FetchResponse);
 
 // for test
 struct DummyRequest : public RequestsMsg {

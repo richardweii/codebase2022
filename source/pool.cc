@@ -1,157 +1,263 @@
 #include "pool.h"
-#include <atomic>
-#include <cassert>
-#include <chrono>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <mutex>
-#include <thread>
-#include "cache.h"
-#include "config.h"
-#include "hash_table.h"
-#include "msg.h"
-#include "rdma_manager.h"
-#include "stat.h"
-#include "util/defer.h"
-#include "util/logging.h"
 
 namespace kv {
 
-Pool::Pool(size_t cache_size, uint8_t shard, RDMAClient *client) : client_(client), shard_(shard) {
-  cache_ = new Cache(cache_size);
-  hash_index_ = new HashTable(kKeyNum / kPoolShardNum, &keys_);
+Pool::Pool(uint8_t shard, RDMAClient *client) : _client(client), _shard(shard) {
+  _buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum);
+  _hash_index = new HashTable(kKeyNum / kPoolShardingNum, _slots);
+  _page_manager = new PageManager(kPoolShardingSize / kPageSize);
 }
 
 Pool::~Pool() {
-  // hash_index_->PrintCounter();
-  delete cache_;
-  delete hash_index_;
-  for (size_t i = 0; i < keys_.size(); i++) {
-    delete keys_[i];
-  }
+  // _hash_index->PrintCounter();
+  delete _buffer_pool;
+  delete _hash_index;
+  delete _page_manager;
 }
 
 void Pool::Init() {
-  auto succ = cache_->Init(client_->Pd());
-  LOG_ASSERT(succ, "Init cache failed.");
-  auto ret = allocNewBlock();
-  LOG_ASSERT(ret == 0, "Alloc first block failed.");
-  Addr addr(cur_block_id_, cur_kv_off_);
-  write_line_ = cache_->Insert(addr);
-  cache_->Pin(write_line_);
-  write_line_->Addr = addr.RawAddr();
-  write_line_->Dirty = true;
-  cache_->Release(write_line_);
+  auto succ = _buffer_pool->Init(_client->Pd());
+  LOG_ASSERT(succ, "Init buffer pool failed.");
+  AllocRequest req;
+  req.shard = _shard;
+  req.size = kPoolShardingSize;
+  req.type = MSG_ALLOC;
+
+  AllocResponse resp;
+  _client->RPC(req, resp);
+  if (resp.status != RES_OK) {
+    LOG_FATAL("Failed to alloc new block.");
+    return;
+  }
+
+  _rdma_access.addr = resp.addr;
+  _rdma_access.rkey = resp.rkey;
+
+  for (int i = kSlabSizeMin; i <= kSlabSizeMax; i++) {
+    PageMeta *page = _page_manager->AllocNewPage(i);
+    _allocing_pages[i] = _buffer_pool->FetchNew(page->PageId());
+    _allocing_pages[i]->SlabClass = i;
+    _buffer_pool->PinPage(_allocing_pages[i]);
+  }
+
+  _free_slot_head = 0;
+  for (size_t i = 0; i < (kKeyNum / kPoolShardingNum) - 1; i++) {
+    _slots[i].SetNext(i + 1);
+  }
 }
 
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
-  Addr addr;
-  {  // lockfree phase
-    // existence
-    addr = hash_index_->Find(key, hash);
-    if (addr == Addr::INVALID_ADDR) {
+  // existence
+  KeySlot *slot = _hash_index->Find(key, hash);
+  if (slot == nullptr) {
 #ifdef STAT
-      stat::read_miss.fetch_add(1);
+    stat::read_miss.fetch_add(1);
 #endif
-      return false;
-    }
-
+    return false;
+  }
+  Addr addr = slot->Addr();
+  PageMeta *meta = _page_manager->Page(AddrParser::PageId(addr));
+  {  // lock-free phase
+    _latch.RLock();
+    defer { _latch.RUnlock(); };
     // cache
-    // latch_.RLock();
-    CacheEntry *entry = cache_->Lookup(addr);
-    // latch_.RUnlock();
+    PageEntry *entry = _buffer_pool->Lookup(AddrParser::PageId(addr));
 
     if (entry != nullptr) {
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
-      cache_->Release(entry);
+      uint32_t val_len = entry->SlabClass * kSlabSize;
+      val.resize(val_len);
+      memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
+      _buffer_pool->Release(entry);
       return true;
     }
   }
   {
-    latch_.WLock();
-    CacheEntry *entry = cache_->Lookup(addr);
-    if (entry != nullptr) {
-      latch_.WUnlock();
+    _latch.WLock();
+    defer { _latch.WUnlock(); };
 
+    // recheck
+    PageEntry *entry = _buffer_pool->Lookup(AddrParser::PageId(addr));
+    if (entry != nullptr) {
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      memcpy((char *)val.data(), entry->Data()->at(addr.CacheOff()), kValueLength);
-      cache_->Release(entry);
+      uint32_t val_len = entry->SlabClass * kSlabSize;
+      val.resize(val_len);
+      memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
+      _buffer_pool->Release(entry);
       return true;
     }
 
     // cache miss
-    CacheEntry *victim = replacement(addr);
-    latch_.WUnlock();
-    memcpy((char *)val.data(), victim->Data()->at(addr.CacheOff()), kValueLength);
-    cache_->Release(victim);
+    PageEntry *victim = replacement(addr, meta->SlabClass());
+
+    uint32_t val_len = victim->SlabClass * kSlabSize;
+    val.resize(val_len);
+    memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
+
+    _buffer_pool->Release(victim);
     return true;
   }
 }
 
 bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
-  {  // lockfree phase
-    Addr addr = hash_index_->Find(key, hash);
-    if (addr != Addr::INVALID_ADDR) {
-      CacheEntry *entry = cache_->Lookup(addr, true);
-      if (entry != nullptr) {
+  KeySlot *slot = _hash_index->Find(key, hash);
+  Addr addr = INVALID_ADDR;
+  PageMeta *meta = nullptr;
+  {
+    _latch.RLock();
+    defer { _latch.RUnlock(); };
+    // lock-free phase
+    if (slot != nullptr) {
+      addr = slot->Addr();
+      meta = _page_manager->Page(AddrParser::PageId(addr));
+      // modify in place
+      if (meta->SlabClass() == val.size() / kSlabSize) {
+        PageEntry *entry = _buffer_pool->Lookup(AddrParser::PageId(addr));
+        if (entry != nullptr) {
 #ifdef STAT
-        stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
+          stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-        if (!entry->Dirty) {
-          entry->Dirty = true;
+          if (!entry->Dirty) entry->Dirty = true;
+
+          memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
+          _buffer_pool->Release(entry);
+          return true;
         }
-        memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
-        cache_->Release(entry);
-        return true;
       }
     }
   }
   {
-    latch_.WLock();
-    Addr addr = hash_index_->Find(key, hash);
-    if (addr == Addr::INVALID_ADDR) {
-      Addr addr(cur_block_id_, cur_kv_off_);
-      hash_index_->Insert(key, hash, addr);
-      writeNew(key, val);
+    _latch.WLock();
+    defer { _latch.WUnlock(); };
+    if (slot == nullptr) {
+      // insert new KV
+      writeNew(key, hash, val);
 #ifdef STAT
       if (stat::insert_num == 160000001) {
         LOG_INFO("Finish insert.");
       }
 #endif
-      latch_.WUnlock();
-      return true;
-    }
-    // cache
-    CacheEntry *entry = cache_->Lookup(addr);
-    if (entry != nullptr) {
-      latch_.WUnlock();
+    } else {
+      if (meta->SlabClass() == val.size() / kSlabSize) {
+        PageEntry *entry = _buffer_pool->Lookup(AddrParser::PageId(addr));
+        if (entry != nullptr) {
 #ifdef STAT
-      stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
+          stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      if (!entry->Dirty) {
-        entry->Dirty = true;
+          if (!entry->Dirty) entry->Dirty = true;
+
+          memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
+          _buffer_pool->Release(entry);
+          return true;
+        }
+
+        // cache miss
+        PageEntry *victim = replacement(addr, meta->SlabClass());
+
+        memcpy((char *)(victim->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
+        if (!victim->Dirty) victim->Dirty = true;
+
+        _buffer_pool->Release(victim);
+        return true;
       }
-      memcpy(entry->Data()->at(addr.CacheOff()), val.data(), val.size());
-      cache_->Release(entry);
-      return true;
+      modifyLength(slot, val);
     }
-    // cache miss
-    CacheEntry *victim = replacement(addr);
-    latch_.WUnlock();
-    memcpy(victim->Data()->at(addr.CacheOff()), val.data(), val.size());
-    victim->Dirty = true;
-    cache_->Release(victim);
-    return true;
   }
+  return true;
 }
 
-CacheEntry *Pool::replacement(Addr addr) {
+bool Pool::Delete(const Slice &key, uint32_t hash) {
+  _latch.WLock();
+  defer { _latch.WUnlock(); };
+  int slot_idx = _hash_index->Remove(key, hash);
+  if (slot_idx == KeySlot::INVALID_SLOT_ID) {
+    LOG_ERROR("delete invalid file %s", key.data());
+    return false;
+  }
+  KeySlot *slot = &_slots[slot_idx];
+  Addr addr = slot->Addr();
+  PageId page_id = AddrParser::PageId(addr);
+  PageMeta *meta = _page_manager->Page(page_id);
+  meta->ClearPos(AddrParser::Off(addr));
+  if (meta->Empty() && _allocing_pages[meta->SlabClass()]->PageId() != page_id) {
+    _page_manager->FreePage(page_id);
+  }
+
+  slot->SetAddr(INVALID_ADDR);
+  slot->SetNext(_free_slot_head);
+  _free_slot_head = slot_idx;
+  return true;
+}
+
+void Pool::modifyLength(KeySlot *slot, const Slice &val) {
+  // delete
+  Addr addr = slot->Addr();
+  PageId page_id = AddrParser::PageId(addr);
+  PageMeta *meta = _page_manager->Page(page_id);
+  assert(meta->SlabClass() != val.size() / kSlabSize);
+  meta->ClearPos(AddrParser::Off(addr));
+  if (meta->Empty() && _allocing_pages[meta->SlabClass()]->PageId() != page_id) {
+    _page_manager->FreePage(page_id);
+  }
+  // rewrite to meta
+  uint8_t slab_class = val.size() / kSlabSize;
+
+  PageEntry *page = _allocing_pages[slab_class];
+  meta = _page_manager->Page(page->PageId());
+  if (meta->Full()) {
+    unmountPage(slab_class);
+    page = mountNewPage(slab_class);
+    meta = _page_manager->Page(page->PageId());
+  }
+
+  // modify bitmap
+  int off = meta->SetFirstFreePos();
+  memcpy((char *)(page->Data() + val.size() * off), val.data(), val.size());
+  if (!page->Dirty) page->Dirty = true;
+
+  LOG_ASSERT(off != -1, "set bitmap failed.");
+  addr = AddrParser::GenAddrFrom(meta->PageId(), off);
+  slot->SetAddr(addr);
+}
+
+void Pool::unmountPage(uint8_t slab_class) {
+  PageEntry *entry = _allocing_pages[slab_class];
+  _buffer_pool->UnpinPage(entry);
+  _buffer_pool->Release(entry);
+  _allocing_pages[slab_class] = nullptr;
+}
+
+PageEntry *Pool::mountNewPage(uint8_t slab_class) {
+  PageMeta *meta = _page_manager->AllocNewPage(slab_class);
+  LOG_ASSERT(meta != nullptr, "no more page.");
+
+  PageEntry *entry = _buffer_pool->FetchNew(meta->PageId());
+  if (entry == nullptr) {
+    entry = _buffer_pool->Evict();
+    LOG_ASSERT(entry != nullptr, "evicting failed.");
+    // write dirty page back
+    auto batch = _client->BeginBatch();
+    if (entry->Dirty) {
+      auto ret = writeToRemote(entry, &batch);
+      LOG_ASSERT(ret == 0, "rdma write failed.");
+      entry->Dirty = false;
+    }
+    auto ret = batch.FinishBatch();
+    LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
+    _buffer_pool->InsertPage(entry, meta->PageId());
+  }
+
+  entry->SlabClass = slab_class;
+  _buffer_pool->PinPage(entry);
+  _allocing_pages[slab_class] = entry;
+  return entry;
+}
+
+PageEntry *Pool::replacement(Addr addr, uint8_t slab_class) {
   // miss
 #ifdef STAT
   stat::replacement.fetch_add(1);
@@ -159,98 +265,67 @@ CacheEntry *Pool::replacement(Addr addr) {
     LOG_INFO("Replacement %ld", stat::replacement.load(std::memory_order_relaxed));
   }
 #endif
-  CacheEntry *victim = cache_->Insert(addr);
-  auto batch = client_->BeginBatch();
+  PageEntry *victim = _buffer_pool->Evict();
+  auto batch = _client->BeginBatch();
   if (victim->Dirty) {
 #ifdef STAT
     stat::dirty_write.fetch_add(1);
 #endif
     auto ret = writeToRemote(victim, &batch);
-    LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", Addr(victim->Addr).BlockId(),
-               Addr(victim->Addr).CacheLine());
+    LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
+    victim->Dirty = false;
   }
   auto ret = readFromRemote(victim, addr, &batch);
   ret = batch.FinishBatch();
-  LOG_ASSERT(ret == 0, "read cache block %d, line %d from remote failed.", addr.BlockId(), addr.CacheLine());
-  victim->Addr = addr.RoundUp().RawAddr();
-  victim->Dirty = false;
+  LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
+
+  _buffer_pool->InsertPage(victim, AddrParser::PageId(addr));
+
+  victim->SlabClass = slab_class;
   return victim;
 }
 
-void Pool::writeNew(const Slice &key, const Slice &val) {
+void Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
 #ifdef STAT
   stat::insert_num.fetch_add(1);
 #endif
-  keys_[cur_block_id_]->SetKey(cur_kv_off_, key);
-  memcpy(write_line_->Data()->at(cache_kv_off_), val.data(), val.size());
-  cache_kv_off_++;
-  cur_kv_off_++;
+  // write key
+  KeySlot *slot = &_slots[_free_slot_head];
+  _hash_index->Insert(key, hash, _free_slot_head);
+  _free_slot_head = slot->Next();
+  slot->SetKey(key);
+  slot->SetNext(-1);
 
-  if (cur_kv_off_ == kBlockValueNum) {
-    LOG_DEBUG("Need alloc new block.");
-    cur_block_id_++;
-    cur_kv_off_ = 0;
-    auto ret = allocNewBlock();
-    assert(ret == 0);
+  // write value
+  uint8_t slab_class = val.size() / kSlabSize;
+
+  PageEntry *page = _allocing_pages[slab_class];
+  PageMeta *meta = _page_manager->Page(page->PageId());
+  if (meta->Full()) {
+    unmountPage(slab_class);
+    page = mountNewPage(slab_class);
+    meta = _page_manager->Page(page->PageId());
   }
 
-  if (cache_kv_off_ == kCacheValueNum) {
-    Addr new_cache_line(cur_block_id_, cur_kv_off_);
-    cache_->UnPin(write_line_);
-    write_line_ = cache_->Insert(new_cache_line);
-    cache_->Pin(write_line_);
-    if (write_line_->Dirty) {
-      auto batch = client_->BeginBatch();
-      auto ret = writeToRemote(write_line_, &batch);
-      ret = batch.FinishBatch();
-      LOG_ASSERT(ret == 0, "Write cache block %d, line %d to remote failed.", Addr(write_line_->Addr).BlockId(),
-                 Addr(write_line_->Addr).CacheLine());
-    }
-    write_line_->Addr = new_cache_line.RawAddr();
-    write_line_->Dirty = true;
-    cache_kv_off_ = 0;
-    cache_->Release(write_line_);
-  }
+  // modify bitmap
+  int off = meta->SetFirstFreePos();
+  // LOG_ASSERT(off != -1, "set bitmap failed.");
+  Addr addr = AddrParser::GenAddrFrom(meta->PageId(), off);
+  slot->SetAddr(addr);
+
+  // copy data
+  memcpy((void *)(page->Data() + off * val.size()), val.data(), val.size());
+  if (!page->Dirty) page->Dirty = true;
 }
 
-int Pool::allocNewBlock() {
-#ifdef STAT
-  stat::block_num.fetch_add(1);
-#endif
-  keys_.emplace_back(new KeyBlock());
-  AllocRequest req;
-  req.shard = shard_;
-  req.size = kValueBlockSize;
-  req.type = MSG_ALLOC;
-
-  AllocResponse resp;
-  client_->RPC(req, resp);
-  if (resp.status != RES_OK) {
-    LOG_ERROR("Failed to alloc new block.");
-    return -1;
-  }
-  global_addr_table_[cur_block_id_].addr = resp.addr;
-  global_addr_table_[cur_block_id_].rkey = resp.rkey;
-  cur_block_.addr = resp.addr;
-  cur_block_.rkey = resp.rkey;
-  return 0;
+int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {
+  return batch->RemoteWrite(entry->Data(), _buffer_pool->MR()->lkey, kPageSize,
+                            _rdma_access.addr + kPageSize * entry->PageId(), _rdma_access.rkey);
 }
 
-int Pool::writeToRemote(CacheEntry *entry, RDMAManager::Batch *batch) {
-  Addr ad = entry->Addr;
-  BlockId bid = ad.BlockId();
-  uint32_t cache_line_off = ad.CacheLine();
-  MemoryAccess &access = global_addr_table_.at(bid);
-  return batch->RemoteWrite(entry->Data(), cache_->MR()->lkey, sizeof(CacheLine),
-                            access.addr + sizeof(CacheLine) * cache_line_off, access.rkey);
-}
-
-int Pool::readFromRemote(CacheEntry *entry, Addr addr, RDMAManager::Batch *batch) {
-  BlockId bid = addr.BlockId();
-  uint32_t cache_line_off = addr.CacheLine();
-  MemoryAccess &access = global_addr_table_.at(bid);
-  return batch->RemoteRead(entry->Data(), cache_->MR()->lkey, sizeof(CacheLine),
-                           access.addr + sizeof(CacheLine) * cache_line_off, access.rkey);
+int Pool::readFromRemote(PageEntry *entry, Addr addr, RDMAManager::Batch *batch) {
+  return batch->RemoteRead(entry->Data(), _buffer_pool->MR()->lkey, kPageSize,
+                           _rdma_access.addr + kPageSize * AddrParser::PageId(addr), _rdma_access.rkey);
 }
 
 }  // namespace kv

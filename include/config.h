@@ -30,36 +30,39 @@ constexpr int kOneSideWorkerNum = 16;
 constexpr int kPoolHashSeed = 0x89ea7d2f;
 
 #ifdef TEST_CONFIG
-constexpr int kPoolShardBits = 1;  // for test
+constexpr int kPoolShardingBits = 1;  // for test
 
 #else
-constexpr int kPoolShardBits = 7;
-// constexpr int kCacheShardBits = 4;
+constexpr int kPoolShardingBits = 7;
 #endif
-constexpr int kPoolShardNum = 1 << kPoolShardBits;
+constexpr int kPoolShardingNum = 1 << kPoolShardingBits;  // sharding num
 
 constexpr int kKeyLength = 16;
-constexpr int kValueAlign = 16;
-constexpr int kValueBit = 7;
+constexpr int kSlabSize = 16;
 
 #ifdef TEST_CONFIG
-constexpr int kPageSizeBit = 10;
-constexpr int kPageSize = 1 << kPageSizeBit;  // 1KB
+constexpr int kPageSizeBit = 10;  // 1KB
 #else
-constexpr int kPageSizeBit = 16;
-constexpr int kPageSize = 1 << kPageSizeBit;  // 64KB
+constexpr int kPageSizeBit = 14;  // 16KB
 #endif
 
+constexpr int kPageSize = 1 << kPageSizeBit;
+
+constexpr int kSlabSizeMin = 5;   // 5 * 16 = 80 Bytes
+constexpr int kSlabSizeMax = 64;  // 64 * 16 = 1024 Bytes
+
 #ifdef TEST_CONFIG
-constexpr size_t kKeyNum = 12 * 16 * 16;              // 16 * 12 * 32K key
-constexpr size_t kPoolSize = (size_t)32 * 16 * 1024;  // 512KB remote pool
-constexpr size_t kBufferPoolSize = 2 * 16 * 1024;     // 32KB cache
+constexpr size_t kKeyNum = 12 * 16 * 1024;              // 16 * 12K key
+constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024;  // 32MB remote pool
+constexpr size_t kBufferPoolSize = 2 * 1024 * 1024;     // 2MB cache
 #else
 
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                   // 16 * 12M key
 constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remote pool
 constexpr size_t kBufferPoolSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB cache
 #endif
+
+constexpr size_t kPoolShardingSize = kPoolSize / kPoolShardingNum;
 
 using Addr = int32_t;
 
@@ -73,8 +76,8 @@ class AddrParser {
  public:
   static kv::PageId PageId(Addr addr) { return (addr >> OFF_BIT) & PAGE_MASK; }
   static uint32_t Off(Addr addr) { return addr & OFF_MASK; }
-  static Addr GenAddrFrom(kv::PageId id, uint32_t off ) {
-    assert(id < PAGE_MASK);
+  static Addr GenAddrFrom(kv::PageId id, uint32_t off) {
+    assert((uint32_t)id < PAGE_MASK);
     assert(off < OFF_MASK);
     return (id << OFF_BIT) | off;
   }
