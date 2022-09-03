@@ -26,9 +26,12 @@ class PageMeta {
 
   bool Empty() const { return _used == 0; }
 
-  uint32_t PageId() const { return _page_id; }
+  kv::PageId PageId() const { return _page_id; }
 
   uint8_t SlabClass() const { return _slab_class; }
+
+  PageMeta *Next() const { return _next; }
+  PageMeta *Prev() const { return _prev; }
 
  private:
   void reset(Bitmap *bitmap) {
@@ -36,9 +39,12 @@ class PageMeta {
     _bitmap = bitmap;
     _used = 0;
     _cap = bitmap->Cap();
+    _next = nullptr;
+    _prev = nullptr;
   }
   Bitmap *_bitmap = nullptr;
-  // PageMeta *_next = nullptr;  // TODO: lock-free linked list
+  PageMeta *_next = nullptr;
+  PageMeta *_prev = nullptr;
   uint32_t _page_id;
   uint16_t _cap = 0;
   uint16_t _used = 0;
@@ -51,7 +57,7 @@ class PageMeta {
  */
 class PageManager {
  public:
-  PageManager(size_t page_num);
+  PageManager(size_t page_num, uint8_t shard);
 
   ~PageManager();
 
@@ -66,11 +72,18 @@ class PageManager {
   // mutex
   void FreePage(uint32_t page_id);
 
+  // unmount a page from allocing list
+  void Unmount(PageMeta *meta);
+
+  // mount a page to allocing list
+  void Mount(PageMeta **list_tail, PageMeta *meta);
+
  private:
   PageMeta *_pages = nullptr;
-  std::list<PageMeta *> _free_list;
+  PageMeta *_free_list;
   int _free_page_num = 0;
   size_t _page_num = 0;
-  SpinLock _lock;
+  // SpinLock _lock;
+  uint8_t _shard;
 };
 }  // namespace kv

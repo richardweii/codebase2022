@@ -36,7 +36,7 @@ enum LOG_LEVEL {
   LOG_LEVEL_DEBUG,
 };
 
-#define level LOG_LEVEL_DEBUG
+#define level LOG_LEVEL_INFO
 
 #define LOG_FATAL(format, ...)                                                                          \
   do {                                                                                                  \

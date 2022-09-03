@@ -197,7 +197,7 @@ class FrameHashTable {
   size_t _size;
 };
 
-BufferPool::BufferPool(size_t buffer_pool_size) : _buffer_pool_size(buffer_pool_size) {
+BufferPool::BufferPool(size_t buffer_pool_size, uint8_t shard) : _buffer_pool_size(buffer_pool_size), _shard(shard) {
   size_t page_num = buffer_pool_size / kPageSize;
   _pages = new PageData[page_num];
   _hash_table = new FrameHashTable(page_num);
@@ -238,6 +238,7 @@ PageEntry *BufferPool::FetchNew(PageId page_id) {
     PageEntry *new_entry = &_entries[fid];
     new_entry->_page_id = page_id;
     _hash_table->Insert(page_id, fid);
+    LOG_DEBUG("[shard %d] fetch new page %d", _shard, page_id);
     return new_entry;
   }
   return nullptr;
@@ -254,6 +255,7 @@ PageEntry *BufferPool::Lookup(PageId page_id) {
 
   LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
   _replacer->Ref(fid);
+  LOG_DEBUG("[shard %d] lookup page %d", _shard, page_id);
   return &_entries[fid];
 }
 

@@ -19,7 +19,7 @@ constexpr int thread_num = 4;
 constexpr int write_op_num = key_num / thread_num;
 constexpr int delete_op_num = write_op_num * 0.8;
 constexpr int rewrite_op_num = delete_op_num;
-constexpr int modify_length_op_num = rewrite_op_num / 10;
+constexpr int modify_length_op_num = rewrite_op_num / 4;
 
 int main() {
   LocalEngine *local_engine = new LocalEngine();

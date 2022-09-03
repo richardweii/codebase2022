@@ -35,7 +35,7 @@ class PageEntry {
 
 class BufferPool {
  public:
-  BufferPool(size_t buffer_pool_size);
+  BufferPool(size_t buffer_pool_size, uint8_t shard);
   ~BufferPool();
 
   bool Init(ibv_pd *pd);
@@ -43,7 +43,7 @@ class BufferPool {
   // return nullptr if no free page
   PageEntry *FetchNew(PageId page_id);
 
-  PageEntry *Lookup(PageId addr);
+  PageEntry *Lookup(PageId page_id);
 
   void Release(PageEntry *entry);
 
@@ -67,6 +67,7 @@ class BufferPool {
   ClockReplacer *_replacer;
   FrameHashTable *_hash_table;
   size_t _buffer_pool_size;
+  uint8_t _shard;
   SpinLatch _latch;
 };
 }  // namespace kv

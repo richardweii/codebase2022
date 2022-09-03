@@ -3,9 +3,9 @@
 namespace kv {
 
 Pool::Pool(uint8_t shard, RDMAClient *client) : _client(client), _shard(shard) {
-  _buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum);
+  _buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum, shard);
   _hash_index = new HashTable(kKeyNum / kPoolShardingNum, _slots);
-  _page_manager = new PageManager(kPoolShardingSize / kPageSize);
+  _page_manager = new PageManager(kPoolShardingSize / kPageSize, shard);
 }
 
 Pool::~Pool() {
@@ -35,6 +35,7 @@ void Pool::Init() {
 
   for (int i = kSlabSizeMin; i <= kSlabSizeMax; i++) {
     PageMeta *page = _page_manager->AllocNewPage(i);
+    _allocing_tail[i] = page;
     _allocing_pages[i] = _buffer_pool->FetchNew(page->PageId());
     _allocing_pages[i]->SlabClass = i;
     _buffer_pool->PinPage(_allocing_pages[i]);
@@ -56,12 +57,13 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     return false;
   }
   Addr addr = slot->Addr();
-  PageMeta *meta = _page_manager->Page(AddrParser::PageId(addr));
+  PageId page_id = AddrParser::PageId(addr);
+  PageMeta *meta = _page_manager->Page(page_id);
   {  // lock-free phase
     _latch.RLock();
     defer { _latch.RUnlock(); };
     // cache
-    PageEntry *entry = _buffer_pool->Lookup(AddrParser::PageId(addr));
+    PageEntry *entry = _buffer_pool->Lookup(page_id);
 
     if (entry != nullptr) {
 #ifdef STAT
@@ -79,7 +81,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     defer { _latch.WUnlock(); };
 
     // recheck
-    PageEntry *entry = _buffer_pool->Lookup(AddrParser::PageId(addr));
+    PageEntry *entry = _buffer_pool->Lookup(page_id);
     if (entry != nullptr) {
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
@@ -92,7 +94,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     }
 
     // cache miss
-    PageEntry *victim = replacement(addr, meta->SlabClass());
+    PageEntry *victim = replacement(page_id, meta->SlabClass());
 
     uint32_t val_len = victim->SlabClass * kSlabSize;
     val.resize(val_len);
@@ -136,14 +138,10 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
     if (slot == nullptr) {
       // insert new KV
       writeNew(key, hash, val);
-#ifdef STAT
-      if (stat::insert_num == 160000001) {
-        LOG_INFO("Finish insert.");
-      }
-#endif
     } else {
       if (meta->SlabClass() == val.size() / kSlabSize) {
-        PageEntry *entry = _buffer_pool->Lookup(AddrParser::PageId(addr));
+        PageId page_id = AddrParser::PageId(addr);
+        PageEntry *entry = _buffer_pool->Lookup(page_id);
         if (entry != nullptr) {
 #ifdef STAT
           stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
@@ -156,7 +154,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
         }
 
         // cache miss
-        PageEntry *victim = replacement(addr, meta->SlabClass());
+        PageEntry *victim = replacement(page_id, meta->SlabClass());
 
         memcpy((char *)(victim->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
         if (!victim->Dirty) victim->Dirty = true;
@@ -183,7 +181,13 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = _page_manager->Page(page_id);
   meta->ClearPos(AddrParser::Off(addr));
+  _page_manager->Mount(&_allocing_tail[meta->SlabClass()], meta);
   if (meta->Empty() && _allocing_pages[meta->SlabClass()]->PageId() != page_id) {
+    if (_allocing_tail[meta->SlabClass()]->PageId() == page_id) {
+      _allocing_tail[meta->SlabClass()] = meta->Prev();
+      LOG_DEBUG("[shard %d] set class %d tail page %d", _shard, meta->SlabClass(), meta->Prev()->PageId());
+    }
+    _page_manager->Unmount(meta);
     _page_manager->FreePage(page_id);
   }
 
@@ -200,7 +204,13 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val) {
   PageMeta *meta = _page_manager->Page(page_id);
   assert(meta->SlabClass() != val.size() / kSlabSize);
   meta->ClearPos(AddrParser::Off(addr));
+  _page_manager->Mount(&_allocing_tail[meta->SlabClass()], meta);
   if (meta->Empty() && _allocing_pages[meta->SlabClass()]->PageId() != page_id) {
+    if (_allocing_tail[meta->SlabClass()]->PageId() == page_id) {
+      _allocing_tail[meta->SlabClass()] = meta->Prev();
+      LOG_DEBUG("[shard %d] set class %d tail page %d", _shard, meta->SlabClass(), meta->Prev()->PageId());
+    }
+    _page_manager->Unmount(meta);
     _page_manager->FreePage(page_id);
   }
   // rewrite to meta
@@ -209,7 +219,6 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val) {
   PageEntry *page = _allocing_pages[slab_class];
   meta = _page_manager->Page(page->PageId());
   if (meta->Full()) {
-    unmountPage(slab_class);
     page = mountNewPage(slab_class);
     meta = _page_manager->Page(page->PageId());
   }
@@ -224,40 +233,55 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val) {
   slot->SetAddr(addr);
 }
 
-void Pool::unmountPage(uint8_t slab_class) {
-  PageEntry *entry = _allocing_pages[slab_class];
-  _buffer_pool->UnpinPage(entry);
-  _buffer_pool->Release(entry);
-  _allocing_pages[slab_class] = nullptr;
-}
-
 PageEntry *Pool::mountNewPage(uint8_t slab_class) {
-  PageMeta *meta = _page_manager->AllocNewPage(slab_class);
-  LOG_ASSERT(meta != nullptr, "no more page.");
+  PageEntry *old_entry = _allocing_pages[slab_class];
+  PageMeta *old_meta = _page_manager->Page(old_entry->PageId());
+  _buffer_pool->UnpinPage(old_entry);
+  _buffer_pool->Release(old_entry);
+  _allocing_pages[slab_class] = nullptr;
 
-  PageEntry *entry = _buffer_pool->FetchNew(meta->PageId());
-  if (entry == nullptr) {
-    entry = _buffer_pool->Evict();
-    LOG_ASSERT(entry != nullptr, "evicting failed.");
-    // write dirty page back
-    auto batch = _client->BeginBatch();
-    if (entry->Dirty) {
-      auto ret = writeToRemote(entry, &batch);
-      LOG_ASSERT(ret == 0, "rdma write failed.");
-      entry->Dirty = false;
+  PageMeta *meta = old_meta->Next();
+  PageEntry *entry = nullptr;
+  if (meta == nullptr) {
+    // allocing list is empty, need alloc new page
+    meta = _page_manager->AllocNewPage(slab_class);
+    entry = _buffer_pool->FetchNew(meta->PageId());
+    LOG_ASSERT(meta != nullptr, "no more page.");
+
+    if (entry == nullptr) {
+      entry = _buffer_pool->Evict();
+      LOG_ASSERT(entry != nullptr, "evicting failed.");
+      // write dirty page back
+      auto batch = _client->BeginBatch();
+      if (entry->Dirty) {
+        auto ret = writeToRemote(entry, &batch);
+        LOG_ASSERT(ret == 0, "rdma write failed.");
+        entry->Dirty = false;
+      }
+      auto ret = batch.FinishBatch();
+      LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
+      _buffer_pool->InsertPage(entry, meta->PageId());
     }
-    auto ret = batch.FinishBatch();
-    LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
-    _buffer_pool->InsertPage(entry, meta->PageId());
-  }
 
-  entry->SlabClass = slab_class;
+    entry->SlabClass = slab_class;
+    _buffer_pool->PinPage(entry);
+    _allocing_pages[slab_class] = entry;
+    _allocing_tail[slab_class] = meta;
+    return entry;
+  }
+  // replacement
+  LOG_ASSERT(!meta->Full(), "invalid allocing page.");
+  _page_manager->Unmount(old_meta);
+  entry = _buffer_pool->Lookup(meta->PageId());
+  if (entry == nullptr) {
+    entry = replacement(meta->PageId(), slab_class);
+  }
   _buffer_pool->PinPage(entry);
   _allocing_pages[slab_class] = entry;
   return entry;
 }
 
-PageEntry *Pool::replacement(Addr addr, uint8_t slab_class) {
+PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class) {
   // miss
 #ifdef STAT
   stat::replacement.fetch_add(1);
@@ -275,11 +299,11 @@ PageEntry *Pool::replacement(Addr addr, uint8_t slab_class) {
     LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
     victim->Dirty = false;
   }
-  auto ret = readFromRemote(victim, addr, &batch);
+  auto ret = readFromRemote(victim, page_id, &batch);
   ret = batch.FinishBatch();
   LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
 
-  _buffer_pool->InsertPage(victim, AddrParser::PageId(addr));
+  _buffer_pool->InsertPage(victim, page_id);
 
   victim->SlabClass = slab_class;
   return victim;
@@ -302,7 +326,6 @@ void Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   PageEntry *page = _allocing_pages[slab_class];
   PageMeta *meta = _page_manager->Page(page->PageId());
   if (meta->Full()) {
-    unmountPage(slab_class);
     page = mountNewPage(slab_class);
     meta = _page_manager->Page(page->PageId());
   }
@@ -323,9 +346,9 @@ int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {
                             _rdma_access.addr + kPageSize * entry->PageId(), _rdma_access.rkey);
 }
 
-int Pool::readFromRemote(PageEntry *entry, Addr addr, RDMAManager::Batch *batch) {
-  return batch->RemoteRead(entry->Data(), _buffer_pool->MR()->lkey, kPageSize,
-                           _rdma_access.addr + kPageSize * AddrParser::PageId(addr), _rdma_access.rkey);
+int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch) {
+  return batch->RemoteRead(entry->Data(), _buffer_pool->MR()->lkey, kPageSize, _rdma_access.addr + kPageSize * page_id,
+                           _rdma_access.rkey);
 }
 
 }  // namespace kv

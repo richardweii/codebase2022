@@ -32,17 +32,15 @@ class Pool NOCOPYABLE {
  private:
   void writeNew(const Slice &key, uint32_t hash, const Slice &val);
 
-  void unmountPage(uint8_t slab_class);
-
   PageEntry *mountNewPage(uint8_t slab_class);
 
-  PageEntry *replacement(Addr addr, uint8_t slab_class);
+  PageEntry *replacement(PageId page_id, uint8_t slab_class);
 
   void modifyLength(KeySlot *slot, const Slice &val);
 
   int writeToRemote(PageEntry *entry, RDMAManager::Batch *batch);
 
-  int readFromRemote(PageEntry *entry, Addr addr, RDMAManager::Batch *batch);
+  int readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch);
 
   KeySlot _slots[kKeyNum / kPoolShardingNum];
   int _free_slot_head = -1;  // TODO: lock-free linked list
@@ -50,6 +48,7 @@ class Pool NOCOPYABLE {
   HashTable *_hash_index = nullptr;
 
   PageEntry *_allocing_pages[kSlabSizeMax + 1];
+  PageMeta *_allocing_tail[kSlabSizeMax + 1]; 
 
   MemoryAccess _rdma_access;
 
