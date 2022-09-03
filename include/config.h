@@ -58,7 +58,7 @@ constexpr size_t kBufferPoolSize = 2 * 1024 * 1024;     // 2MB cache
 #else
 
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                   // 16 * 12M key
-constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remote pool
+constexpr size_t kPoolSize = (size_t)28 * 1024 * 1024 * 1024;       // 32GB remote pool
 constexpr size_t kBufferPoolSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB cache
 #endif
 

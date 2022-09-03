@@ -168,7 +168,9 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
 
   if (use_aes) {
     char *value_str = encrypt(value.data(), value.length());
-    return _pool[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
+    auto succ = _pool[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
+    free(value_str);
+    return succ;
   }
 
   return _pool[index]->Write(Slice(key), hash, Slice(value));
