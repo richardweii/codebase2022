@@ -27,7 +27,7 @@ int main() {
                       "12344");  // ip 必须写具体ip，不能直接写localhost和127.0.0.1
   local_engine->set_aes();
   auto keys = genKey(key_num);
-  int key_slab_class[key_num];
+  int *key_slab_class = new int[key_num];
 
   LOG_INFO(" ============= start encrypt ================");
   std::vector<std::thread> threads;

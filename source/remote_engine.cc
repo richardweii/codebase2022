@@ -50,16 +50,16 @@ void RemoteEngine::handler(RPCTask *task) {
   switch (task->RequestType()) {
     case MSG_ALLOC: {
       AllocRequest *req = task->GetRequest<AllocRequest>();
-      LOG_DEBUG("Alloc msg, shard %d:", req->shard);
+      LOG_INFO("Alloc msg, shard %d:", req->shard);
       auto access = _pool[req->shard]->AllocBlock();
-      LOG_DEBUG("Alloc successfully, prepare response.");
+      LOG_INFO("Alloc successfully, prepare response.");
 
       AllocResponse resp;
       resp.addr = access.addr;
       resp.rkey = access.rkey;
       resp.status = RES_OK;
       task->SetResponse(resp);
-      LOG_DEBUG("Response Alloc msg...");
+      LOG_INFO("Response Alloc msg...");
       break;
     }
     default:
