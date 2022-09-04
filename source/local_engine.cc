@@ -108,10 +108,6 @@ bool LocalEngine::set_aes() {
 crypto_message_t *LocalEngine::get_aes() { return &_aes; }
 
 char *LocalEngine::encrypt(const char *value, size_t len) {
-  Ipp8u *plain = (Ipp8u *)malloc(sizeof(Ipp8u) * len);
-  memset(plain, 0, len);
-  memcpy(plain, value, len);
-
   int ctxSize;               // AES context size
   ippsAESGetSize(&ctxSize);  // evaluating AES context size
   // allocate memory for AES context
@@ -122,10 +118,10 @@ char *LocalEngine::encrypt(const char *value, size_t len) {
   // allocate memory for ciph
   Ipp8u ciph[len];
 
-  ippsAESEncryptCTR(plain, ciph, len, ctx, ctr, _aes.counter_bit);
-  memcpy(plain, ciph, len);
+  ippsAESEncryptCTR((Ipp8u *)value, ciph, len, ctx, ctr, _aes.counter_bit);
+  memcpy((char *)value, ciph, len);
 
-  return (char *)plain;
+  return (char *)value;
 }
 
 char *LocalEngine::decrypt(const char *value, size_t len) {
@@ -169,7 +165,6 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   if (use_aes) {
     char *value_str = encrypt(value.data(), value.length());
     auto succ = _pool[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
-    free(value_str);
     return succ;
   }
 
