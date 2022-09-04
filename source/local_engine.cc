@@ -163,7 +163,7 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   int index = Shard(hash);
 
   if (use_aes) {
-    LOG_INFO("encryption %08lx, %08lx ", *((uint64_t*)(key.data())), *((uint64_t*)(key.data() + 8)));
+    // LOG_INFO("encryption %08lx, %08lx ", *((uint64_t*)(key.data())), *((uint64_t*)(key.data() + 8)));
     char *value_str = encrypt(value.data(), value.length());
     auto succ = _pool[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
     return succ;
@@ -187,7 +187,10 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
 #endif
   uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
-  return _pool[index]->Read(Slice(key), hash, value);
+  bool succ = _pool[index]->Read(Slice(key), hash, value);
+  char *value_str = decrypt(value.c_str(), value.size());
+  LOG_INFO("value: %s, value_str: %s, len: %ld", value.c_str(), value_str, value.size());
+  return succ;
 }
 
 bool LocalEngine::deleteK(const std::string &key) {
