@@ -125,6 +125,7 @@ char *LocalEngine::encrypt(const char *value, size_t len) {
 }
 
 char *LocalEngine::decrypt(const char *value, size_t len) {
+  crypto_message_t * aes_get = get_aes();
   Ipp8u *ciph = (Ipp8u *)malloc(sizeof(Ipp8u) * len);
   memset(ciph, 0, len);
   memcpy(ciph, value, len);
@@ -133,12 +134,12 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
   ippsAESGetSize(&ctxSize);  // evaluating AES context size
   // allocate memory for AES context
   IppsAESSpec *ctx = (IppsAESSpec *)(new Ipp8u[ctxSize]);
-  ippsAESInit(_aes.key, _aes.key_len, ctx, ctxSize);
-  Ipp8u ctr[_aes.blk_size];
-  memcpy(ctr, _aes.counter, _aes.counter_len);
+  ippsAESInit(aes_get->key, aes_get->key_len, ctx, ctxSize);
+  Ipp8u ctr[aes_get->blk_size];
+  memcpy(ctr, aes_get->counter, aes_get->counter_len);
 
   Ipp8u deciph[len];
-  ippsAESDecryptCTR(ciph, deciph, len, ctx, ctr, _aes.counter_bit);
+  ippsAESDecryptCTR(ciph, deciph, len, ctx, ctr, aes_get->counter_bit);
   memcpy(ciph, deciph, len);
   return (char *)ciph;
 }
