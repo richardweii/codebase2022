@@ -163,6 +163,7 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   int index = Shard(hash);
 
   if (use_aes) {
+    LOG_INFO("encryption %08lx, %08lx ", *((uint64_t*)(key.data())), *((uint64_t*)(key.data() + 8)));
     char *value_str = encrypt(value.data(), value.length());
     auto succ = _pool[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
     return succ;
