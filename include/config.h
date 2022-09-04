@@ -8,7 +8,7 @@
 #include <string>
 
 // #define TEST_CONFIG  // test configuration marco switch
-// #define STAT         // statistic
+#define STAT         // statistic
 
 namespace kv {
 #define RDMA_MR_FLAG (IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE)
@@ -33,7 +33,7 @@ constexpr int kPoolHashSeed = 0x89ea7d2f;
 constexpr int kPoolShardingBits = 1;  // for test
 
 #else
-constexpr int kPoolShardingBits = 7;
+constexpr int kPoolShardingBits = 6;
 #endif
 constexpr int kPoolShardingNum = 1 << kPoolShardingBits;  // sharding num
 
@@ -58,7 +58,7 @@ constexpr size_t kBufferPoolSize = 2 * 1024 * 1024;     // 2MB cache
 #else
 
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                   // 16 * 12M key
-constexpr size_t kPoolSize = (size_t)28 * 1024 * 1024 * 1024;       // 32GB remote pool
+constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remote pool
 constexpr size_t kBufferPoolSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB cache
 #endif
 
@@ -67,8 +67,8 @@ constexpr size_t kPoolShardingSize = kPoolSize / kPoolShardingNum;
 using Addr = int32_t;
 
 constexpr Addr INVALID_ADDR = (-1);
-constexpr uint32_t PAGE_BIT = 16;  // MAX 64 * 1024
-constexpr uint32_t PAGE_MASK = 0xffff;
+constexpr uint32_t PAGE_BIT = 20;
+constexpr uint32_t PAGE_MASK = 0xfffff;
 constexpr uint32_t OFF_BIT = 12;  // MAX 4096
 constexpr uint32_t OFF_MASK = 0xfff;
 

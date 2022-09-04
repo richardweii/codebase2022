@@ -43,15 +43,15 @@ add_executable(
 target_link_libraries(zipf_test)
 
 # perf test
-# add_executable(
-#     perf_client
-#     perf_test/client.cc
-# )
-# target_link_libraries(perf_client polarkv rdmacm ibverbs ibumad pci ippcp)
+add_executable(
+    perf_client
+    perf_test/client.cc
+)
+target_link_libraries(perf_client polarkv rdmacm ibverbs ibumad pci ippcp)
 
 
-# add_executable(
-#     perf_server
-#     perf_test/server.cc
-# )
-# target_link_libraries(perf_server polarkv rdmacm ibverbs ibumad pci ippcp)
+add_executable(
+    perf_server
+    perf_test/server.cc
+)
+target_link_libraries(perf_server polarkv rdmacm ibverbs ibumad pci ippcp)

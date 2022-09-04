@@ -1,4 +1,5 @@
 #include "pool.h"
+#include "stat.h"
 
 namespace kv {
 
@@ -106,12 +107,13 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 }
 
 bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
-  KeySlot *slot = _hash_index->Find(key, hash);
-  Addr addr = INVALID_ADDR;
+  KeySlot *slot = nullptr;
   PageMeta *meta = nullptr;
+  Addr addr = INVALID_ADDR;
   {
     _latch.RLock();
     defer { _latch.RUnlock(); };
+    slot = _hash_index->Find(key, hash);
     // lock-free phase
     if (slot != nullptr) {
       addr = slot->Addr();
@@ -254,6 +256,9 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class) {
       // write dirty page back
       auto batch = _client->BeginBatch();
       if (entry->Dirty) {
+#ifdef STAT
+        stat::dirty_write.fetch_add(1);
+#endif
         auto ret = writeToRemote(entry, &batch);
         LOG_ASSERT(ret == 0, "rdma write failed.");
         entry->Dirty = false;
@@ -314,11 +319,13 @@ void Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   stat::insert_num.fetch_add(1);
 #endif
   // write key
+  int insert_slot = _free_slot_head;
   KeySlot *slot = &_slots[_free_slot_head];
-  _hash_index->Insert(key, hash, _free_slot_head);
   _free_slot_head = slot->Next();
   slot->SetKey(key);
   slot->SetNext(-1);
+
+  _hash_index->Insert(key, hash, insert_slot);
 
   // write value
   uint8_t slab_class = val.size() / kSlabSize;

@@ -26,12 +26,13 @@ namespace kv {
  */
 bool LocalEngine::start(const std::string addr, const std::string port) {
   constexpr size_t buffer_pool_size = kBufferPoolSize / kPoolShardingNum;
-  LOG_INFO("Create %d pool, each pool with %lu MB cache", kPoolShardingNum, buffer_pool_size / 1024 / 1024);
+  LOG_INFO("Create %d pool, each pool with %lu MB cache, %lu pages", kPoolShardingNum, buffer_pool_size / 1024 / 1024,
+           kPoolSize / kPageSize);
   _client = new RDMAClient();
   if (!_client->Init(addr, port)) return false;
   _client->Start();
 
-  Arena::getInstance().Init(64 * 1024 * 1024); // 64MB;
+  Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
 
   for (int i = 0; i < kPoolShardingNum; i++) {
     _pool[i] = new Pool(i, _client);
@@ -61,7 +62,6 @@ void LocalEngine::stop() {
   LOG_INFO(" ========== Performance Statistics ============");
   LOG_INFO(" Total read %ld times, write %ld times", stat::read_times.load(), stat::write_times.load());
   LOG_INFO(" Unique insert %ld  times", stat::insert_num.load());
-  LOG_INFO(" Total block num %ld", stat::block_num.load());
   LOG_INFO(" Replacement %ld times, Dirty write %ld times ", stat::replacement.load(), stat::dirty_write.load());
   LOG_INFO(" Cache hit %ld times", stat::cache_hit.load());
   LOG_INFO(" Read Miss %ld times", stat::read_miss.load());
@@ -156,12 +156,12 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
 bool LocalEngine::write(const std::string &key, const std::string &value, bool use_aes) {
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
-  if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
-    LOG_INFO("write %lu", stat::write_times.load(std::memory_order_relaxed));
-  }
-  if (stat::write_times.load(std::memory_order_relaxed) < 1000) {
-    LOG_INFO("key %.16s", key.c_str());
-  }
+  // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
+  //   LOG_INFO("write %lu", stat::write_times.load(std::memory_order_relaxed));
+  // }
+  // if (stat::write_times.load(std::memory_order_relaxed) < 1000) {
+  //   LOG_INFO("key %.16s", key.c_str());
+  // }
 #endif
   uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
@@ -185,9 +185,9 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
 bool LocalEngine::read(const std::string &key, std::string &value) {
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
-  if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
-    LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
-  }
+  // if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
+  //   LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
+  // }
 #endif
   uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);

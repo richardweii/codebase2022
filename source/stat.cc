@@ -8,7 +8,6 @@ std::atomic_int64_t read_times(0);
 std::atomic_int64_t write_times(0);
 std::atomic_int64_t read_miss(0);
 std::atomic_int64_t insert_num(0);
-std::atomic_int64_t block_num(0);
 std::atomic_int64_t dirty_write(0);
 
 }  // namespace stat
