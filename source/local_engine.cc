@@ -165,6 +165,12 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
 
   if (use_aes) {
     // LOG_INFO("encryption %08lx, %08lx ", *((uint64_t*)(key.data())), *((uint64_t*)(key.data() + 8)));
+    #ifdef STAT
+    if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 1)
+    {
+      LOG_INFO("write key: %s, value: %s, length: %d", key.c_str(), value.c_str(), value.length());
+    }
+    #endif
     char *value_str = encrypt(value.data(), value.length());
     auto succ = _pool[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
     return succ;
