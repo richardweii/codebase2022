@@ -146,7 +146,7 @@ bool LocalEngine::encrypted(const std::string value, std::string &encrypt_value)
   /* 3. Initialize AES context */
   m_status = ippsAESInit(_aes.key, _aes.key_len, m_pAES, m_ctxsize);
   if (ippStsNoErr != m_status) return false;
-  /* 4. control bits */
+  /* 4. counter bits */
   Ipp8u ctr[_aes.blk_size];
   memcpy(ctr, _aes.counter, _aes.counter_len);
   /* 5. Encryption */
