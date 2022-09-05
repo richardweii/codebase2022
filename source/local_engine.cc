@@ -124,6 +124,47 @@ char *LocalEngine::encrypt(const char *value, size_t len) {
   return (char *)value;
 }
 
+bool LocalEngine::encrypted(const std::string value, std::string &encrypt_value) {
+  assert(value.size() % 16 == 0);
+  /*! Size for AES context structure */
+  int m_ctxsize = 0;
+  /*! Pointer to AES context structure */
+  IppsAESSpec* m_pAES = nullptr;
+  /*! Error status */
+  IppStatus m_status = ippStsNoErr;
+  /*! Pointer to encrypted plain text*/
+  Ipp8u* m_encrypt_val = nullptr;
+  m_encrypt_val = new Ipp8u[value.size()];
+  if (nullptr == m_encrypt_val) return false;
+
+  /* 1. Get size needed for AES context structure */
+  m_status = ippsAESGetSize(&m_ctxsize);
+  if (ippStsNoErr != m_status) return false;
+  /* 2. Allocate memory for AES context structure */
+  m_pAES = (IppsAESSpec*)(new Ipp8u[m_ctxsize]);
+  if (nullptr == m_pAES) return false;
+  /* 3. Initialize AES context */
+  m_status = ippsAESInit(_aes.key, _aes.key_len, m_pAES, m_ctxsize);
+  if (ippStsNoErr != m_status) return false;
+  /* 4. control bits */
+  Ipp8u ctr[_aes.blk_size];
+  memcpy(ctr, _aes.counter, _aes.counter_len);
+  /* 5. Encryption */
+  m_status = ippsAESEncryptCTR((Ipp8u *)value.c_str(), m_encrypt_val, value.size(), m_pAES, ctr, _aes.counter_bit);
+  if (ippStsNoErr != m_status) return false;
+  /* 6. Remove secret and release resources */
+  ippsAESInit(0,_aes.key_len, m_pAES, m_ctxsize);
+
+  if (m_pAES) delete [] (Ipp8u*)m_pAES;
+  m_pAES = nullptr;
+  std::string tmp(reinterpret_cast<const char*>(m_encrypt_val), value.size());
+  encrypt_value = tmp;
+
+  if (m_encrypt_val) delete [] m_encrypt_val;
+    m_encrypt_val = nullptr;
+  return true;
+}
+
 char *LocalEngine::decrypt(const char *value, size_t len) {
   crypto_message_t * aes_get = get_aes();
   Ipp8u *ciph = (Ipp8u *)malloc(sizeof(Ipp8u) * len);
@@ -168,11 +209,15 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
     #ifdef STAT
     if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 1)
     {
-      LOG_INFO("write key: %s, value: %s, length: %d", key.c_str(), value.c_str(), value.length());
+      LOG_INFO("write key: %s, value: %s, length: %ld", key.c_str(), value.c_str(), value.length());
     }
     #endif
-    char *value_str = encrypt(value.data(), value.length());
-    auto succ = _pool[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
+    std::string encrypt_value;
+    encrypted(value, encrypt_value);
+    assert(value.size() == encrypt_value.size());
+    // char *value_str = encrypt(value.data(), value.length());
+    auto succ = _pool[index]->Write(Slice(key), hash, Slice(encrypt_value));
+    // auto succ = _pool[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
     return succ;
   }
 

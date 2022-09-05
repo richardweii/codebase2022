@@ -58,6 +58,7 @@ class LocalEngine : public Engine {
 
   char *encrypt(const char *value, size_t len);  // for debug
   char *decrypt(const char *value, size_t len);  // for debug
+  bool encrypted(const std::string value, std::string &encrypt_value);
 
   bool write(const std::string &key, const std::string &value, bool use_aes = false);
   bool read(const std::string &key, std::string &value);
