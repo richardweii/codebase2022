@@ -192,7 +192,7 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
   char *value_str = decrypt(value.c_str(), value.size());
   #ifdef STAT
     if (stat::read_times.load(std::memory_order_relaxed) % 1000000 < 10) {
-      LOG_INFO("value: %s, value_str: %s, len: %ld", value.c_str(), value_str, value.size());
+      LOG_INFO("value_str: %s, len: %ld", value_str, value.size());
     }
   #endif
 
