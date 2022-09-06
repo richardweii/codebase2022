@@ -39,12 +39,12 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
     _pool[i]->Init();
   }
 
-  auto watcher = std::thread([]() {
-    sleep(1200);
-    fflush(stdout);
-    abort();
-  });
-  watcher.detach();
+  // auto watcher = std::thread([]() {
+  //   sleep(1800);
+  //   fflush(stdout);
+  //   abort();
+  // });
+  // watcher.detach();
 
   return true;
 }
