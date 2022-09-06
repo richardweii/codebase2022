@@ -207,10 +207,10 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   if (use_aes) {
     // LOG_INFO("encryption %08lx, %08lx ", *((uint64_t*)(key.data())), *((uint64_t*)(key.data() + 8)));
     #ifdef STAT
-    if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 1)
-    {
-      LOG_INFO("write key: %s, value: %s, length: %ld", key.c_str(), value.c_str(), value.length());
-    }
+    // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 1)
+    // {
+    //   LOG_INFO("write key: %s, value: %s, length: %ld", key.c_str(), value.c_str(), value.length());
+    // }
     #endif
     std::string encrypt_value;
     encrypted(value, encrypt_value);
@@ -240,14 +240,14 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
   uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   bool succ = _pool[index]->Read(Slice(key), hash, value);
-  #ifdef STAT
-    if (stat::read_times.load(std::memory_order_relaxed) % 10000000 == 1) {
-      char *value_str = decrypt(value.c_str(), value.size());
-      LOG_INFO("char: %c", value_str[0]);
-      LOG_INFO("value_str: %s, len: %ld", value_str, value.size());
-      free(value_str);
-    }
-  #endif
+  // #ifdef STAT
+  //   if (stat::read_times.load(std::memory_order_relaxed) % 10000000 == 1) {
+  //     char *value_str = decrypt(value.c_str(), value.size());
+  //     LOG_INFO("char: %c", value_str[0]);
+  //     LOG_INFO("value_str: %s, len: %ld", value_str, value.size());
+  //     free(value_str);
+  //   }
+  // #endif
 
   return succ;
 }
