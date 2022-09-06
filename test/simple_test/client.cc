@@ -23,7 +23,7 @@ constexpr int modify_length_op_num = rewrite_op_num / 4;
 
 int main() {
   LocalEngine *local_engine = new LocalEngine();
-  local_engine->start("192.168.230.128",
+  local_engine->start("192.168.200.22",
                       "12344");  // ip 必须写具体ip，不能直接写localhost和127.0.0.1
   local_engine->set_aes();
   auto keys = genKey(key_num);

@@ -201,7 +201,7 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   //   LOG_INFO("key %.16s", key.c_str());
   // }
 #endif
-  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
+  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
 
   if (use_aes) {
@@ -237,7 +237,7 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
   //   LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
   // }
 #endif
-  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
+  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   bool succ = _pool[index]->Read(Slice(key), hash, value);
   // #ifdef STAT
@@ -253,7 +253,7 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
 }
 
 bool LocalEngine::deleteK(const std::string &key) {
-  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
+  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   return _pool[index]->Delete(Slice(key), hash);
 }
