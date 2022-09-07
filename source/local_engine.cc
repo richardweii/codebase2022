@@ -39,12 +39,12 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
     _pool[i]->Init();
   }
 
-  // auto watcher = std::thread([]() {
-  //   sleep(1800);
-  //   fflush(stdout);
-  //   abort();
-  // });
-  // watcher.detach();
+  auto watcher = std::thread([&]() {
+    sleep(1800);
+    fflush(stdout);
+    this->stop();
+  });
+  watcher.detach();
 
   return true;
 }
@@ -65,6 +65,7 @@ void LocalEngine::stop() {
   LOG_INFO(" Replacement %ld times, Dirty write %ld times ", stat::replacement.load(), stat::dirty_write.load());
   LOG_INFO(" Cache hit %ld times", stat::cache_hit.load());
   LOG_INFO(" Read Miss %ld times", stat::read_miss.load());
+  LOG_INFO(" Delete %ld times", stat::delete_times.load());
   return;
 };
 
@@ -129,11 +130,11 @@ bool LocalEngine::encrypted(const std::string value, std::string &encrypt_value)
   /*! Size for AES context structure */
   int m_ctxsize = 0;
   /*! Pointer to AES context structure */
-  IppsAESSpec* m_pAES = nullptr;
+  IppsAESSpec *m_pAES = nullptr;
   /*! Error status */
   IppStatus m_status = ippStsNoErr;
   /*! Pointer to encrypted plain text*/
-  Ipp8u* m_encrypt_val = nullptr;
+  Ipp8u *m_encrypt_val = nullptr;
   m_encrypt_val = new Ipp8u[value.size()];
   if (nullptr == m_encrypt_val) return false;
 
@@ -141,7 +142,7 @@ bool LocalEngine::encrypted(const std::string value, std::string &encrypt_value)
   m_status = ippsAESGetSize(&m_ctxsize);
   if (ippStsNoErr != m_status) return false;
   /* 2. Allocate memory for AES context structure */
-  m_pAES = (IppsAESSpec*)(new Ipp8u[m_ctxsize]);
+  m_pAES = (IppsAESSpec *)(new Ipp8u[m_ctxsize]);
   if (nullptr == m_pAES) return false;
   /* 3. Initialize AES context */
   m_status = ippsAESInit(_aes.key, _aes.key_len, m_pAES, m_ctxsize);
@@ -153,20 +154,20 @@ bool LocalEngine::encrypted(const std::string value, std::string &encrypt_value)
   m_status = ippsAESEncryptCTR((Ipp8u *)value.c_str(), m_encrypt_val, value.size(), m_pAES, ctr, _aes.counter_bit);
   if (ippStsNoErr != m_status) return false;
   /* 6. Remove secret and release resources */
-  ippsAESInit(0,_aes.key_len, m_pAES, m_ctxsize);
+  ippsAESInit(0, _aes.key_len, m_pAES, m_ctxsize);
 
-  if (m_pAES) delete [] (Ipp8u*)m_pAES;
+  if (m_pAES) delete[](Ipp8u *) m_pAES;
   m_pAES = nullptr;
-  std::string tmp(reinterpret_cast<const char*>(m_encrypt_val), value.size());
+  std::string tmp(reinterpret_cast<const char *>(m_encrypt_val), value.size());
   encrypt_value = tmp;
 
-  if (m_encrypt_val) delete [] m_encrypt_val;
-    m_encrypt_val = nullptr;
+  if (m_encrypt_val) delete[] m_encrypt_val;
+  m_encrypt_val = nullptr;
   return true;
 }
 
 char *LocalEngine::decrypt(const char *value, size_t len) {
-  crypto_message_t * aes_get = get_aes();
+  crypto_message_t *aes_get = get_aes();
   Ipp8u *ciph = (Ipp8u *)malloc(sizeof(Ipp8u) * len);
   memset(ciph, 0, len);
   memcpy(ciph, value, len);
@@ -194,9 +195,9 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
 bool LocalEngine::write(const std::string &key, const std::string &value, bool use_aes) {
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
-  // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
-  //   LOG_INFO("write %lu", stat::write_times.load(std::memory_order_relaxed));
-  // }
+  if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
+    LOG_INFO("write %lu", stat::write_times.load(std::memory_order_relaxed));
+  }
   // if (stat::write_times.load(std::memory_order_relaxed) < 1000) {
   //   LOG_INFO("key %.16s", key.c_str());
   // }
@@ -205,13 +206,13 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   int index = Shard(hash);
 
   if (use_aes) {
-    // LOG_INFO("encryption %08lx, %08lx ", *((uint64_t*)(key.data())), *((uint64_t*)(key.data() + 8)));
-    #ifdef STAT
-    // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 1)
-    // {
-    //   LOG_INFO("write key: %s, value: %s, length: %ld", key.c_str(), value.c_str(), value.length());
-    // }
-    #endif
+// LOG_INFO("encryption %08lx, %08lx ", *((uint64_t*)(key.data())), *((uint64_t*)(key.data() + 8)));
+#ifdef STAT
+// if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 1)
+// {
+//   LOG_INFO("write key: %s, value: %s, length: %ld", key.c_str(), value.c_str(), value.length());
+// }
+#endif
     std::string encrypt_value;
     encrypted(value, encrypt_value);
     assert(value.size() == encrypt_value.size());
@@ -233,9 +234,9 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
 bool LocalEngine::read(const std::string &key, std::string &value) {
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
-  // if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
-  //   LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
-  // }
+  if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
+    LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
+  }
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
@@ -253,6 +254,12 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
 }
 
 bool LocalEngine::deleteK(const std::string &key) {
+#ifdef STAT
+  stat::delete_times.fetch_add(1, std::memory_order_relaxed);
+  if (stat::delete_times.load(std::memory_order_relaxed) % 1000000 == 0) {
+    LOG_INFO("delete %lu", stat::delete_times.load(std::memory_order_relaxed));
+  }
+#endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   return _pool[index]->Delete(Slice(key), hash);
