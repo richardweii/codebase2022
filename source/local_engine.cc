@@ -33,16 +33,33 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   _client->Start();
 
   Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
+  global_page_manger = new PageManager(kPoolSize / kPageSize);
+
+  // RDMA access global table
+  for (int i = 0; i < kMrBlockNum; i++) {
+    AllocRequest req;
+    req.size = kMaxBlockSize;
+    req.type = MSG_ALLOC;
+
+    AllocResponse resp;
+    _client->RPC(req, resp);
+    if (resp.status != RES_OK) {
+      LOG_FATAL("Failed to alloc new block.");
+    }
+
+    MemoryAccess access{.addr = resp.addr, .rkey = resp.rkey};
+    _global_access_table.push_back(access);
+  }
 
   for (int i = 0; i < kPoolShardingNum; i++) {
-    _pool[i] = new Pool(i, _client);
+    _pool[i] = new Pool(i, _client, &_global_access_table);
     _pool[i]->Init();
   }
 
   auto watcher = std::thread([&]() {
     sleep(1800);
     fflush(stdout);
-    abort(); 
+    abort();
   });
   watcher.detach();
 
@@ -59,6 +76,7 @@ void LocalEngine::stop() {
   // for (int i = 0; i < kPoolShardingNum; i++) {
   //   delete pool_[i];
   // }
+  // delete global_page_manager;
   LOG_INFO(" ========== Performance Statistics ============");
   LOG_INFO(" Total read %ld times, write %ld times", stat::read_times.load(), stat::write_times.load());
   LOG_INFO(" Unique insert %ld  times", stat::insert_num.load());
@@ -108,24 +126,7 @@ bool LocalEngine::set_aes() {
 
 crypto_message_t *LocalEngine::get_aes() { return &_aes; }
 
-char *LocalEngine::encrypt(const char *value, size_t len) {
-  int ctxSize;               // AES context size
-  ippsAESGetSize(&ctxSize);  // evaluating AES context size
-  // allocate memory for AES context
-  IppsAESSpec *ctx = (IppsAESSpec *)(new Ipp8u[ctxSize]);
-  ippsAESInit(_aes.key, _aes.key_len, ctx, ctxSize);
-  Ipp8u ctr[_aes.blk_size];
-  memcpy(ctr, _aes.counter, _aes.counter_len);
-  // allocate memory for ciph
-  Ipp8u ciph[len];
-
-  ippsAESEncryptCTR((Ipp8u *)value, ciph, len, ctx, ctr, _aes.counter_bit);
-  memcpy((char *)value, ciph, len);
-
-  return (char *)value;
-}
-
-bool LocalEngine::encrypted(const std::string value, std::string &encrypt_value) {
+bool LocalEngine::encrypt(const std::string value, std::string &encrypt_value) {
   assert(value.size() % 16 == 0);
   /*! Size for AES context structure */
   int m_ctxsize = 0;
@@ -214,7 +215,7 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
 // }
 #endif
     std::string encrypt_value;
-    encrypted(value, encrypt_value);
+    encrypt(value, encrypt_value);
     assert(value.size() == encrypt_value.size());
     // char *value_str = encrypt(value.data(), value.length());
     auto succ = _pool[index]->Write(Slice(key), hash, Slice(encrypt_value));

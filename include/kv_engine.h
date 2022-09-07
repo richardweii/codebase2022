@@ -56,9 +56,8 @@ class LocalEngine : public Engine {
   /* Evaluation problem will call this function. */
   crypto_message_t *get_aes();
 
-  char *encrypt(const char *value, size_t len);  // for debug
   char *decrypt(const char *value, size_t len);  // for debug
-  bool encrypted(const std::string value, std::string &encrypt_value);
+  bool encrypt(const std::string value, std::string &encrypt_value);
 
   bool write(const std::string &key, const std::string &value, bool use_aes = false);
   bool read(const std::string &key, std::string &value);
@@ -71,6 +70,7 @@ class LocalEngine : public Engine {
   crypto_message_t _aes;
   Pool *_pool[kPoolShardingNum];
   RDMAClient *_client;
+  std::vector<MemoryAccess> _global_access_table;
 };
 
 /* Remote-side engine */
@@ -88,7 +88,7 @@ class RemoteEngine : public Engine {
 
   kv::RDMAServer *_server;
   volatile bool _stop;
-  RemotePool *_pool[kPoolShardingNum];
+  RemotePool *_pool;
 };
 
 }  // namespace kv

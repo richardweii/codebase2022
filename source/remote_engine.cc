@@ -24,9 +24,7 @@ bool RemoteEngine::start(const std::string addr, const std::string port) {
   auto succ = _server->Init(addr, port);
   assert(succ);
 
-  for (int i = 0; i < kPoolShardingNum; i++) {
-    _pool[i] = new RemotePool(_server->Pd(), i);
-  }
+  _pool = new RemotePool(_server->Pd());
 
   _server->Start();
   return true;
@@ -50,9 +48,9 @@ void RemoteEngine::handler(RPCTask *task) {
   switch (task->RequestType()) {
     case MSG_ALLOC: {
       AllocRequest *req = task->GetRequest<AllocRequest>();
-      LOG_INFO("Alloc msg, shard %d:", req->shard);
-      auto access = _pool[req->shard]->AllocBlock();
-      LOG_INFO("Alloc successfully, prepare response.");
+      LOG_INFO("Alloc msg");
+      auto access = _pool->AllocBlock();
+      LOG_INFO("Alloc block %d successfully, prepare response.", _pool->BlockNum());
 
       AllocResponse resp;
       resp.addr = access.addr;

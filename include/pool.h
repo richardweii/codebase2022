@@ -20,7 +20,7 @@ namespace kv {
 
 class Pool NOCOPYABLE {
  public:
-  Pool(uint8_t shard, RDMAClient *client);
+  Pool(uint8_t shard, RDMAClient *client, std::vector<MemoryAccess> *global_rdma_access);
   ~Pool();
 
   void Init();
@@ -48,13 +48,11 @@ class Pool NOCOPYABLE {
   HashTable *_hash_index = nullptr;
 
   PageEntry *_allocing_pages[kSlabSizeMax + 1];
-  PageMeta *_allocing_tail[kSlabSizeMax + 1]; 
+  PageMeta *_allocing_tail[kSlabSizeMax + 1];
 
-  MemoryAccess _rdma_access;
+  std::vector<MemoryAccess> *_access_table = nullptr;
 
   BufferPool *_buffer_pool = nullptr;
-
-  PageManager *_page_manager = nullptr;
 
   RDMAClient *_client = nullptr;
 
@@ -65,10 +63,10 @@ class Pool NOCOPYABLE {
 
 class RemotePool NOCOPYABLE {
  public:
-  RemotePool(ibv_pd *pd, uint8_t shard) : pd_(pd), shard_(shard) {}
+  RemotePool(ibv_pd *pd) : _pd(pd) {}
   ~RemotePool() {
-    for (auto block : blocks_) {
-      if (ibv_dereg_mr(block->mr_)) {
+    for (auto block : _blocks) {
+      if (ibv_dereg_mr(block->_mr)) {
         perror("ibv_dereg_mr failed.");
       }
       delete block;
@@ -76,39 +74,41 @@ class RemotePool NOCOPYABLE {
   }
   // Allocate a datablock for one side write
   MemoryAccess AllocBlock() {
-    std::lock_guard<std::mutex> lg(mutex_);
+    std::lock_guard<std::mutex> lg(_mutex);
     ValueBlock *block = new ValueBlock();
-    auto succ = block->Init(pd_);
-    LOG_ASSERT(succ, "Shard %d, Failed to init memblock  %lu.", shard_, blocks_.size() + 1);
-    blocks_.emplace_back(block);
+    auto succ = block->Init(_pd);
+    LOG_ASSERT(succ, "Failed to init memblock  %lu.", _blocks.size() + 1);
+    _blocks.emplace_back(block);
+    _block_num++;
     return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey()};
   }
+
+  int BlockNum() const { return _block_num; }
 
  private:
   class ValueBlock NOCOPYABLE {
    public:
     friend class RemotePool;
-    const char *Data() const { return data_; }
+    const char *Data() const { return _data; }
     bool Init(ibv_pd *pd) {
-      mr_ = ibv_reg_mr(pd, data_, kPoolSize / kPoolShardingNum, RDMA_MR_FLAG);
-      if (mr_ == nullptr) {
+      _mr = ibv_reg_mr(pd, _data, kMaxBlockSize, RDMA_MR_FLAG);
+      if (_mr == nullptr) {
         LOG_ERROR("Register memory failed.");
         return false;
       }
       return true;
     }
-    uint32_t Rkey() const { return mr_->rkey; }
-    uint32_t Lkey() const { return mr_->lkey; }
+    uint32_t Rkey() const { return _mr->rkey; }
+    uint32_t Lkey() const { return _mr->lkey; }
 
    private:
-    char data_[kPoolSize / kPoolShardingNum];
-    ibv_mr *mr_ = nullptr;
+    char _data[kMaxBlockSize];
+    ibv_mr *_mr = nullptr;
   };
-  std::vector<ValueBlock *> blocks_;
-  ibv_pd *pd_ = nullptr;
-
-  uint8_t shard_;
-  std::mutex mutex_;
+  std::vector<ValueBlock *> _blocks;
+  ibv_pd *_pd = nullptr;
+  int _block_num = 0;
+  std::mutex _mutex;
 };
 
 }  // namespace kv

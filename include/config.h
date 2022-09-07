@@ -8,7 +8,7 @@
 #include <string>
 
 // #define TEST_CONFIG  // test configuration marco switch
-#define STAT         // statistic
+#define STAT  // statistic
 
 namespace kv {
 #define RDMA_MR_FLAG (IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE)
@@ -43,7 +43,7 @@ constexpr int kSlabSize = 16;
 #ifdef TEST_CONFIG
 constexpr int kPageSizeBit = 10;  // 1KB
 #else
-constexpr int kPageSizeBit = 14;  // 16KB
+constexpr int kPageSizeBit = 16;  // 64KB
 #endif
 
 constexpr int kPageSize = 1 << kPageSizeBit;
@@ -62,16 +62,27 @@ constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remo
 constexpr size_t kBufferPoolSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB cache
 #endif
 
-constexpr size_t kPoolShardingSize = kPoolSize / kPoolShardingNum;
+constexpr size_t kMaxBlockSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB mr
+constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
 
 using Addr = int32_t;
-
 constexpr Addr INVALID_ADDR = (-1);
-constexpr uint32_t PAGE_BIT = 20;
-constexpr uint32_t PAGE_MASK = 0xfffff;
-constexpr uint32_t OFF_BIT = 12;  // MAX 4096
-constexpr uint32_t OFF_MASK = 0xfff;
 
+#ifdef TEST_CONFIG
+constexpr uint32_t PAGE_BIT = 15;
+constexpr uint32_t PAGE_MASK = 0x7fff;
+constexpr uint32_t PAGE_OFF_MASK = 0x7ff;
+constexpr uint32_t OFF_BIT = 17;  // MAX 4096
+constexpr uint32_t OFF_MASK = 0x1ffff;
+#else
+
+constexpr uint32_t PAGE_BIT = 19;
+constexpr uint32_t PAGE_MASK = 0x7ffff;
+constexpr uint32_t PAGE_OFF_MASK = 0x7fff;
+constexpr uint32_t OFF_BIT = 13;  // MAX 4096
+constexpr uint32_t OFF_MASK = 0x1fff;
+
+#endif
 class AddrParser {
  public:
   static kv::PageId PageId(Addr addr) { return (addr >> OFF_BIT) & PAGE_MASK; }
@@ -81,6 +92,8 @@ class AddrParser {
     assert(off < OFF_MASK);
     return (id << OFF_BIT) | off;
   }
+  static uint32_t GetBlockFromPageId(kv::PageId page_id) { return page_id >> (PAGE_BIT - 4); }
+  static uint32_t GetBlockOffFromPageId(kv::PageId page_id) { return page_id & PAGE_OFF_MASK; }
 };
 
 }  // namespace kv

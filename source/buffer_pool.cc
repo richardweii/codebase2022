@@ -238,7 +238,7 @@ PageEntry *BufferPool::FetchNew(PageId page_id) {
     PageEntry *new_entry = &_entries[fid];
     new_entry->_page_id = page_id;
     _hash_table->Insert(page_id, fid);
-    LOG_DEBUG("[shard %d] fetch new page %d", _shard, page_id);
+    // LOG_DEBUG("[shard %d] fetch new page %d", _shard, page_id);
     return new_entry;
   }
   return nullptr;
@@ -255,7 +255,7 @@ PageEntry *BufferPool::Lookup(PageId page_id) {
 
   LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
   _replacer->Ref(fid);
-  LOG_DEBUG("[shard %d] lookup page %d", _shard, page_id);
+  // LOG_DEBUG("[shard %d] lookup page %d", _shard, page_id);
   return &_entries[fid];
 }
 

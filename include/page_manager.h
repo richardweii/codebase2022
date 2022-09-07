@@ -57,7 +57,7 @@ class PageMeta {
  */
 class PageManager {
  public:
-  PageManager(size_t page_num, uint8_t shard);
+  PageManager(size_t page_num);
 
   ~PageManager();
 
@@ -83,7 +83,8 @@ class PageManager {
   PageMeta *_free_list;
   int _free_page_num = 0;
   size_t _page_num = 0;
-  // SpinLock _lock;
-  uint8_t _shard;
+  SpinLock _lock;
 };
+
+extern PageManager *global_page_manger;
 }  // namespace kv

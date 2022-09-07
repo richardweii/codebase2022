@@ -3,39 +3,24 @@
 
 namespace kv {
 
-Pool::Pool(uint8_t shard, RDMAClient *client) : _client(client), _shard(shard) {
+Pool::Pool(uint8_t shard, RDMAClient *client, std::vector<MemoryAccess> *global_rdma_access)
+    : _access_table(global_rdma_access), _client(client), _shard(shard) {
   _buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum, shard);
   _hash_index = new HashTable(kKeyNum / kPoolShardingNum, _slots);
-  _page_manager = new PageManager(kPoolShardingSize / kPageSize, shard);
 }
 
 Pool::~Pool() {
   // _hash_index->PrintCounter();
   delete _buffer_pool;
   delete _hash_index;
-  delete _page_manager;
 }
 
 void Pool::Init() {
   auto succ = _buffer_pool->Init(_client->Pd());
   LOG_ASSERT(succ, "Init buffer pool failed.");
-  AllocRequest req;
-  req.shard = _shard;
-  req.size = kPoolShardingSize;
-  req.type = MSG_ALLOC;
-
-  AllocResponse resp;
-  _client->RPC(req, resp);
-  if (resp.status != RES_OK) {
-    LOG_FATAL("Failed to alloc new block.");
-    return;
-  }
-
-  _rdma_access.addr = resp.addr;
-  _rdma_access.rkey = resp.rkey;
 
   for (int i = kSlabSizeMin; i <= kSlabSizeMax; i++) {
-    PageMeta *page = _page_manager->AllocNewPage(i);
+    PageMeta *page = global_page_manger->AllocNewPage(i);
     _allocing_tail[i] = page;
     _allocing_pages[i] = _buffer_pool->FetchNew(page->PageId());
     _allocing_pages[i]->SlabClass = i;
@@ -59,7 +44,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   }
   Addr addr = slot->Addr();
   PageId page_id = AddrParser::PageId(addr);
-  PageMeta *meta = _page_manager->Page(page_id);
+  PageMeta *meta = global_page_manger->Page(page_id);
   {  // lock-free phase
     _latch.RLock();
     defer { _latch.RUnlock(); };
@@ -117,7 +102,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
     // lock-free phase
     if (slot != nullptr) {
       addr = slot->Addr();
-      meta = _page_manager->Page(AddrParser::PageId(addr));
+      meta = global_page_manger->Page(AddrParser::PageId(addr));
       // modify in place
       if (meta->SlabClass() == val.size() / kSlabSize) {
         PageEntry *entry = _buffer_pool->Lookup(AddrParser::PageId(addr));
@@ -181,16 +166,16 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
   KeySlot *slot = &_slots[slot_idx];
   Addr addr = slot->Addr();
   PageId page_id = AddrParser::PageId(addr);
-  PageMeta *meta = _page_manager->Page(page_id);
+  PageMeta *meta = global_page_manger->Page(page_id);
   meta->ClearPos(AddrParser::Off(addr));
-  _page_manager->Mount(&_allocing_tail[meta->SlabClass()], meta);
+  global_page_manger->Mount(&_allocing_tail[meta->SlabClass()], meta);
   if (meta->Empty() && _allocing_pages[meta->SlabClass()]->PageId() != page_id) {
     if (_allocing_tail[meta->SlabClass()]->PageId() == page_id) {
       _allocing_tail[meta->SlabClass()] = meta->Prev();
-      LOG_DEBUG("[shard %d] set class %d tail page %d", _shard, meta->SlabClass(), meta->Prev()->PageId());
+      // LOG_DEBUG("[shard %d] set class %d tail page %d", _shard, meta->SlabClass(), meta->Prev()->PageId());
     }
-    _page_manager->Unmount(meta);
-    _page_manager->FreePage(page_id);
+    global_page_manger->Unmount(meta);
+    global_page_manger->FreePage(page_id);
   }
 
   slot->SetAddr(INVALID_ADDR);
@@ -203,26 +188,26 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val) {
   // delete
   Addr addr = slot->Addr();
   PageId page_id = AddrParser::PageId(addr);
-  PageMeta *meta = _page_manager->Page(page_id);
+  PageMeta *meta = global_page_manger->Page(page_id);
   assert(meta->SlabClass() != val.size() / kSlabSize);
   meta->ClearPos(AddrParser::Off(addr));
-  _page_manager->Mount(&_allocing_tail[meta->SlabClass()], meta);
+  global_page_manger->Mount(&_allocing_tail[meta->SlabClass()], meta);
   if (meta->Empty() && _allocing_pages[meta->SlabClass()]->PageId() != page_id) {
     if (_allocing_tail[meta->SlabClass()]->PageId() == page_id) {
       _allocing_tail[meta->SlabClass()] = meta->Prev();
-      LOG_DEBUG("[shard %d] set class %d tail page %d", _shard, meta->SlabClass(), meta->Prev()->PageId());
+      // LOG_DEBUG("[shard %d] set class %d tail page %d", _shard, meta->SlabClass(), meta->Prev()->PageId());
     }
-    _page_manager->Unmount(meta);
-    _page_manager->FreePage(page_id);
+    global_page_manger->Unmount(meta);
+    global_page_manger->FreePage(page_id);
   }
   // rewrite to meta
   uint8_t slab_class = val.size() / kSlabSize;
 
   PageEntry *page = _allocing_pages[slab_class];
-  meta = _page_manager->Page(page->PageId());
+  meta = global_page_manger->Page(page->PageId());
   if (meta->Full()) {
     page = mountNewPage(slab_class);
-    meta = _page_manager->Page(page->PageId());
+    meta = global_page_manger->Page(page->PageId());
   }
 
   // modify bitmap
@@ -237,7 +222,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val) {
 
 PageEntry *Pool::mountNewPage(uint8_t slab_class) {
   PageEntry *old_entry = _allocing_pages[slab_class];
-  PageMeta *old_meta = _page_manager->Page(old_entry->PageId());
+  PageMeta *old_meta = global_page_manger->Page(old_entry->PageId());
   _buffer_pool->UnpinPage(old_entry);
   _buffer_pool->Release(old_entry);
   _allocing_pages[slab_class] = nullptr;
@@ -246,7 +231,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class) {
   PageEntry *entry = nullptr;
   if (meta == nullptr) {
     // allocing list is empty, need alloc new page
-    meta = _page_manager->AllocNewPage(slab_class);
+    meta = global_page_manger->AllocNewPage(slab_class);
     entry = _buffer_pool->FetchNew(meta->PageId());
     LOG_ASSERT(meta != nullptr, "no more page.");
 
@@ -276,7 +261,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class) {
   }
   // replacement
   LOG_ASSERT(!meta->Full(), "invalid allocing page.");
-  _page_manager->Unmount(old_meta);
+  global_page_manger->Unmount(old_meta);
   entry = _buffer_pool->Lookup(meta->PageId());
   if (entry == nullptr) {
     entry = replacement(meta->PageId(), slab_class);
@@ -290,7 +275,7 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class) {
   // miss
 #ifdef STAT
   stat::replacement.fetch_add(1);
-  if (stat::replacement.load(std::memory_order_relaxed) % 10000 == 0) {
+  if (stat::replacement.load(std::memory_order_relaxed) % 100000 == 0) {
     LOG_INFO("Replacement %ld", stat::replacement.load(std::memory_order_relaxed));
   }
 #endif
@@ -331,10 +316,10 @@ void Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   uint8_t slab_class = val.size() / kSlabSize;
 
   PageEntry *page = _allocing_pages[slab_class];
-  PageMeta *meta = _page_manager->Page(page->PageId());
+  PageMeta *meta = global_page_manger->Page(page->PageId());
   if (meta->Full()) {
     page = mountNewPage(slab_class);
-    meta = _page_manager->Page(page->PageId());
+    meta = global_page_manger->Page(page->PageId());
   }
 
   // modify bitmap
@@ -349,13 +334,20 @@ void Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
 }
 
 int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {
+  uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
+  uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
+  LOG_DEBUG("write to block %d off %d", block, block_off);
+  const MemoryAccess &access = _access_table->at(block);
   return batch->RemoteWrite(entry->Data(), _buffer_pool->MR()->lkey, kPageSize,
-                            _rdma_access.addr + kPageSize * entry->PageId(), _rdma_access.rkey);
+                            access.addr + kPageSize * block_off, access.rkey);
 }
 
 int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch) {
-  return batch->RemoteRead(entry->Data(), _buffer_pool->MR()->lkey, kPageSize, _rdma_access.addr + kPageSize * page_id,
-                           _rdma_access.rkey);
+  uint32_t block = AddrParser::GetBlockFromPageId(page_id);
+  uint32_t block_off = AddrParser::GetBlockOffFromPageId(page_id);
+  const MemoryAccess &access = _access_table->at(block);
+  return batch->RemoteRead(entry->Data(), _buffer_pool->MR()->lkey, kPageSize, access.addr + kPageSize * block_off,
+                           access.rkey);
 }
 
 }  // namespace kv
