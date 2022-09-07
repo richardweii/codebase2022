@@ -42,7 +42,7 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   auto watcher = std::thread([&]() {
     sleep(1800);
     fflush(stdout);
-    this->stop();
+    abort(); 
   });
   watcher.detach();
 

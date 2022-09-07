@@ -97,6 +97,7 @@ class HashTable {
         LOG_DEBUG("duplicate of slot %d", new_slot_id);
         return false;
       }
+      slot_id = slot->Next();
     }
 #endif
 
@@ -137,6 +138,8 @@ class HashTable {
         counter_[index]--;
         return cur_slot_id;
       }
+      front_slot_id = cur_slot_id;
+      cur_slot_id = slot->Next();
     }
     // cannot find
     return KeySlot::INVALID_SLOT_ID;

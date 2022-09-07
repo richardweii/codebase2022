@@ -16,7 +16,7 @@
   int us = static_cast<int>(tv.tv_usec);                                                                     \
   struct tm tm_time;                                                                                         \
   localtime_r(&sec, &tm_time);                                                                               \
-  static const char *formater = "%4d-%02d-%02d %02d:%02d:%02d.%03d";                                         \
+  static const char *formater = "%4d-%02d-%02d %02d:%02d:%02d.%06d";                                         \
   int wsize = snprintf(timestamp_str, MAX_BUFFER_SIZE, formater, tm_time.tm_year + 1900, tm_time.tm_mon + 1, \
                        tm_time.tm_mday, tm_time.tm_hour, tm_time.tm_min, tm_time.tm_sec, us);                \
   timestamp_str[std::min(wsize, MAX_BUFFER_SIZE - 1)] = '\0';

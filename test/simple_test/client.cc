@@ -14,7 +14,7 @@
 using namespace kv;
 using namespace std;
 
-constexpr int key_num = kKeyNum;
+constexpr int key_num = kKeyNum * 0.9;
 constexpr int thread_num = 16;
 constexpr int write_op_num = key_num / thread_num;
 constexpr int delete_op_num = write_op_num * 0.8;
@@ -60,7 +60,8 @@ int main() {
             std::string value;
             int key_idx = j + i * write_op_num;
             bool found = local_engine->read(keys[key_idx].to_string(), value);
-            ASSERT(found, "Read %.16s failed.", keys[key_idx].key);
+
+            ASSERT(found, "idx %d Read %.16s failed.", key_idx, keys[key_idx].key);
             ASSERT(value.size() == (size_t)slab_class[key_idx] * kSlabSize, "got val length %lu, expected %d",
                    value.size(), slab_class[key_idx] * kSlabSize)
             char *val_str = local_engine->decrypt(value.c_str(), value.size());
