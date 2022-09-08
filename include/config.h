@@ -62,7 +62,7 @@ constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remo
 constexpr size_t kBufferPoolSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB cache
 #endif
 
-constexpr size_t kMaxBlockSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB mr
+constexpr size_t kMaxBlockSize = (size_t)1 * 1024 * 1024 * 1024;  // 1GB mr
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
 
 using Addr = int32_t;
@@ -78,7 +78,7 @@ constexpr uint32_t OFF_MASK = 0x1ffff;
 
 constexpr uint32_t PAGE_BIT = 19;
 constexpr uint32_t PAGE_MASK = 0x7ffff;
-constexpr uint32_t PAGE_OFF_MASK = 0x7fff;
+constexpr uint32_t PAGE_OFF_MASK = 0x3fff;
 constexpr uint32_t OFF_BIT = 13;  // MAX 4096
 constexpr uint32_t OFF_MASK = 0x1fff;
 
@@ -92,7 +92,7 @@ class AddrParser {
     assert(off < OFF_MASK);
     return (id << OFF_BIT) | off;
   }
-  static uint32_t GetBlockFromPageId(kv::PageId page_id) { return page_id >> (PAGE_BIT - 4); }
+  static uint32_t GetBlockFromPageId(kv::PageId page_id) { return page_id >> (PAGE_BIT - 5); }
   static uint32_t GetBlockOffFromPageId(kv::PageId page_id) { return page_id & PAGE_OFF_MASK; }
 };
 
