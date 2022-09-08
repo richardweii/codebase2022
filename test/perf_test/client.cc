@@ -17,7 +17,7 @@
 using namespace kv;
 using namespace std;
 
-constexpr int insert_num = 160000000;
+constexpr int insert_num = 16 * 10 * 1000000; // 16 * 10M
 constexpr int thread_num = 16;
 constexpr int write_op_per_thread = insert_num / thread_num;
 // constexpr int read_write_mix_op = 64 * 100;
@@ -46,11 +46,11 @@ constexpr int M = 1024 * 1024;
 
 void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_slab_class,
            std::vector<std::thread> &threads) {
-  LOG_INFO(" ============= part1 ==============>");
+  LOG_INFO(" ============= part1 validate ==============>");
   {
-    LOG_INFO(" @@@@@@@@@@@@@ round 1 @@@@@@@@@@@@@@@");
+    LOG_INFO(" @@@@@@@@@@@@@ write 16 * 10M @@@@@@@@@@@@@@@");
     auto time_now = TIME_NOW;
-    // first write
+    // write 16 * 10M
     threads.clear();
     for (int i = 0; i < thread_num; i++) {
       threads.emplace_back(
@@ -77,7 +77,8 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
       th.join();
     }
 
-    // first read
+    // read 16 * 10M
+    LOG_INFO(" @@@@@@@@@@@@@ read 16 * 10M @@@@@@@@@@@@@@@");
     threads.clear();
     for (int i = 0; i < thread_num; i++) {
       threads.emplace_back(
@@ -104,23 +105,25 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
       th.join();
     }
 
-    LOG_INFO(" @@@@@@@@@@@@@ round 2 @@@@@@@@@@@@@@@");
-    // second write
+    // write 16 * 10M
+    // value的大小不更改，只更改内容
+    LOG_INFO(" @@@@@@@@@@@@@ write 16 * 10M @@@@@@@@@@@@@@@");
     threads.clear();
     for (int i = 0; i < thread_num; i++) {
       threads.emplace_back(
           [=](TestKey *k, int *slab_class) {
             LOG_INFO("Start write thread %d", i);
-            string value;
+            std::string value;
             for (int j = 0; j < write_op_per_thread; j++) {
               if (j % M == 0) {
                 LOG_INFO("[thread %d] finish write %d kv", i, j);
               }
               int key_idx = j + i * write_op_per_thread;
-              uint8_t sc = genValueSlabSize1();
-              slab_class[key_idx] = sc;
+              uint8_t sc = slab_class[key_idx];
               value.resize(sc * kSlabSize);
-              memcpy((char *)value.c_str(), k[key_idx].key, 16);
+              // 更改规则：第一个字节+1
+              TestKey new_val; memcpy(new_val.key, k[key_idx].key, kKeyLength); new_val.key[0] += 1;
+              memcpy((char *)value.c_str(), new_val.key, 16);
               auto succ = local_engine->write(k[key_idx].to_string(), value);
               ASSERT(succ, "[thread %d] failed to write %d", i, key_idx);
             }
@@ -132,7 +135,8 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
       th.join();
     }
 
-    // second read
+    // read 16 * 10M
+    LOG_INFO(" @@@@@@@@@@@@@ read 16 * 10M @@@@@@@@@@@@@@@");
     threads.clear();
     for (int i = 0; i < thread_num; i++) {
       threads.emplace_back(
@@ -148,8 +152,72 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
               ASSERT(succ, "[thread %d] failed to read %d", i, key_idx);
               ASSERT(value.size() == (size_t)slab_class[key_idx] * kSlabSize, "got val length %lu, expected %d",
                      value.size(), slab_class[key_idx] * kSlabSize)
-              auto cmp = memcmp(value.c_str(), k[key_idx].key, 16);
-              ASSERT(cmp == 0, "expect %.16s, got %.16s", k[key_idx].key, value.c_str());
+              TestKey expect_val; memcpy(expect_val.key, k[key_idx].key, kKeyLength); expect_val.key[0] += 1;
+              auto cmp = memcmp(value.c_str(), expect_val.key, 16);
+              ASSERT(cmp == 0, "expect %.16s, got %.16s", expect_val.key, value.c_str());
+            }
+            LOG_INFO("End read thread %d", i);
+          },
+          keys, key_slab_class);
+    }
+    for (auto &th : threads) {
+      th.join();
+    }
+
+    // update 16 * 1M
+    // 需要更改value的大小
+    LOG_INFO(" @@@@@@@@@@@@@ update 16 * 1M @@@@@@@@@@@@@@@");
+    int update_num = 16 * 1000000;
+    int update_op_per_thread = update_num / thread_num;
+    threads.clear();
+    for (int i = 0; i < thread_num; i++) {
+      threads.emplace_back(
+          [=](TestKey *k, int *slab_class) {
+            LOG_INFO("Start update thread %d", i);
+            std::string value;
+            for (int j = 0; j < update_op_per_thread; j++) {
+              if (j % M == 0) {
+                LOG_INFO("[thread %d] finish update %d kv", i, j);
+              }
+              int key_idx = j + i * update_op_per_thread;
+              uint8_t sc = genValueSlabSize1();
+              slab_class[key_idx] = sc;
+              value.resize(sc * kSlabSize);
+              TestKey new_val; memcpy(new_val.key, k[key_idx].key, kKeyLength); new_val.key[0] += 1;
+              memcpy((char *)value.data(), new_val.key, kKeyLength);
+              auto succ = local_engine->write(k[key_idx].to_string(), value);
+              ASSERT(succ, "[thread %d] failed to update %d", i, key_idx);
+            }
+            LOG_INFO("End update thread %d", i);
+          },
+          keys, key_slab_class);
+    }
+    for (auto &th : threads) {
+      th.join();
+    }
+
+    // read? < 1M
+    LOG_INFO(" @@@@@@@@@@@@@ read 1M @@@@@@@@@@@@@@@");
+    int read_num = 1 * 1000000;
+    int read_op_per_thread = read_num / thread_num;
+    threads.clear();
+    for (int i = 0; i < thread_num; i++) {
+      threads.emplace_back(
+          [=](TestKey *k, int *slab_class) {
+            LOG_INFO("Start read thread %d", i);
+            std::string value;
+            for (int j = 0; j < read_op_per_thread; j++) {
+              if (j % M == 0) {
+                LOG_INFO("[thread %d] finish read %d kv", i, j);
+              }
+              int key_idx = j + i * read_op_per_thread;
+              auto succ = local_engine->read(k[key_idx].to_string(), value);
+              ASSERT(succ, "[thread %d] failed to read %d", i, key_idx);
+              ASSERT(value.size() == (size_t)slab_class[key_idx] * kSlabSize, "got val length %lu, expected %d",
+                     value.size(), slab_class[key_idx] * kSlabSize)
+              TestKey expect_val; memcpy(expect_val.key, k[key_idx].key, kKeyLength); expect_val.key[0] += 1;
+              auto cmp = memcmp(value.c_str(), expect_val.key, 16);
+              ASSERT(cmp == 0, "expect %.16s, got %.16s", expect_val.key, value.c_str());
             }
             LOG_INFO("End read thread %d", i);
           },
@@ -166,40 +234,28 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
   }
 }
 
+// delete 16 * 9M
+// read deleted 16 * 9M
+// write 16 * 9M
 void part2(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_slab_class,
            std::vector<std::thread> &threads) {
-  LOG_INFO(" ============= start read & write ===============>");
+  LOG_INFO(" ============= part2 delete ===============>");
   {
     auto time_now = TIME_NOW;
+    LOG_INFO(" @@@@@@@@@@@@@ delete 16 * 9M @@@@@@@@@@@@@@@");
+    int delete_num = 16 * 9 * 1000000;
+    int delete_op_per_thread = delete_num / thread_num;
     threads.clear();
     for (int i = 0; i < thread_num; i++) {
       threads.emplace_back(
           [=](TestKey *k, int *zipf_index, int *slab_class) {
-            // mt19937 gen;
-            // gen.seed(random_device()());
-            // uniform_int_distribution<mt19937::result_type> dist;
-            std::string write_value;
-            std::string read_value;
-            for (int j = 0; j < read_write_mix_op; j++) {
-              int key_idx = j + i * read_write_mix_op;
-              auto prob = j % 4;
+            for (int j = 0; j < delete_op_per_thread; j++) {
+              int key_idx = j + i * delete_op_per_thread;
               if (j % (4 * M) == 0) {
-                LOG_INFO("[thread %d] finish read&wirte %d M kv", i, j / M);
+                LOG_INFO("[thread %d] finish delete %d M kv", i, j / M);
               }
-              if (prob == 0) {
-                // wirte;
-                write_value.resize(slab_class[zipf_index[key_idx]] * kSlabSize);
-                memcpy((char *)write_value.c_str(), k[zipf_index[key_idx]].key, 16);
-                auto succ = local_engine->write(k[zipf_index[key_idx]].to_string(), write_value);
-                EXPECT(succ, "MIX [thread %d] failed to write %d", i, zipf_index[key_idx]);
-              } else {
-                // read
-                auto succ = local_engine->read(k[zipf_index[key_idx]].to_string(), read_value);
-                EXPECT(succ, "MIX [thread %d] failed to read %d", i, zipf_index[key_idx]);
-                // auto cmp = memcmp(read_value.c_str(), k[zipf_index[i * read_write_mix_op + j]].key, 16);
-                // EXPECT(cmp == 0, "expect %s, got %s", k[zipf_index[i * read_write_mix_op + j]].key,
-                //        write_value.c_str());
-              }
+              auto succ = local_engine->deleteK(keys[key_idx].to_string());
+              ASSERT(succ, "delete key %.16s failed.", keys[key_idx].key);
             }
           },
           keys, zipf_index, key_slab_class);
@@ -207,6 +263,99 @@ void part2(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
     for (auto &th : threads) {
       th.join();
     }
+
+    LOG_INFO(" @@@@@@@@@@@@@ read deleted 16 * 9M @@@@@@@@@@@@@@@");
+    threads.clear();
+    for (int i = 0; i < thread_num; i++) {
+      threads.emplace_back(
+          [=](TestKey *k, int *zipf_index, int *slab_class) {
+            for (int j = 0; j < delete_op_per_thread; j++) {
+              int key_idx = j + i * delete_op_per_thread;
+              if (j % (4 * M) == 0) {
+                LOG_INFO("[thread %d] finish read deleted %d M kv", i, j / M);
+              }
+              std::string value;
+              bool found = local_engine->read(keys[key_idx].to_string(), value);
+              ASSERT(!found, "delete key %.16s failed.", keys[key_idx].key);
+            }
+          },
+          keys, zipf_index, key_slab_class);
+    }
+    for (auto &th : threads) {
+      th.join();
+    }    
+
+    LOG_INFO(" @@@@@@@@@@@@@ write 16 * 9M @@@@@@@@@@@@@@@");
+    threads.clear();
+    for (int i = 0; i < thread_num; i++) {
+      threads.emplace_back(
+          [=](TestKey *k, int *slab_class) {
+            LOG_INFO("Start write thread %d", i);
+            std::string value;
+            for (int j = 0; j < delete_op_per_thread; j++) {
+              if (j % M == 0) {
+                LOG_INFO("[thread %d] finish write %d kv", i, j);
+              }
+              int key_idx = j + i * delete_op_per_thread;
+              uint8_t sc = genValueSlabSize1();
+              slab_class[key_idx] = sc;
+              value.resize(sc * kSlabSize);
+              TestKey new_val; memcpy(new_val.key, k[key_idx].key, kKeyLength); new_val.key[0] += 1;
+              memcpy((char *)value.c_str(), new_val.key, 16);
+              auto succ = local_engine->write(k[key_idx].to_string(), value);
+              ASSERT(succ, "[thread %d] failed to write %d", i, key_idx);
+            }
+            LOG_INFO("End write thread %d", i);
+          },
+          keys, key_slab_class);
+    }
+    for (auto &th : threads) {
+      th.join();
+    }    
+
+    auto time_end = TIME_NOW;
+    auto time_delta = time_end - time_now;
+    auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
+    std::cout << "Total time:" << count * 1.0 / 1000 / 1000 << "s" << std::endl;
+  }
+}
+
+// read 16 * 32M
+void part3(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_slab_class,
+           std::vector<std::thread> &threads) {
+  LOG_INFO(" ============= part3 hot data ===============>");
+  {
+    LOG_INFO(" @@@@@@@@@@@@@ read 16 * 32M @@@@@@@@@@@@@@@");
+    auto time_now = TIME_NOW;
+    threads.clear();
+    int read_num = 16 * 32 * 1000000;
+    int read_op_per_thread = read_num / thread_num;
+    for (int i = 0; i < thread_num; i++) {
+      threads.emplace_back(
+          [=](TestKey *k, int *slab_class) {
+            LOG_INFO("Start read thread %d", i);
+            std::string value;
+            for (int j = 0; j < read_op_per_thread; j++) {
+              if (j % M == 0) {
+                LOG_INFO("[thread %d] finish read %d kv", i, j);
+              }
+              int key_idx = (j + i * read_op_per_thread) % insert_num;
+              auto succ = local_engine->read(k[key_idx].to_string(), value);
+              ASSERT(succ, "[thread %d] failed to read %d", i, key_idx);
+              ASSERT(value.size() == (size_t)slab_class[key_idx] * kSlabSize, "got val length %lu, expected %d",
+                     value.size(), slab_class[key_idx] * kSlabSize)
+              TestKey expect_val; memcpy(expect_val.key, k[key_idx].key, kKeyLength); expect_val.key[0] += 1;
+              auto cmp = memcmp(value.c_str(), expect_val.key, 16);
+              ASSERT(cmp == 0, "expect %.16s, got %.16s", expect_val.key, value.c_str());
+            }
+            LOG_INFO("End read thread %d", i);
+          },
+          keys, key_slab_class);
+    }
+    for (auto &th : threads) {
+      th.join();
+    }
+    
     auto time_end = TIME_NOW;
     auto time_delta = time_end - time_now;
     auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
@@ -247,6 +396,7 @@ int main() {
 
   part1(local_engine, keys, zipf_index, key_slab_class, threads);
   part2(local_engine, keys, zipf_index, key_slab_class, threads);
+  part3(local_engine, keys, zipf_index, key_slab_class, threads);
 
   delete[] key_slab_class;
   delete[] zipf_index;

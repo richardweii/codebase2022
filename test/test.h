@@ -93,11 +93,11 @@ constexpr int value_dist1[] = {5, 5, 5, 5, 5, 5,  5,  5,  5,  5,  5,  5,  6,  6,
                                8, 9, 9, 9, 9, 10, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16};
 
 inline int genValueSlabSize0() {
-  static std::atomic_int32_t p;
+  static std::atomic_int64_t p;
   return value_dist0[p.fetch_add(1) % 1024];
 }
 
 inline int genValueSlabSize1() {
-  static std::atomic_int32_t p;
+  static std::atomic_int64_t p;
   return value_dist1[p.fetch_add(1) % 64];
 }
