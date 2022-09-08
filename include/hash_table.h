@@ -55,7 +55,7 @@ class HashTable {
   };
 
   ~HashTable() {
-    // PrintCounter();
+    PrintCounter();
     delete[] _bucket;
   }
 

@@ -275,7 +275,7 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class) {
   // miss
 #ifdef STAT
   stat::replacement.fetch_add(1);
-  if (stat::replacement.load(std::memory_order_relaxed) % 100000 == 0) {
+  if (stat::replacement.load(std::memory_order_relaxed) % 10000 == 0) {
     LOG_INFO("Replacement %ld", stat::replacement.load(std::memory_order_relaxed));
   }
 #endif

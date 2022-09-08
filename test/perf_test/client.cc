@@ -24,6 +24,26 @@ constexpr int write_op_per_thread = insert_num / thread_num;
 constexpr int read_write_mix_op = 64 * 1024 * 1024;
 constexpr int M = 1024 * 1024;
 
+// encryption & decrption
+
+// part 1 validate
+// write 16 * 10M
+// read 16 * 10M
+// write 16 * 10M
+// read 16 * 10M
+// update 16 * 1M
+// read ? < 1M
+
+// part 2 delete
+// delete 16 * 9M
+// read deleted 16 * 9M
+// write 16 * 9M
+
+// part 3 hot data
+// read 16 * 32M
+
+
+
 void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_slab_class,
            std::vector<std::thread> &threads) {
   LOG_INFO(" ============= part1 ==============>");

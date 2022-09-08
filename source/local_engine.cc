@@ -73,9 +73,9 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
 void LocalEngine::stop() {
   _client->Stop();
   delete _client;
-  // for (int i = 0; i < kPoolShardingNum; i++) {
-  //   delete pool_[i];
-  // }
+  for (int i = 0; i < kPoolShardingNum; i++) {
+    delete _pool[i];
+  }
   // delete global_page_manager;
   LOG_INFO(" ========== Performance Statistics ============");
   LOG_INFO(" Total read %ld times, write %ld times", stat::read_times.load(), stat::write_times.load());
@@ -196,14 +196,15 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
 bool LocalEngine::write(const std::string &key, const std::string &value, bool use_aes) {
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
-  if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
-    LOG_INFO("write %lu", stat::write_times.load(std::memory_order_relaxed));
-  }
-  // if (stat::write_times.load(std::memory_order_relaxed) < 1000) {
-  //   LOG_INFO("key %.16s", key.c_str());
+  // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
+  //   LOG_INFO("write %lu", stat::write_times.load(std::memory_order_relaxed));
   // }
+  if (stat::write_times.load(std::memory_order_relaxed) > 10000000 &&
+      stat::write_times.load(std::memory_order_relaxed) < 10010000) {
+    LOG_INFO("key %016lx%016lx", *((uint64_t *)(key.data())), *((uint64_t *)(key.data() + 4)));
+  }
 #endif
-  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
+  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
 
   if (use_aes) {
@@ -235,11 +236,11 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
 bool LocalEngine::read(const std::string &key, std::string &value) {
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
-  if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
-    LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
-  }
+  // if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
+  //   LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
+  // }
 #endif
-  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
+  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   bool succ = _pool[index]->Read(Slice(key), hash, value);
   // #ifdef STAT
@@ -257,11 +258,11 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
 bool LocalEngine::deleteK(const std::string &key) {
 #ifdef STAT
   stat::delete_times.fetch_add(1, std::memory_order_relaxed);
-  if (stat::delete_times.load(std::memory_order_relaxed) % 1000000 == 0) {
-    LOG_INFO("delete %lu", stat::delete_times.load(std::memory_order_relaxed));
-  }
+  // if (stat::delete_times.load(std::memory_order_relaxed) % 1000000 == 0) {
+  //   LOG_INFO("delete %lu", stat::delete_times.load(std::memory_order_relaxed));
+  // }
 #endif
-  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
+  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   return _pool[index]->Delete(Slice(key), hash);
 }
