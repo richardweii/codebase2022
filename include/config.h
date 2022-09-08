@@ -8,7 +8,7 @@
 #include <string>
 
 // #define TEST_CONFIG  // test configuration marco switch
-#define STAT  // statistic
+// #define STAT  // statistic
 
 namespace kv {
 #define RDMA_MR_FLAG (IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE)

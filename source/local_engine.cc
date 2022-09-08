@@ -199,10 +199,6 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
   //   LOG_INFO("write %lu", stat::write_times.load(std::memory_order_relaxed));
   // }
-  if (stat::write_times.load(std::memory_order_relaxed) > 10000000 &&
-      stat::write_times.load(std::memory_order_relaxed) < 10010000) {
-    LOG_INFO("key %016lx%016lx", *((uint64_t *)(key.data())), *((uint64_t *)(key.data() + 4)));
-  }
 #endif
   uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
