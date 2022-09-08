@@ -46,8 +46,8 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = global_page_manger->Page(page_id);
   {  // lock-free phase
-    _latch.RLock();
-    defer { _latch.RUnlock(); };
+    // _latch.RLock();
+    // defer { _latch.RUnlock(); };
     // cache
     PageEntry *entry = _buffer_pool->Lookup(page_id);
 
@@ -96,8 +96,8 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
   PageMeta *meta = nullptr;
   Addr addr = INVALID_ADDR;
   {
-    _latch.RLock();
-    defer { _latch.RUnlock(); };
+    // _latch.RLock();
+    // defer { _latch.RUnlock(); };
     slot = _hash_index->Find(key, hash);
     // lock-free phase
     if (slot != nullptr) {
