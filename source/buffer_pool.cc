@@ -247,16 +247,22 @@ PageEntry *BufferPool::FetchNew(PageId page_id) {
 PageEntry *BufferPool::Lookup(PageId page_id) {
   _latch.RLock();
   defer { _latch.RUnlock(); };
+  // while (true) {
+    auto fid = _hash_table->Find(page_id);
+    if (fid == INVALID_FRAME_ID) {
+      return nullptr;
+    }
 
-  auto fid = _hash_table->Find(page_id);
-  if (fid == INVALID_FRAME_ID) {
-    return nullptr;
-  }
+    // if (!(page_id == _entries[fid]._page_id)) {
+    //   // lookup_count_++;
+    //   continue;
+    // }
 
-  LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
-  _replacer->Ref(fid);
-  // LOG_DEBUG("[shard %d] lookup page %d", _shard, page_id);
-  return &_entries[fid];
+    LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
+    _replacer->Ref(fid);
+    // LOG_DEBUG("[shard %d] lookup page %d", _shard, page_id);
+    return &_entries[fid];
+  // }
 }
 
 void BufferPool::Release(PageEntry *entry) { _replacer->Ref(entry->_frame_id); }
