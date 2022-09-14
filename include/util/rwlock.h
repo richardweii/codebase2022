@@ -84,7 +84,7 @@ static inline void AsmVolatilePause() {
 //   std::atomic_int8_t lock_{0};
 // };
 
-class SpinLatch {
+class alignas(64) SpinLatch {
  public:
   void WLock() {
     int8_t lock = 0;

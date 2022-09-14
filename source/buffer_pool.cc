@@ -95,6 +95,7 @@ class FrameHashTable {
     }
     _size = PrimeList[logn];
     _slots = new Slot[_size];
+    _slot_latch = new SpinLatch[_size];
     // counter_ = new uint8_t[_size]{0};
   }
 
@@ -102,6 +103,9 @@ class FrameHashTable {
     uint32_t index = page_id % _size;
 
     Slot *slot = &_slots[index];
+    _slot_latch[index].RLock();
+    defer { _slot_latch[index].RUnlock(); };
+
     if (slot->_page_id == INVALID_PAGE_ID) {
       return INVALID_FRAME_ID;
     }
@@ -118,6 +122,9 @@ class FrameHashTable {
   void Insert(PageId page_id, FrameId frame) {
     uint32_t index = page_id % _size;
     Slot *slot = &_slots[index];
+
+    _slot_latch[index].WLock();
+    defer { _slot_latch[index].WUnlock(); };
     if (slot->_page_id == INVALID_PAGE_ID) {
       slot->_page_id = page_id;
       slot->_frame = frame;
@@ -147,6 +154,9 @@ class FrameHashTable {
     uint32_t index = page_id % _size;
 
     Slot *slot = &_slots[index];
+
+    _slot_latch[index].WLock();
+    defer { _slot_latch[index].WUnlock(); };
 
     if (slot->_page_id == INVALID_PAGE_ID) {
       return false;
@@ -194,6 +204,7 @@ class FrameHashTable {
     Slot *_next = nullptr;
   };
   Slot *_slots;
+  SpinLatch *_slot_latch;
   size_t _size;
 };
 
@@ -246,24 +257,24 @@ PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
 }
 
 PageEntry *BufferPool::Lookup(PageId page_id) {
-  _latch.RLock();
-  defer { _latch.RUnlock(); };
-  // while (true) {
+  // _latch.RLock();
+  // defer { _latch.RUnlock(); };
+  while (true) {
     auto fid = _hash_table->Find(page_id);
     if (fid == INVALID_FRAME_ID) {
       return nullptr;
     }
 
-    // if (!(page_id == _entries[fid]._page_id)) {
-    //   // lookup_count_++;
-    //   continue;
-    // }
+    if (!(page_id == _entries[fid]._page_id)) {
+      // lookup_count_++;
+      continue;
+    }
 
     LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
     _replacer->Ref(fid);
     // LOG_DEBUG("[shard %d] lookup page %d", _shard, page_id);
     return &_entries[fid];
-  // }
+  }
 }
 
 void BufferPool::Release(PageEntry *entry) { _replacer->Ref(entry->_frame_id); }
@@ -276,8 +287,8 @@ void BufferPool::InsertPage(PageEntry *page, PageId page_id, uint8_t slab_class)
 }
 
 PageEntry *BufferPool::Evict() {
-  _latch.WLock();
-  defer { _latch.WUnlock(); };
+  // _latch.WLock();
+  // defer { _latch.WUnlock(); };
   FrameId fid;
   auto succ = _replacer->Victim(&fid);
   assert(succ);

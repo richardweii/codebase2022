@@ -183,9 +183,9 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("Start update thread %d", i);
             std::string value;
             for (int j = 0; j < update_op_per_thread; j++) {
-              if (j % M == 0) {
-                LOG_INFO("[thread %d] finish update %d kv", i, j);
-              }
+              // if (j % M == 0) {
+              //   LOG_INFO("[thread %d] finish update %d kv", i, j);
+              // }
               int key_idx = j + i * update_op_per_thread;
               uint8_t sc = genValueSlabSize1();
               slab_class[key_idx] = sc;
@@ -258,9 +258,9 @@ void part2(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
           [=](TestKey *k, int *zipf_index, int *slab_class) {
             for (int j = 0; j < delete_op_per_thread; j++) {
               int key_idx = j + i * delete_op_per_thread;
-              if (j % (4 * M) == 0) {
-                LOG_INFO("[thread %d] finish delete %d M kv", i, j / M);
-              }
+              // if (j % (4 * M) == 0) {
+              //   LOG_INFO("[thread %d] finish delete %d M kv", i, j / M);
+              // }
               auto succ = local_engine->deleteK(keys[key_idx].to_string());
               ASSERT(succ, "delete key %.16s failed.", keys[key_idx].key);
             }
@@ -278,9 +278,9 @@ void part2(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
           [=](TestKey *k, int *zipf_index, int *slab_class) {
             for (int j = 0; j < delete_op_per_thread; j++) {
               int key_idx = j + i * delete_op_per_thread;
-              if (j % (4 * M) == 0) {
-                LOG_INFO("[thread %d] finish read deleted %d M kv", i, j / M);
-              }
+              // if (j % (4 * M) == 0) {
+              //   LOG_INFO("[thread %d] finish read deleted %d M kv", i, j / M);
+              // }
               std::string value;
               bool found = local_engine->read(keys[key_idx].to_string(), value);
               ASSERT(!found, "delete key %.16s failed.", keys[key_idx].key);
@@ -300,9 +300,9 @@ void part2(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("Start write thread %d", i);
             std::string value;
             for (int j = 0; j < delete_op_per_thread; j++) {
-              if (j % M == 0) {
-                LOG_INFO("[thread %d] finish write %d kv", i, j);
-              }
+              // if (j % M == 0) {
+              //   LOG_INFO("[thread %d] finish write %d kv", i, j);
+              // }
               int key_idx = j + i * delete_op_per_thread;
               uint8_t sc = genValueSlabSize1();
               slab_class[key_idx] = sc;
@@ -343,9 +343,9 @@ void part3(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("Start read thread %d", i);
             std::string value;
             for (int j = 0; j < read_op_per_thread; j++) {
-              if (j % M == 0) {
-                LOG_INFO("[thread %d] finish read %d kv", i, j);
-              }
+              // if (j % M == 0) {
+              //   LOG_INFO("[thread %d] finish read %d kv", i, j);
+              // }
               int key_idx = (j + i * read_op_per_thread) % insert_num;
               auto succ = local_engine->read(k[key_idx].to_string(), value);
               ASSERT(succ, "[thread %d] failed to read %d", i, key_idx);
