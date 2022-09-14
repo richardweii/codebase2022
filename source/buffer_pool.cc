@@ -103,8 +103,8 @@ class FrameHashTable {
     uint32_t index = page_id % _size;
 
     Slot *slot = &_slots[index];
-    _slot_latch[index].RLock();
-    defer { _slot_latch[index].RUnlock(); };
+    // _slot_latch[index].RLock();
+    // defer { _slot_latch[index].RUnlock(); };
 
     if (slot->_page_id == INVALID_PAGE_ID) {
       return INVALID_FRAME_ID;
@@ -123,8 +123,8 @@ class FrameHashTable {
     uint32_t index = page_id % _size;
     Slot *slot = &_slots[index];
 
-    _slot_latch[index].WLock();
-    defer { _slot_latch[index].WUnlock(); };
+    // _slot_latch[index].WLock();
+    // defer { _slot_latch[index].WUnlock(); };
     if (slot->_page_id == INVALID_PAGE_ID) {
       slot->_page_id = page_id;
       slot->_frame = frame;
@@ -155,8 +155,8 @@ class FrameHashTable {
 
     Slot *slot = &_slots[index];
 
-    _slot_latch[index].WLock();
-    defer { _slot_latch[index].WUnlock(); };
+    // _slot_latch[index].WLock();
+    // defer { _slot_latch[index].WUnlock(); };
 
     if (slot->_page_id == INVALID_PAGE_ID) {
       return false;
