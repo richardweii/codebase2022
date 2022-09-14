@@ -95,7 +95,7 @@ class FrameHashTable {
     }
     _size = PrimeList[logn];
     _slots = new Slot[_size];
-    _slot_latch = new SpinLatch[_size];
+    // _slot_latch = new SpinLatch[_size];
     // counter_ = new uint8_t[_size]{0};
   }
 

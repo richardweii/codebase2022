@@ -63,7 +63,6 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   }
   {
     _latch.WLock();
-    defer { _latch.WUnlock(); };
 
     // recheck
     PageEntry *entry = _buffer_pool->Lookup(page_id);
@@ -71,6 +70,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
+      _latch.WUnlock();
       uint32_t val_len = entry->SlabClass() * kSlabSize;
       val.resize(val_len);
       memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
@@ -80,6 +80,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 
     // cache miss
     PageEntry *victim = replacement(page_id, meta->SlabClass());
+    _latch.WUnlock();
 
     uint32_t val_len = victim->SlabClass() * kSlabSize;
     val.resize(val_len);
@@ -120,7 +121,6 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
   }
   {
     _latch.WLock();
-    defer { _latch.WUnlock(); };
     if (slot == nullptr) {
       // insert new KV
       writeNew(key, hash, val);
@@ -132,6 +132,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 #ifdef STAT
           stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
+          _latch.WUnlock();
           if (!entry->Dirty) entry->Dirty = true;
 
           memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
@@ -141,6 +142,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 
         // cache miss
         PageEntry *victim = replacement(page_id, meta->SlabClass());
+        _latch.WUnlock();
 
         memcpy((char *)(victim->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
         if (!victim->Dirty) victim->Dirty = true;
@@ -211,6 +213,8 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val) {
 
   // modify bitmap
   int off = meta->SetFirstFreePos();
+  _latch.WUnlock();
+
   memcpy((char *)(page->Data() + val.size() * off), val.data(), val.size());
   if (!page->Dirty) page->Dirty = true;
 
@@ -321,6 +325,7 @@ void Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
 
   // modify bitmap
   int off = meta->SetFirstFreePos();
+  _latch.WUnlock();
   // LOG_ASSERT(off != -1, "set bitmap failed.");
   Addr addr = AddrParser::GenAddrFrom(meta->PageId(), off);
   slot->SetAddr(addr);
@@ -335,8 +340,8 @@ int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
   LOG_DEBUG("write to block %d off %d", block, block_off);
   const MemoryAccess &access = _access_table->at(block);
-  return batch->RemoteWrite(entry->Data(), _buffer_pool->MR()->lkey, kPageSize,
-                            access.addr + kPageSize * block_off, access.rkey);
+  return batch->RemoteWrite(entry->Data(), _buffer_pool->MR()->lkey, kPageSize, access.addr + kPageSize * block_off,
+                            access.rkey);
 }
 
 int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch) {
