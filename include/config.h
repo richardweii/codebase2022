@@ -55,14 +55,15 @@ constexpr int kSlabSizeMax = 64;  // 64 * 16 = 1024 Bytes
 constexpr size_t kKeyNum = 12 * 16 * 1024;              // 16 * 12K key
 constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024;  // 32MB remote pool
 constexpr size_t kBufferPoolSize = 2 * 1024 * 1024;     // 2MB cache
+constexpr size_t kMaxBlockSize = (size_t)1* 1024 * 1024;  // 1MB mr
 #else
 
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                   // 16 * 12M key
 constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remote pool
 constexpr size_t kBufferPoolSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB cache
+constexpr size_t kMaxBlockSize = (size_t)1 * 1024 * 1024 * 1024;  // 1GB mr
 #endif
 
-constexpr size_t kMaxBlockSize = (size_t)1 * 1024 * 1024 * 1024;  // 1GB mr
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
 
 using Addr = int32_t;
@@ -71,7 +72,7 @@ constexpr Addr INVALID_ADDR = (-1);
 #ifdef TEST_CONFIG
 constexpr uint32_t PAGE_BIT = 15;
 constexpr uint32_t PAGE_MASK = 0x7fff;
-constexpr uint32_t PAGE_OFF_MASK = 0x7ff;
+constexpr uint32_t PAGE_OFF_MASK = 0x3ff;
 constexpr uint32_t OFF_BIT = 17;  // MAX 4096
 constexpr uint32_t OFF_MASK = 0x1ffff;
 #else

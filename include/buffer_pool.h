@@ -22,13 +22,14 @@ class PageEntry {
 
  public:
   bool Dirty = false;
-  uint8_t SlabClass = 0;
   kv::PageId PageId() const { return _page_id; }
   char *Data() { return _data->data; }
+  uint8_t SlabClass() const { return _slab_class; }
 
  private:
   kv::PageId _page_id = INVALID_PAGE_ID;
   PageData *_data;
+  uint8_t _slab_class = 0;
   FrameId _frame_id = INVALID_FRAME_ID;
   // TODO: maybe need a latch
 };
@@ -41,14 +42,14 @@ class BufferPool {
   bool Init(ibv_pd *pd);
 
   // return nullptr if no free page
-  PageEntry *FetchNew(PageId page_id);
+  PageEntry *FetchNew(PageId page_id, uint8_t slab_class);
 
   PageEntry *Lookup(PageId page_id);
 
   void Release(PageEntry *entry);
 
   // used with evict
-  void InsertPage(PageEntry *page, PageId page_id);
+  void InsertPage(PageEntry *page, PageId page_id, uint8_t slab_class);
 
   PageEntry *Evict();
   PageEntry *EvictBatch(int batch_size, std::vector<PageEntry *> *pages = nullptr);

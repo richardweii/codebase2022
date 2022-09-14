@@ -22,8 +22,7 @@ void Pool::Init() {
   for (int i = kSlabSizeMin; i <= kSlabSizeMax; i++) {
     PageMeta *page = global_page_manger->AllocNewPage(i);
     _allocing_tail[i] = page;
-    _allocing_pages[i] = _buffer_pool->FetchNew(page->PageId());
-    _allocing_pages[i]->SlabClass = i;
+    _allocing_pages[i] = _buffer_pool->FetchNew(page->PageId(), i);
     _buffer_pool->PinPage(_allocing_pages[i]);
   }
 
@@ -55,7 +54,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      uint32_t val_len = entry->SlabClass * kSlabSize;
+      uint32_t val_len = entry->SlabClass() * kSlabSize;
       val.resize(val_len);
       memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
       _buffer_pool->Release(entry);
@@ -72,7 +71,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      uint32_t val_len = entry->SlabClass * kSlabSize;
+      uint32_t val_len = entry->SlabClass() * kSlabSize;
       val.resize(val_len);
       memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
       _buffer_pool->Release(entry);
@@ -82,7 +81,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     // cache miss
     PageEntry *victim = replacement(page_id, meta->SlabClass());
 
-    uint32_t val_len = victim->SlabClass * kSlabSize;
+    uint32_t val_len = victim->SlabClass() * kSlabSize;
     val.resize(val_len);
     memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
 
@@ -232,7 +231,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class) {
   if (meta == nullptr) {
     // allocing list is empty, need alloc new page
     meta = global_page_manger->AllocNewPage(slab_class);
-    entry = _buffer_pool->FetchNew(meta->PageId());
+    entry = _buffer_pool->FetchNew(meta->PageId(), slab_class);
     LOG_ASSERT(meta != nullptr, "no more page.");
 
     if (entry == nullptr) {
@@ -250,10 +249,9 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class) {
       }
       auto ret = batch.FinishBatch();
       LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
-      _buffer_pool->InsertPage(entry, meta->PageId());
+      _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
     }
 
-    entry->SlabClass = slab_class;
     _buffer_pool->PinPage(entry);
     _allocing_pages[slab_class] = entry;
     _allocing_tail[slab_class] = meta;
@@ -293,9 +291,8 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class) {
   ret = batch.FinishBatch();
   LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
 
-  _buffer_pool->InsertPage(victim, page_id);
+  _buffer_pool->InsertPage(victim, page_id, slab_class);
 
-  victim->SlabClass = slab_class;
   return victim;
 }
 

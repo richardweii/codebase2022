@@ -232,11 +232,12 @@ bool BufferPool::Init(ibv_pd *pd) {
   return true;
 }
 
-PageEntry *BufferPool::FetchNew(PageId page_id) {
+PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
   FrameId fid;
   if (_replacer->GetFrame(&fid)) {
     PageEntry *new_entry = &_entries[fid];
     new_entry->_page_id = page_id;
+    new_entry->_slab_class = slab_class;
     _hash_table->Insert(page_id, fid);
     // LOG_DEBUG("[shard %d] fetch new page %d", _shard, page_id);
     return new_entry;
@@ -267,8 +268,9 @@ PageEntry *BufferPool::Lookup(PageId page_id) {
 
 void BufferPool::Release(PageEntry *entry) { _replacer->Ref(entry->_frame_id); }
 
-void BufferPool::InsertPage(PageEntry *page, PageId page_id) {
+void BufferPool::InsertPage(PageEntry *page, PageId page_id, uint8_t slab_class) {
   page->_page_id = page_id;
+  page->_slab_class = slab_class;
   _hash_table->Insert(page_id, page->_frame_id);
   _replacer->Ref(page->_frame_id);
 }
