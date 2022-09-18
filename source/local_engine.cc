@@ -19,7 +19,7 @@
 
 namespace kv {
 
-thread_local bool t_start = false;
+// thread_local bool t_start = false;
 
 /**
  * @description: start local engine service
@@ -197,15 +197,15 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
  * @return {bool} true for success
  */
 bool LocalEngine::write(const std::string &key, const std::string &value, bool use_aes) {
-  if (UNLIKELY(!bind_core.isDone())) {
-    t_start = true;
-    bind_core.bind();
-  } else {
-    if (UNLIKELY(!t_start)) {
-      t_start = true;
-      bind_core.rebind();
-    }
-  }
+  // if (UNLIKELY(!bind_core.isDone())) {
+  //   t_start = true;
+  //   bind_core.bind();
+  // } else {
+  //   if (UNLIKELY(!t_start)) {
+  //     t_start = true;
+  //     bind_core.rebind();
+  //   }
+  // }
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
@@ -242,15 +242,6 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
  * @return {bool}  true for success
  */
 bool LocalEngine::read(const std::string &key, std::string &value) {
-  if (UNLIKELY(!bind_core.isDone())) {
-    t_start = true;
-    bind_core.bind();
-  } else {
-    if (UNLIKELY(!t_start)) {
-      t_start = true;
-      bind_core.rebind();
-    }
-  }
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
@@ -273,15 +264,6 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
 }
 
 bool LocalEngine::deleteK(const std::string &key) {
-  if (UNLIKELY(!bind_core.isDone())) {
-    t_start = true;
-    bind_core.bind();
-  } else {
-    if (UNLIKELY(!t_start)) {
-      t_start = true;
-      bind_core.rebind();
-    }
-  }
 #ifdef STAT
   stat::delete_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::delete_times.load(std::memory_order_relaxed) % 1000000 == 0) {
