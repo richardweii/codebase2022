@@ -33,6 +33,9 @@ void Pool::Init() {
 }
 
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
+  if (!bind_core.isDone()) {
+    bind_core.bind();
+  }
   // existence
   KeySlot *slot = _hash_index->Find(key, hash);
   if (slot == nullptr) {

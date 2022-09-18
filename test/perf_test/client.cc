@@ -77,6 +77,7 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("End write thread %d", i);
           },
           keys, key_slab_class);
+      // std::cout << "handle " << threads[i].native_handle() << std::endl;
     }
     for (auto &th : threads) {
       th.join();
@@ -105,6 +106,7 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("End read thread %d", i);
           },
           keys, key_slab_class);
+      // std::cout << "handle " << threads[i].native_handle() << std::endl;
     }
     for (auto &th : threads) {
       th.join();
@@ -137,6 +139,7 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("End write thread %d", i);
           },
           keys, key_slab_class);
+      // std::cout << "handle " << threads[i].native_handle() << std::endl;
     }
     for (auto &th : threads) {
       th.join();
@@ -168,6 +171,7 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("End read thread %d", i);
           },
           keys, key_slab_class);
+      // std::cout << "handle " << threads[i].native_handle() << std::endl;
     }
     for (auto &th : threads) {
       th.join();
