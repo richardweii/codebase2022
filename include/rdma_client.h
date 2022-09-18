@@ -17,7 +17,9 @@ class RDMAClient : public RDMAManager {
     req.addr = (uint64_t)msg_buffer_->Data();
     req.rkey = msg_buffer_->Rkey();
     PingResponse resp;
-    RPC(req, resp);
+    MessageBlock* msg;
+    RPCSend(req, msg);
+    RPCRecv(resp, msg);
     if (resp.status == RES_FAIL) {
       LOG_ERROR("Connect to remote failed.");
     }
@@ -29,29 +31,40 @@ class RDMAClient : public RDMAManager {
     req.type = CMD_STOP;
 
     StopResponse resp;
-    RPC(req, resp);
+    MessageBlock* msg;
+    RPCSend(req, msg);
+    RPCRecv(resp, msg);
     if (resp.status == RES_FAIL) {
       LOG_ERROR("Stop failed.");
     }
   }
 
-  template <typename Req, typename Resp>
-  int RPC(const Req &req, Resp &resp);
+  template <typename Req>
+  int RPCSend(const Req &req, MessageBlock*& msg);
+
+  template <typename Resp>
+  int RPCRecv(Resp &resp, MessageBlock* msg);
 
   template <typename Req>
   int Async(const Req &req);
  private:
 };
 
-template <typename Req, typename Resp>
-int RDMAClient::RPC(const Req &req, Resp &resp) {
+template <typename Req>
+int RDMAClient::RPCSend(const Req &req, MessageBlock*& msgarg) {
   MessageBlock *msg = msg_buffer_->AllocMessage();
-  // LOG_INFO("Alloc msg %d", msg_buffer_->MessageIndex(msg));
   msg->req_block.notify = PREPARED;
   msg->resp_block.notify = PROCESS;
   memcpy(msg->req_block.message, &req, sizeof(Req));
   RemoteWrite(msg, msg_buffer_->Lkey(), sizeof(MessageBlock), remote_addr_ + msg_buffer_->MessageAddrOff(msg),
               remote_rkey_);
+  msgarg = msg;
+  
+  return 0;
+}
+
+template <typename Resp>
+int RDMAClient::RPCRecv(Resp &resp, MessageBlock* msg) {
   /* wait for response */
   auto start = TIME_NOW;
   while (msg->resp_block.notify != DONE) {
@@ -64,7 +77,6 @@ int RDMAClient::RPC(const Req &req, Resp &resp) {
   ResponseMsg *resp_msg = (ResponseMsg *)msg->resp_block.message;
   memcpy(&resp, resp_msg, sizeof(Resp));
   msg_buffer_->FreeMessage(msg);
-  // LOG_INFO("Free msg %d", msg_buffer_->MessageIndex(msg));
   return 0;
 }
 

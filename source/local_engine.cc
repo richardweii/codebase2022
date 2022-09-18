@@ -13,13 +13,11 @@
 #include "rdma_client.h"
 #include "stat.h"
 #include "util/hash.h"
+#include "util/likely.h"
 #include "util/logging.h"
 #include "util/slice.h"
-#include "util/likely.h"
 
 namespace kv {
-
-// thread_local bool t_start = false;
 
 /**
  * @description: start local engine service
@@ -38,25 +36,49 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
   global_page_manger = new PageManager(kPoolSize / kPageSize);
 
-  // RDMA access global table
-  for (int i = 0; i < kMrBlockNum; i++) {
-    AllocRequest req;
-    req.size = kMaxBlockSize;
-    req.type = MSG_ALLOC;
-
-    AllocResponse resp;
-    _client->RPC(req, resp);
-    if (resp.status != RES_OK) {
-      LOG_FATAL("Failed to alloc new block.");
-    }
-
-    MemoryAccess access{.addr = resp.addr, .rkey = resp.rkey};
-    _global_access_table.push_back(access);
+  int thread_num = 8;
+  std::vector<std::thread> threads;
+  for (int t = 0; t < thread_num; t++) {
+    threads.emplace_back(
+        [&](int tid) {
+          for (int i = 0; i < kPoolShardingNum / thread_num; i++) {
+            _pool[tid + i * thread_num] = new Pool(tid + i * thread_num, _client, &_global_access_table);
+            _pool[tid + i * thread_num]->Init();
+          }
+        },
+        t);
   }
 
-  for (int i = 0; i < kPoolShardingNum; i++) {
-    _pool[i] = new Pool(i, _client, &_global_access_table);
-    _pool[i]->Init();
+  // RDMA access global table
+  for (int t = 0; t < thread_num; t++) {
+    threads.emplace_back([&] {
+      std::vector<MessageBlock *> msgs;
+      for (int i = 0; i < kMrBlockNum / thread_num; i++) {
+        AllocRequest req;
+        req.size = kMaxBlockSize;
+        req.type = MSG_ALLOC;
+
+        AllocResponse resp;
+        MessageBlock *msg;
+        _client->RPCSend(req, msg);
+        msgs.emplace_back(msg);
+      }
+
+      for (int i = 0; i < kMrBlockNum / thread_num; i++) {
+        AllocResponse resp;
+        _client->RPCRecv(resp, msgs[i]);
+        if (resp.status != RES_OK) {
+          LOG_FATAL("Failed to alloc new block.");
+        }
+
+        MemoryAccess access{.addr = resp.addr, .rkey = resp.rkey};
+        _global_access_table.push_back(access);
+      }
+    });
+  }
+
+  for (auto &th : threads) {
+    th.join();
   }
 
   auto watcher = std::thread([&]() {
@@ -127,9 +149,7 @@ bool LocalEngine::set_aes() {
   return true;
 }
 
-crypto_message_t *LocalEngine::get_aes() {
-  sleep(30);
-   return &_aes; }
+crypto_message_t *LocalEngine::get_aes() { return &_aes; }
 
 bool LocalEngine::encrypt(const std::string value, std::string &encrypt_value) {
   assert(value.size() % 16 == 0);

@@ -73,10 +73,11 @@ class RemotePool NOCOPYABLE {
   }
   // Allocate a datablock for one side write
   MemoryAccess AllocBlock() {
-    std::lock_guard<std::mutex> lg(_mutex);
+    // TODO
     ValueBlock *block = new ValueBlock();
     auto succ = block->Init(_pd);
     LOG_ASSERT(succ, "Failed to init memblock  %lu.", _blocks.size() + 1);
+    std::lock_guard<std::mutex> lg(_mutex);
     _blocks.emplace_back(block);
     _block_num++;
     return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey()};

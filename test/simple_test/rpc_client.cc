@@ -38,7 +38,9 @@ int main(int argc, const char **argv) {
         req.type = CMD_TEST;
 
         DummyResponse resp;
-        int ret = client->RPC(req, resp);
+        MessageBlock* msg;
+        client->RPCSend(req, msg);
+        client->RPCRecv(resp, msg);
 
         std::string res = resp.resp;
 

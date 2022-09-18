@@ -96,11 +96,11 @@ class FrameHashTable {
     }
     _size = PrimeList[logn];
     _slots = new Slot[_size];
-    slots_pool = new LFQueue<Slot*> (1 * 1024 * 1024);
-    for (int i = 0; i < 1 * 1024 * 1024; i++) {
-      Slot* ptr = new Slot;
-      slots_pool->enqueue(ptr);
-    }
+    // slots_pool = new LFQueue<Slot*> (1 * 1024 * 1024);
+    // for (int i = 0; i < 1 * 1024 * 1024; i++) {
+    //   Slot* ptr = new Slot;
+    //   slots_pool->enqueue(ptr);
+    // }
     #ifdef LOCAL
     _slot_latch = new SpinLatch[_size];
     #endif
@@ -155,8 +155,8 @@ class FrameHashTable {
 
     // insert into head
     // TODO: 这里可不可以提前申请好，然后直接取用就好了
-    // slot = new Slot();
-    slots_pool->dequeue(slot);
+    slot = new Slot();
+    // slots_pool->dequeue(slot);
     slot->_page_id = page_id;
     slot->_frame = frame;
     slot->_next = _slots[index]._next;
@@ -185,7 +185,7 @@ class FrameHashTable {
         slot->_page_id = tmp->_page_id;
         slot->_frame = tmp->_frame;
         slot->_next = tmp->_next;
-        // delete tmp;
+        delete tmp;
       } else {
         slot->_page_id = INVALID_PAGE_ID;
         slot->_frame = INVALID_FRAME_ID;
@@ -200,7 +200,7 @@ class FrameHashTable {
     while (slot != nullptr) {
       if (page_id == slot->_page_id) {
         front->_next = slot->_next;
-        // delete slot;
+        delete slot;
         // counter_[index]--;
         return true;
       }
@@ -224,7 +224,7 @@ class FrameHashTable {
   SpinLatch *_slot_latch;
   #endif
   size_t _size;
-  LFQueue<Slot*>* slots_pool;
+  // LFQueue<Slot*>* slots_pool;
 };
 
 BufferPool::BufferPool(size_t buffer_pool_size, uint8_t shard) : _buffer_pool_size(buffer_pool_size), _shard(shard) {
