@@ -31,6 +31,7 @@ class KeySlot {
   int Next() const { return _next.load(std::memory_order_relaxed); }
 
  private:
+  // TODO: 可以把这个用一个指针指向，这样L3缓存可以缓存更多条目（感觉没什么用，访问不具备空间局部性）
   char _key[kKeyLength];
   kv::Addr _addr = INVALID_ADDR;
   std::atomic_int _next = {-1};  // next hashtable node or next free slot
@@ -51,7 +52,7 @@ class HashTable {
     for (size_t i = 0; i < _size; i++) {
       _bucket[i].store(-1, std::memory_order_relaxed);
     }
-    counter_ = new uint8_t[_size]{0};
+    // counter_ = new uint8_t[_size]{0};
   };
 
   ~HashTable() {
@@ -84,7 +85,7 @@ class HashTable {
     if (slot_id == KeySlot::INVALID_SLOT_ID) {
       _bucket[index].store(new_slot_id, std::memory_order_relaxed);
       _count++;
-      counter_[index]++;
+      // counter_[index]++;
       return true;
     }
 
@@ -107,7 +108,7 @@ class HashTable {
 
     _bucket[index].store(new_slot_id, std::memory_order_relaxed);
     _count++;
-    counter_[index]++;
+    // counter_[index]++;
     return true;
   }
 
@@ -124,7 +125,7 @@ class HashTable {
     KeySlot *slot = &_slots[slot_id];
     if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
       _bucket[index].store(slot->Next(), std::memory_order_relaxed);
-      counter_[index]--;
+      // counter_[index]--;
       return slot_id;
     }
 
@@ -135,7 +136,7 @@ class HashTable {
       slot = &_slots[cur_slot_id];
       if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
         _slots[front_slot_id].SetNext(slot->Next());
-        counter_[index]--;
+        // counter_[index]--;
         return cur_slot_id;
       }
       front_slot_id = cur_slot_id;
@@ -147,9 +148,9 @@ class HashTable {
 
   void PrintCounter() {
     std::vector<uint32_t> count(255, 0);
-    for (size_t i = 0; i < _size; i++) {
-      count[counter_[i]]++;
-    }
+    // for (size_t i = 0; i < _size; i++) {
+    //   count[counter_[i]]++;
+    // }
     LOG_INFO("@@@@@@@@@@@@@@@@@@@@ Hash Table @@@@@@@@@@@@@@@@");
     for (int i = 0; i < 15; i++) {
       LOG_INFO("bucket size %d: %d", i, count[i]);
@@ -158,10 +159,11 @@ class HashTable {
 
  private:
   KeySlot *_slots = nullptr;
+  // TODO：这里的atomic_int在火焰图上占用很多
   std::atomic_int *_bucket = nullptr;
-  size_t _count = 0;
+  size_t _count = 0; // TODO:这个变量貌似没用
   size_t _size = 0;
-  uint8_t *counter_ = nullptr;
+  // uint8_t *counter_ = nullptr;
 };
 
 }  // namespace kv

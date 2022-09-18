@@ -3,7 +3,7 @@
 #include "hash_table.h"
 
 namespace kv {
-
+// #define LOCAL
 class ClockReplacer {
  public:
   static constexpr uint8_t REF = 0x80;
@@ -95,7 +95,9 @@ class FrameHashTable {
     }
     _size = PrimeList[logn];
     _slots = new Slot[_size];
-    // _slot_latch = new SpinLatch[_size];
+    #ifdef LOCAL
+    _slot_latch = new SpinLatch[_size];
+    #endif
     // counter_ = new uint8_t[_size]{0};
   }
 
@@ -103,8 +105,10 @@ class FrameHashTable {
     uint32_t index = page_id % _size;
 
     Slot *slot = &_slots[index];
-    // _slot_latch[index].RLock();
-    // defer { _slot_latch[index].RUnlock(); };
+    #ifdef LOCAL
+    _slot_latch[index].RLock();
+    defer { _slot_latch[index].RUnlock(); };
+    #endif
 
     if (slot->_page_id == INVALID_PAGE_ID) {
       return INVALID_FRAME_ID;
@@ -123,8 +127,10 @@ class FrameHashTable {
     uint32_t index = page_id % _size;
     Slot *slot = &_slots[index];
 
-    // _slot_latch[index].WLock();
-    // defer { _slot_latch[index].WUnlock(); };
+    #ifdef LOCAL
+    _slot_latch[index].WLock();
+    defer { _slot_latch[index].WUnlock(); };
+    #endif
     if (slot->_page_id == INVALID_PAGE_ID) {
       slot->_page_id = page_id;
       slot->_frame = frame;
@@ -142,6 +148,7 @@ class FrameHashTable {
     }
 
     // insert into head
+    // TODO: 这里可不可以提前申请好，然后直接取用就好了
     slot = new Slot();
     slot->_page_id = page_id;
     slot->_frame = frame;
@@ -155,8 +162,10 @@ class FrameHashTable {
 
     Slot *slot = &_slots[index];
 
-    // _slot_latch[index].WLock();
-    // defer { _slot_latch[index].WUnlock(); };
+    #ifdef LOCAL
+    _slot_latch[index].WLock();
+    defer { _slot_latch[index].WUnlock(); };
+    #endif
 
     if (slot->_page_id == INVALID_PAGE_ID) {
       return false;
@@ -204,7 +213,9 @@ class FrameHashTable {
     Slot *_next = nullptr;
   };
   Slot *_slots;
+  #ifdef LOCAL
   SpinLatch *_slot_latch;
+  #endif
   size_t _size;
 };
 
@@ -257,8 +268,10 @@ PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
 }
 
 PageEntry *BufferPool::Lookup(PageId page_id) {
-  // _latch.RLock();
-  // defer { _latch.RUnlock(); };
+  #ifdef LOCAL
+  _latch.RLock();
+  defer { _latch.RUnlock(); };
+  #endif
   while (true) {
     auto fid = _hash_table->Find(page_id);
     if (fid == INVALID_FRAME_ID) {
@@ -287,8 +300,10 @@ void BufferPool::InsertPage(PageEntry *page, PageId page_id, uint8_t slab_class)
 }
 
 PageEntry *BufferPool::Evict() {
-  // _latch.WLock();
-  // defer { _latch.WUnlock(); };
+  #ifdef LOCAL
+  _latch.WLock();
+  defer { _latch.WUnlock(); };
+  #endif
   FrameId fid;
   auto succ = _replacer->Victim(&fid);
   assert(succ);

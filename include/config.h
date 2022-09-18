@@ -6,6 +6,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include "util/bind_core.h"
 
 // #define TEST_CONFIG  // test configuration marco switch
 // #define STAT  // statistic
@@ -97,4 +98,5 @@ class AddrParser {
   static uint32_t GetBlockOffFromPageId(kv::PageId page_id) { return page_id & PAGE_OFF_MASK; }
 };
 
+static BindCore bind_core;
 }  // namespace kv

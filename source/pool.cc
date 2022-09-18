@@ -92,6 +92,9 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 }
 
 bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
+  if (!bind_core.isDone()) {
+    bind_core.bind();
+  }
   KeySlot *slot = nullptr;
   PageMeta *meta = nullptr;
   Addr addr = INVALID_ADDR;
@@ -273,6 +276,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class) {
   return entry;
 }
 
+// TODO: 目前一个page64KB，可以考虑对数据压缩一下，这样网络传输速度会快一些
 PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class) {
   // miss
 #ifdef STAT
@@ -318,6 +322,7 @@ void Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
 
   PageEntry *page = _allocing_pages[slab_class];
   PageMeta *meta = global_page_manger->Page(page->PageId());
+  // TODO：火焰图上这里的Full占用太多
   if (meta->Full()) {
     page = mountNewPage(slab_class);
     meta = global_page_manger->Page(page->PageId());
