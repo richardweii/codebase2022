@@ -37,12 +37,13 @@ class BindCore {
     return done;
   }
 
-  void rebind() {
-    LOG_INFO("clear, rebind");
+  bool rebind() {
     std::lock_guard<std::mutex> lck(mu);
+    LOG_INFO("clear, rebind");
     done = false;
     cpu_id = 0;
     threadid_set.clear();
+    return true;
   }
 
  private:

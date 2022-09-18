@@ -33,9 +33,6 @@ void Pool::Init() {
 }
 
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
-  if (!bind_core.isDone()) {
-    bind_core.bind();
-  }
   // existence
   KeySlot *slot = _hash_index->Find(key, hash);
   if (slot == nullptr) {
@@ -95,9 +92,6 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 }
 
 bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
-  if (!bind_core.isDone()) {
-    bind_core.bind();
-  }
   KeySlot *slot = nullptr;
   PageMeta *meta = nullptr;
   Addr addr = INVALID_ADDR;
@@ -163,9 +157,6 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 }
 
 bool Pool::Delete(const Slice &key, uint32_t hash) {
-  if (!bind_core.isDone()) {
-    bind_core.bind();
-  }
   _latch.WLock();
   defer { _latch.WUnlock(); };
   int slot_idx = _hash_index->Remove(key, hash);

@@ -49,6 +49,16 @@ constexpr int read_op_per_thread = read_num / thread_num;
 // part 3 hot data
 // read 16 * 32M
 
+void bbind(std::thread &t, int i) {
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(i, &cpuset);
+  int rc = pthread_setaffinity_np(t.native_handle(), sizeof(cpu_set_t), &cpuset);
+  if (rc != 0) {
+    std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+  }
+}
+
 void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_slab_class,
            std::vector<std::thread> &threads) {
   LOG_INFO(" ============= part1 validate ==============>");
@@ -77,6 +87,7 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("End write thread %d", i);
           },
           keys, key_slab_class);
+      // bbind(threads[i], i);
       // std::cout << "handle " << threads[i].native_handle() << std::endl;
     }
     for (auto &th : threads) {
@@ -106,6 +117,7 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("End read thread %d", i);
           },
           keys, key_slab_class);
+      // bbind(threads[i], i);
       // std::cout << "handle " << threads[i].native_handle() << std::endl;
     }
     for (auto &th : threads) {
@@ -139,6 +151,7 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("End write thread %d", i);
           },
           keys, key_slab_class);
+      // bbind(threads[i], i);
       // std::cout << "handle " << threads[i].native_handle() << std::endl;
     }
     for (auto &th : threads) {
@@ -171,6 +184,7 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("End read thread %d", i);
           },
           keys, key_slab_class);
+      // bbind(threads[i], i);
       // std::cout << "handle " << threads[i].native_handle() << std::endl;
     }
     for (auto &th : threads) {
@@ -204,6 +218,7 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("End update thread %d", i);
           },
           keys, key_slab_class);
+      // bbind(threads[i], i);
     }
     for (auto &th : threads) {
       th.join();
@@ -270,6 +285,7 @@ void part2(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             }
           },
           keys, zipf_index, key_slab_class);
+          // bbind(threads[i], i);
     }
     for (auto &th : threads) {
       th.join();
@@ -291,6 +307,7 @@ void part2(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             }
           },
           keys, zipf_index, key_slab_class);
+          // bbind(threads[i], i);
     }
     for (auto &th : threads) {
       th.join();
@@ -321,6 +338,7 @@ void part2(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("End write thread %d", i);
           },
           keys, key_slab_class);
+          // bbind(threads[i], i);
     }
     for (auto &th : threads) {
       th.join();
@@ -364,6 +382,7 @@ void part3(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
             LOG_INFO("End read thread %d", i);
           },
           keys, key_slab_class);
+          // bbind(threads[i], i);
     }
     for (auto &th : threads) {
       th.join();

@@ -18,6 +18,8 @@
 
 namespace kv {
 
+thread_local bool t_start = false;
+
 /**
  * @description: start local engine service
  * @param {string} addr    the address string of RemoteEngine to connect
@@ -62,12 +64,6 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
     abort();
   });
   watcher.detach();
-
-  auto rebind_watcher = std::thread([&]() {
-    sleep(5);
-    bind_core.rebind();
-  });
-  rebind_watcher.detach();
 
   return true;
 }
@@ -199,7 +195,17 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
  * @param {string} value
  * @return {bool} true for success
  */
+static std::atomic<int> state(-1);
 bool LocalEngine::write(const std::string &key, const std::string &value, bool use_aes) {
+  if (!bind_core.isDone()) {
+    t_start = true;
+    bind_core.bind();
+  } else {
+    if (!t_start) {
+      t_start = true;
+      bind_core.rebind();
+    }
+  }
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
@@ -236,6 +242,15 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
  * @return {bool}  true for success
  */
 bool LocalEngine::read(const std::string &key, std::string &value) {
+  if (!bind_core.isDone()) {
+    t_start = true;
+    bind_core.bind();
+  } else {
+    if (!t_start) {
+      t_start = true;
+      bind_core.rebind();
+    }
+  }
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
@@ -258,6 +273,15 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
 }
 
 bool LocalEngine::deleteK(const std::string &key) {
+  if (!bind_core.isDone()) {
+    t_start = true;
+    bind_core.bind();
+  } else {
+    if (!t_start) {
+      t_start = true;
+      bind_core.rebind();
+    }
+  }
 #ifdef STAT
   stat::delete_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::delete_times.load(std::memory_order_relaxed) % 1000000 == 0) {
