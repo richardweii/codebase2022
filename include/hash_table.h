@@ -84,7 +84,7 @@ class HashTable {
     int slot_id = _bucket[index];
     if (slot_id == KeySlot::INVALID_SLOT_ID) {
       _bucket[index].store(new_slot_id, std::memory_order_relaxed);
-      _count++;
+      // _count++;
       // counter_[index]++;
       return true;
     }
@@ -107,7 +107,7 @@ class HashTable {
     slot->SetNext(_bucket[index].load(std::memory_order_relaxed));
 
     _bucket[index].store(new_slot_id, std::memory_order_relaxed);
-    _count++;
+    // _count++;
     // counter_[index]++;
     return true;
   }
@@ -161,7 +161,7 @@ class HashTable {
   KeySlot *_slots = nullptr;
   // TODO：这里的atomic_int在火焰图上占用很多
   std::atomic_int *_bucket = nullptr;
-  size_t _count = 0; // TODO:这个变量貌似没用
+  // size_t _count = 0;
   size_t _size = 0;
   // uint8_t *counter_ = nullptr;
 };
