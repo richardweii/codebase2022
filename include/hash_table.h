@@ -159,7 +159,6 @@ class HashTable {
 
  private:
   KeySlot *_slots = nullptr;
-  // TODO：这里的atomic_int在火焰图上占用很多
   int *_bucket = nullptr;
   // size_t _count = 0;
   size_t _size = 0;
