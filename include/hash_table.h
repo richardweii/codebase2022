@@ -46,11 +46,11 @@ class HashTable {
       logn++;
     }
     _size = PrimeList[logn];
-    _bucket = new std::atomic_int[_size];
+    _bucket = new int[_size];
 
     // init bucket
     for (size_t i = 0; i < _size; i++) {
-      _bucket[i].store(-1, std::memory_order_relaxed);
+      _bucket[i] = -1;
     }
     // counter_ = new uint8_t[_size]{0};
   };
@@ -83,7 +83,7 @@ class HashTable {
 
     int slot_id = _bucket[index];
     if (slot_id == KeySlot::INVALID_SLOT_ID) {
-      _bucket[index].store(new_slot_id, std::memory_order_relaxed);
+      _bucket[index] = new_slot_id;
       // _count++;
       // counter_[index]++;
       return true;
@@ -104,9 +104,9 @@ class HashTable {
 
     // insert into head
     slot = &_slots[new_slot_id];
-    slot->SetNext(_bucket[index].load(std::memory_order_relaxed));
+    slot->SetNext(_bucket[index]);
 
-    _bucket[index].store(new_slot_id, std::memory_order_relaxed);
+    _bucket[index] = new_slot_id;
     // _count++;
     // counter_[index]++;
     return true;
@@ -124,7 +124,7 @@ class HashTable {
     // head
     KeySlot *slot = &_slots[slot_id];
     if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
-      _bucket[index].store(slot->Next(), std::memory_order_relaxed);
+      _bucket[index] = slot->Next();
       // counter_[index]--;
       return slot_id;
     }
@@ -160,7 +160,7 @@ class HashTable {
  private:
   KeySlot *_slots = nullptr;
   // TODO：这里的atomic_int在火焰图上占用很多
-  std::atomic_int *_bucket = nullptr;
+  int *_bucket = nullptr;
   // size_t _count = 0;
   size_t _size = 0;
   // uint8_t *counter_ = nullptr;
