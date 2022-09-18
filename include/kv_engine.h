@@ -45,6 +45,7 @@ class Engine {
 /* Local-side engine */
 class LocalEngine : public Engine {
  public:
+  LocalEngine() { sleep(30); }
   ~LocalEngine(){};
 
   bool start(const std::string addr, const std::string port) override;
