@@ -31,6 +31,7 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   constexpr size_t buffer_pool_size = kBufferPoolSize / kPoolShardingNum;
   LOG_INFO("Create %d pool, each pool with %lu MB cache, %lu pages", kPoolShardingNum, buffer_pool_size / 1024 / 1024,
            kPoolSize / kPageSize);
+  sleep(30);
   _client = new RDMAClient();
   if (!_client->Init(addr, port)) return false;
   _client->Start();
