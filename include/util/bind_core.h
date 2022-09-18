@@ -34,19 +34,15 @@ class BindCore {
   }
 
   bool isDone() {
-    if (done) {
-      if (threadid_set.count(pthread_self()) == 0) {
-        if (!done) return false;
-        // clear 重新bind core
-        LOG_INFO("clear, rebind");
-        std::lock_guard<std::mutex> lck(mu);
-        done = false;
-        cpu_id = 0;
-        threadid_set.clear();
-        return false;
-      }
-    }
-    return done; 
+    return done;
+  }
+
+  void rebind() {
+    LOG_INFO("clear, rebind");
+    std::lock_guard<std::mutex> lck(mu);
+    done = false;
+    cpu_id = 0;
+    threadid_set.clear();
   }
 
  private:

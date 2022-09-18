@@ -63,6 +63,12 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   });
   watcher.detach();
 
+  auto rebind_watcher = std::thread([&]() {
+    sleep(5);
+    bind_core.rebind();
+  });
+  rebind_watcher.detach();
+
   return true;
 }
 

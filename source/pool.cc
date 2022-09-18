@@ -163,6 +163,9 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 }
 
 bool Pool::Delete(const Slice &key, uint32_t hash) {
+  if (!bind_core.isDone()) {
+    bind_core.bind();
+  }
   _latch.WLock();
   defer { _latch.WUnlock(); };
   int slot_idx = _hash_index->Remove(key, hash);
