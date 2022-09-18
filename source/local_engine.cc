@@ -15,6 +15,7 @@
 #include "util/hash.h"
 #include "util/logging.h"
 #include "util/slice.h"
+#include "util/likely.h"
 
 namespace kv {
 
@@ -195,13 +196,12 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
  * @param {string} value
  * @return {bool} true for success
  */
-static std::atomic<int> state(-1);
 bool LocalEngine::write(const std::string &key, const std::string &value, bool use_aes) {
-  if (!bind_core.isDone()) {
+  if (UNLIKELY(!bind_core.isDone())) {
     t_start = true;
     bind_core.bind();
   } else {
-    if (!t_start) {
+    if (UNLIKELY(!t_start)) {
       t_start = true;
       bind_core.rebind();
     }
@@ -242,11 +242,11 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
  * @return {bool}  true for success
  */
 bool LocalEngine::read(const std::string &key, std::string &value) {
-  if (!bind_core.isDone()) {
+  if (UNLIKELY(!bind_core.isDone())) {
     t_start = true;
     bind_core.bind();
   } else {
-    if (!t_start) {
+    if (UNLIKELY(!t_start)) {
       t_start = true;
       bind_core.rebind();
     }
@@ -273,11 +273,11 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
 }
 
 bool LocalEngine::deleteK(const std::string &key) {
-  if (!bind_core.isDone()) {
+  if (UNLIKELY(!bind_core.isDone())) {
     t_start = true;
     bind_core.bind();
   } else {
-    if (!t_start) {
+    if (UNLIKELY(!t_start)) {
       t_start = true;
       bind_core.rebind();
     }

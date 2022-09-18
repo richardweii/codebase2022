@@ -24,7 +24,7 @@ class BindCore {
     auto thread_id = pthread_self();
     if (threadid_set.count(thread_id) == 0) {
       int rc = pthread_setaffinity_np(thread_id, sizeof(cpu_set_t), &cpuset);
-      LOG_INFO("bind thread %ld to core %d", thread_id, cpu_id.load());
+      // LOG_INFO("bind thread %ld to core %d", thread_id, cpu_id.load());
       cpu_id++;
       if (cpu_id == 16) {
         done = true;
