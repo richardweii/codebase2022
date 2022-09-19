@@ -12,6 +12,7 @@
 #include "hash_table.h"
 #include "page_manager.h"
 #include "rdma_client.h"
+#include "util/lockfree_queue.h"
 #include "util/nocopy.h"
 #include "util/rwlock.h"
 #include "util/slice.h"
@@ -63,22 +64,14 @@ class Pool NOCOPYABLE {
 class RemotePool NOCOPYABLE {
  public:
   RemotePool(ibv_pd *pd) : _pd(pd) {}
-  ~RemotePool() {
-    for (auto block : _blocks) {
-      if (ibv_dereg_mr(block->_mr)) {
-        perror("ibv_dereg_mr failed.");
-      }
-      delete block;
-    }
-  }
+  ~RemotePool() {}
   // Allocate a datablock for one side write
   MemoryAccess AllocBlock() {
     // TODO
-    ValueBlock *block = new ValueBlock();
+    // ValueBlock *block = new ValueBlock();
+    ValueBlock *block = VBAllocator::getInstance().Alloc();
     auto succ = block->Init(_pd);
     LOG_ASSERT(succ, "Failed to init memblock  %lu.", _blocks.size() + 1);
-    std::lock_guard<std::mutex> lg(_mutex);
-    _blocks.emplace_back(block);
     _block_num++;
     return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey()};
   }
@@ -105,9 +98,32 @@ class RemotePool NOCOPYABLE {
     char _data[kMaxBlockSize];
     ibv_mr *_mr = nullptr;
   };
-  std::vector<ValueBlock *> _blocks;
+  class VBAllocator {
+   public:
+    ValueBlock *Alloc() {
+      ValueBlock *vb;
+      while (!queue.dequeue(vb))
+        ;
+      return vb;
+    }
+
+    static VBAllocator &getInstance() {
+      static VBAllocator instance;
+      return instance;
+    }
+
+   private:
+    VBAllocator() {
+      for (int i = 0; i < MAX_BLOCK_NUM; i++) {
+        ValueBlock *vb = new ValueBlock;
+        while (!queue.enqueue(vb))
+          ;
+      }
+    }
+    LFQueue<ValueBlock *> queue{MAX_BLOCK_NUM<<1};
+  };
   ibv_pd *_pd = nullptr;
-  int _block_num = 0;
+  std::atomic<int> _block_num{0};
   std::mutex _mutex;
 };
 

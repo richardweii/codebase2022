@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 #include "assert.h"
 #include "atomic"
 #include "config.h"
@@ -26,6 +27,7 @@ namespace kv {
  * @return {bool} true for success
  */
 bool LocalEngine::start(const std::string addr, const std::string port) {
+  auto time_now = TIME_NOW;
   constexpr size_t buffer_pool_size = kBufferPoolSize / kPoolShardingNum;
   LOG_INFO("Create %d pool, each pool with %lu MB cache, %lu pages", kPoolShardingNum, buffer_pool_size / 1024 / 1024,
            kPoolSize / kPageSize);
@@ -87,6 +89,11 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
     abort();
   });
   watcher.detach();
+
+  auto time_end = TIME_NOW;
+  auto time_delta = time_end - time_now;
+  auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
+  std::cout << "init time:" << count * 1.0 / 1000 / 1000 << "s" << std::endl;
 
   return true;
 }

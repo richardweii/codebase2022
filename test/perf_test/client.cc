@@ -398,12 +398,7 @@ void part3(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
 int main() {
   LocalEngine *local_engine = new LocalEngine();
   // ip 必须写具体ip，不能直接写localhost和127.0.0.1
-  auto time_now = TIME_NOW;
   local_engine->start("192.168.200.22", "12344");
-  auto time_end = TIME_NOW;
-  auto time_delta = time_end - time_now;
-  auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
-  std::cout << "init time:" << count * 1.0 / 1000 / 1000 << "s" << std::endl;
   std::vector<std::thread> threads;
   std::mutex zipf_mutex;
 

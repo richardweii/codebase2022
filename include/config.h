@@ -52,16 +52,16 @@ constexpr int kSlabSizeMin = 5;   // 5 * 16 = 80 Bytes
 constexpr int kSlabSizeMax = 64;  // 64 * 16 = 1024 Bytes
 
 #ifdef TEST_CONFIG
-constexpr size_t kKeyNum = 12 * 16 * 1024;              // 16 * 12K key
-constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024;  // 32MB remote pool
-constexpr size_t kBufferPoolSize = 2 * 1024 * 1024;     // 2MB cache
-constexpr size_t kMaxBlockSize = (size_t)1* 1024 * 1024;  // 1MB mr
+constexpr size_t kKeyNum = 12 * 16 * 1024;                 // 16 * 12K key
+constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024;     // 32MB remote pool
+constexpr size_t kBufferPoolSize = 2 * 1024 * 1024;        // 2MB cache
+constexpr size_t kMaxBlockSize = (size_t)1 * 1024 * 1024;  // 1MB mr
 #else
 
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                   // 16 * 12M key
 constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remote pool
 constexpr size_t kBufferPoolSize = (size_t)2 * 1024 * 1024 * 1024;  // 2GB cache
-constexpr size_t kMaxBlockSize = (size_t)1 * 1024 * 1024 * 1024;  // 1GB mr
+constexpr size_t kMaxBlockSize = (size_t)1 * 1024 * 1024 * 1024;    // 1GB mr
 #endif
 
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
@@ -82,6 +82,9 @@ constexpr uint32_t PAGE_MASK = 0x7ffff;
 constexpr uint32_t PAGE_OFF_MASK = 0x3fff;
 constexpr uint32_t OFF_BIT = 13;  // MAX 4096
 constexpr uint32_t OFF_MASK = 0x1fff;
+constexpr int MAX_BLOCK_NUM = 32;
+constexpr int MAX_SLOT_NUM = 1 * 1024 * 1024;
+constexpr int kCoreNum = 16;
 
 #endif
 class AddrParser {

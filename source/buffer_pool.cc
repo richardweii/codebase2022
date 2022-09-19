@@ -1,6 +1,7 @@
 #include "buffer_pool.h"
 #include <list>
 #include "hash_table.h"
+#include "util/busy_bits.h"
 #include "util/lockfree_queue.h"
 
 namespace kv {
@@ -86,6 +87,39 @@ class ClockReplacer {
   std::list<FrameId> free_list_;
 };
 
+struct Slot {
+  PageId _page_id = INVALID_PAGE_ID;
+  uint32_t _frame;
+  Slot *_next = nullptr;
+};
+
+// 包含核心个数(16)个分配器，多线程访问时通过BusyBits找到一个空闲的分配器进行分配
+class SAllocator {
+ public:
+  Slot *Alloc() {
+    Slot *slot;
+    // 找到一个空闲的分配器
+    int t_idle = busy_bits.GetIdleBit();
+    while (!queue[t_idle]->dequeue(slot))
+      ;
+    busy_bits.UnsetBit(t_idle);
+    return slot;
+  }
+
+  BusyBits busy_bits{kCoreNum};
+  LFQueue<Slot *> **queue;
+  SAllocator() {
+    queue = new LFQueue<Slot *> *[kCoreNum];
+    for (int i = 0; i < kCoreNum; i++) {
+      queue[i] = new LFQueue<Slot *>(MAX_SLOT_NUM >> 4);
+      for (int j = 0; j < MAX_SLOT_NUM >> 4; j++) {
+        Slot *slot = new Slot;
+        queue[i]->enqueue(slot);
+      }
+    }
+  }
+} /*sallcator*/;
+
 class FrameHashTable {
  public:
   FrameHashTable(size_t size) {
@@ -96,14 +130,9 @@ class FrameHashTable {
     }
     _size = PrimeList[logn];
     _slots = new Slot[_size];
-    // slots_pool = new LFQueue<Slot*> (1 * 1024 * 1024);
-    // for (int i = 0; i < 1 * 1024 * 1024; i++) {
-    //   Slot* ptr = new Slot;
-    //   slots_pool->enqueue(ptr);
-    // }
-    #ifdef LOCAL
+#ifdef LOCAL
     _slot_latch = new SpinLatch[_size];
-    #endif
+#endif
     // counter_ = new uint8_t[_size]{0};
   }
 
@@ -111,10 +140,10 @@ class FrameHashTable {
     uint32_t index = page_id % _size;
 
     Slot *slot = &_slots[index];
-    #ifdef LOCAL
+#ifdef LOCAL
     _slot_latch[index].RLock();
     defer { _slot_latch[index].RUnlock(); };
-    #endif
+#endif
 
     if (slot->_page_id == INVALID_PAGE_ID) {
       return INVALID_FRAME_ID;
@@ -133,10 +162,10 @@ class FrameHashTable {
     uint32_t index = page_id % _size;
     Slot *slot = &_slots[index];
 
-    #ifdef LOCAL
+#ifdef LOCAL
     _slot_latch[index].WLock();
     defer { _slot_latch[index].WUnlock(); };
-    #endif
+#endif
     if (slot->_page_id == INVALID_PAGE_ID) {
       slot->_page_id = page_id;
       slot->_frame = frame;
@@ -154,9 +183,8 @@ class FrameHashTable {
     }
 
     // insert into head
-    // TODO: 这里可不可以提前申请好，然后直接取用就好了
-    slot = new Slot();
-    // slots_pool->dequeue(slot);
+    slot = new Slot;
+    // slot = sallcator.Alloc();
     slot->_page_id = page_id;
     slot->_frame = frame;
     slot->_next = _slots[index]._next;
@@ -169,10 +197,10 @@ class FrameHashTable {
 
     Slot *slot = &_slots[index];
 
-    #ifdef LOCAL
+#ifdef LOCAL
     _slot_latch[index].WLock();
     defer { _slot_latch[index].WUnlock(); };
-    #endif
+#endif
 
     if (slot->_page_id == INVALID_PAGE_ID) {
       return false;
@@ -185,7 +213,7 @@ class FrameHashTable {
         slot->_page_id = tmp->_page_id;
         slot->_frame = tmp->_frame;
         slot->_next = tmp->_next;
-        delete tmp;
+        // delete tmp;
       } else {
         slot->_page_id = INVALID_PAGE_ID;
         slot->_frame = INVALID_FRAME_ID;
@@ -200,7 +228,7 @@ class FrameHashTable {
     while (slot != nullptr) {
       if (page_id == slot->_page_id) {
         front->_next = slot->_next;
-        delete slot;
+        // delete slot;
         // counter_[index]--;
         return true;
       }
@@ -214,17 +242,11 @@ class FrameHashTable {
   ~FrameHashTable() { delete[] _slots; }
 
  private:
-  struct Slot {
-    PageId _page_id = INVALID_PAGE_ID;
-    uint32_t _frame;
-    Slot *_next = nullptr;
-  };
   Slot *_slots;
-  #ifdef LOCAL
+#ifdef LOCAL
   SpinLatch *_slot_latch;
-  #endif
+#endif
   size_t _size;
-  // LFQueue<Slot*>* slots_pool;
 };
 
 BufferPool::BufferPool(size_t buffer_pool_size, uint8_t shard) : _buffer_pool_size(buffer_pool_size), _shard(shard) {
@@ -276,10 +298,10 @@ PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
 }
 
 PageEntry *BufferPool::Lookup(PageId page_id) {
-  #ifdef LOCAL
+#ifdef LOCAL
   _latch.RLock();
   defer { _latch.RUnlock(); };
-  #endif
+#endif
   while (true) {
     auto fid = _hash_table->Find(page_id);
     if (fid == INVALID_FRAME_ID) {
@@ -308,10 +330,10 @@ void BufferPool::InsertPage(PageEntry *page, PageId page_id, uint8_t slab_class)
 }
 
 PageEntry *BufferPool::Evict() {
-  #ifdef LOCAL
+#ifdef LOCAL
   _latch.WLock();
   defer { _latch.WUnlock(); };
-  #endif
+#endif
   FrameId fid;
   auto succ = _replacer->Victim(&fid);
   assert(succ);
