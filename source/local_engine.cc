@@ -8,7 +8,6 @@
 #include "assert.h"
 #include "atomic"
 #include "config.h"
-#include "hash_table.h"
 #include "kv_engine.h"
 #include "pool.h"
 #include "rdma_client.h"

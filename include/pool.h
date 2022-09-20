@@ -9,12 +9,13 @@
 #include <vector>
 #include "buffer_pool.h"
 #include "config.h"
-#include "hash_table.h"
+#include "hash_index.h"
 #include "page_manager.h"
 #include "rdma_client.h"
 #include "util/lockfree_queue.h"
 #include "util/nocopy.h"
 #include "util/rwlock.h"
+#include "util/singleflight.h"
 #include "util/slice.h"
 
 namespace kv {
@@ -31,11 +32,15 @@ class Pool NOCOPYABLE {
   bool Delete(const Slice &key, uint32_t hash);
 
  private:
-  void writeNew(const Slice &key, uint32_t hash, const Slice &val);
+  bool writeNew(const Slice &key, uint32_t hash, const Slice &val);
+  using WriteNewFunc = std::function<bool(const Slice &key, uint32_t hash, const Slice &val)>;
+  WriteNewFunc _writeNew;
 
   PageEntry *mountNewPage(uint8_t slab_class);
 
   PageEntry *replacement(PageId page_id, uint8_t slab_class);
+  using ReplacementFunc = std::function<PageEntry *(PageId page_id, uint8_t slab_class)>;
+  ReplacementFunc _replacement;
 
   void modifyLength(KeySlot *slot, const Slice &val);
 
@@ -43,10 +48,10 @@ class Pool NOCOPYABLE {
 
   int readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch);
 
-  KeySlot _slots[kKeyNum / kPoolShardingNum];
-  int _free_slot_head = -1;  // TODO: lock-free linked list
-
   HashTable *_hash_index = nullptr;
+
+  SingleFlight<PageId, PageEntry *> _replacement_sgfl;
+  SingleFlight<std::string, bool> _write_new_sgfl;
 
   PageEntry *_allocing_pages[kSlabSizeMax + 1];
   PageMeta *_allocing_tail[kSlabSizeMax + 1];
@@ -58,25 +63,24 @@ class Pool NOCOPYABLE {
   RDMAClient *_client = nullptr;
 
   uint8_t _shard;
-  SpinLatch _latch;
+
+  SpinLatch _allocing_list_latch[kSlabSizeMax + 1];
 };
 
 class RemotePool NOCOPYABLE {
  public:
-  RemotePool(ibv_pd *pd) : _pd(pd) {}
+  RemotePool(ibv_pd *pd) : _pd(pd) { _blocks = new ValueBlock[kMrBlockNum]; }
   ~RemotePool() {}
   // Allocate a datablock for one side write
   MemoryAccess AllocBlock() {
-    // TODO
-    // ValueBlock *block = new ValueBlock();
-    ValueBlock *block = VBAllocator::getInstance().Alloc();
+    int cur = _block_cnt.fetch_add(1);
+    ValueBlock *block = &_blocks[cur];
     auto succ = block->Init(_pd);
-    LOG_ASSERT(succ, "Failed to init memblock  %lu.", _blocks.size() + 1);
-    _block_num++;
+    LOG_ASSERT(succ, "Failed to init memblock  %d.", cur);
     return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey()};
   }
 
-  int BlockNum() const { return _block_num; }
+  int BlockNum() const { return _block_cnt; }
 
  private:
   class ValueBlock NOCOPYABLE {
@@ -98,33 +102,9 @@ class RemotePool NOCOPYABLE {
     char _data[kMaxBlockSize];
     ibv_mr *_mr = nullptr;
   };
-  class VBAllocator {
-   public:
-    ValueBlock *Alloc() {
-      ValueBlock *vb;
-      while (!queue.dequeue(vb))
-        ;
-      return vb;
-    }
-
-    static VBAllocator &getInstance() {
-      static VBAllocator instance;
-      return instance;
-    }
-
-   private:
-    VBAllocator() {
-      for (int i = 0; i < MAX_BLOCK_NUM; i++) {
-        ValueBlock *vb = new ValueBlock;
-        while (!queue.enqueue(vb))
-          ;
-      }
-    }
-    LFQueue<ValueBlock *> queue{MAX_BLOCK_NUM<<1};
-  };
+  ValueBlock *_blocks = nullptr;
   ibv_pd *_pd = nullptr;
-  std::atomic<int> _block_num{0};
-  std::mutex _mutex;
+  std::atomic<int> _block_cnt{0};
 };
 
 }  // namespace kv

@@ -1,4 +1,3 @@
-#include "hash_table.h"
 #include <cstdint>
 #include <cstring>
 #include <string>

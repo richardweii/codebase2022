@@ -6,7 +6,9 @@ namespace kv {
 Pool::Pool(uint8_t shard, RDMAClient *client, std::vector<MemoryAccess> *global_rdma_access)
     : _access_table(global_rdma_access), _client(client), _shard(shard) {
   _buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum, shard);
-  _hash_index = new HashTable(kKeyNum / kPoolShardingNum, _slots);
+  _hash_index = new HashTable(kKeyNum / kPoolShardingNum);
+  _replacement = std::bind(&Pool::replacement, this, std::placeholders::_1, std::placeholders::_2);
+  _writeNew = std::bind(&Pool::writeNew, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 }
 
 Pool::~Pool() {
@@ -25,11 +27,6 @@ void Pool::Init() {
     _allocing_pages[i] = _buffer_pool->FetchNew(page->PageId(), i);
     _buffer_pool->PinPage(_allocing_pages[i]);
   }
-
-  _free_slot_head = 0;
-  for (size_t i = 0; i < (kKeyNum / kPoolShardingNum) - 1; i++) {
-    _slots[i].SetNext(i + 1);
-  }
 }
 
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
@@ -44,131 +41,84 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   Addr addr = slot->Addr();
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = global_page_manger->Page(page_id);
-  {  // lock-free phase
-    // _latch.RLock();
-    // defer { _latch.RUnlock(); };
-    // cache
-    PageEntry *entry = _buffer_pool->Lookup(page_id);
+  // cache
+  PageEntry *entry = _buffer_pool->Lookup(page_id);
 
-    if (entry != nullptr) {
+  if (entry != nullptr) {
 #ifdef STAT
-      stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
+    stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      uint32_t val_len = entry->SlabClass() * kSlabSize;
-      val.resize(val_len);
-      memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
-      _buffer_pool->Release(entry);
-      return true;
-    }
+    uint32_t val_len = entry->SlabClass() * kSlabSize;
+    val.resize(val_len);
+    memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
+    _buffer_pool->Release(entry);
+    return true;
   }
-  {
-    _latch.WLock();
 
-    // recheck
-    PageEntry *entry = _buffer_pool->Lookup(page_id);
+  // cache miss
+  PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass());
+
+  uint32_t val_len = victim->SlabClass() * kSlabSize;
+  val.resize(val_len);
+  memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
+
+  _buffer_pool->Release(victim, true);
+  return true;
+}
+
+bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
+  KeySlot *slot = _hash_index->Find(key, hash);
+  if (slot == nullptr) {
+    // insert new KV
+    _write_new_sgfl.Do(key.toString(), hash, _writeNew, key, hash, val);
+    return true;
+  }
+
+  Addr addr = slot->Addr();
+  PageMeta *meta = global_page_manger->Page(AddrParser::PageId(addr));
+
+  // modify in place
+  if (meta->SlabClass() == val.size() / kSlabSize) {
+    PageEntry *entry = _buffer_pool->Lookup(AddrParser::PageId(addr), true);
     if (entry != nullptr) {
 #ifdef STAT
       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      _latch.WUnlock();
-      uint32_t val_len = entry->SlabClass() * kSlabSize;
-      val.resize(val_len);
-      memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
-      _buffer_pool->Release(entry);
+      if (!entry->Dirty) entry->Dirty = true;
+
+      memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
+      _buffer_pool->Release(entry, true);
       return true;
     }
 
     // cache miss
-    PageEntry *victim = replacement(page_id, meta->SlabClass());
-    _latch.WUnlock();
+    PageId page_id = meta->PageId();
+    PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass());
 
-    uint32_t val_len = victim->SlabClass() * kSlabSize;
-    val.resize(val_len);
-    memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
+    memcpy((char *)(victim->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
+    if (!victim->Dirty) victim->Dirty = true;
 
-    _buffer_pool->Release(victim);
+    _buffer_pool->Release(victim, true);
     return true;
   }
-}
 
-bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
-  KeySlot *slot = nullptr;
-  PageMeta *meta = nullptr;
-  Addr addr = INVALID_ADDR;
-  {
-    // _latch.RLock();
-    // defer { _latch.RUnlock(); };
-    slot = _hash_index->Find(key, hash);
-    // lock-free phase
-    if (slot != nullptr) {
-      addr = slot->Addr();
-      meta = global_page_manger->Page(AddrParser::PageId(addr));
-      // modify in place
-      if (meta->SlabClass() == val.size() / kSlabSize) {
-        PageEntry *entry = _buffer_pool->Lookup(AddrParser::PageId(addr));
-        if (entry != nullptr) {
-#ifdef STAT
-          stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
-#endif
-          if (!entry->Dirty) entry->Dirty = true;
-
-          memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
-          _buffer_pool->Release(entry);
-          return true;
-        }
-      }
-    }
-  }
-  {
-    _latch.WLock();
-    if (slot == nullptr) {
-      // insert new KV
-      writeNew(key, hash, val);
-    } else {
-      if (meta->SlabClass() == val.size() / kSlabSize) {
-        PageId page_id = AddrParser::PageId(addr);
-        PageEntry *entry = _buffer_pool->Lookup(page_id);
-        if (entry != nullptr) {
-#ifdef STAT
-          stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
-#endif
-          _latch.WUnlock();
-          if (!entry->Dirty) entry->Dirty = true;
-
-          memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
-          _buffer_pool->Release(entry);
-          return true;
-        }
-
-        // cache miss
-        PageEntry *victim = replacement(page_id, meta->SlabClass());
-        _latch.WUnlock();
-
-        memcpy((char *)(victim->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
-        if (!victim->Dirty) victim->Dirty = true;
-
-        _buffer_pool->Release(victim);
-        return true;
-      }
-      modifyLength(slot, val);
-    }
-  }
+  modifyLength(slot, val);
   return true;
 }
 
 bool Pool::Delete(const Slice &key, uint32_t hash) {
-  _latch.WLock();
-  defer { _latch.WUnlock(); };
-  int slot_idx = _hash_index->Remove(key, hash);
-  if (slot_idx == KeySlot::INVALID_SLOT_ID) {
+  KeySlot *slot = _hash_index->Remove(key, hash);
+  if (slot == nullptr) {
     LOG_ERROR("delete invalid file %s", key.data());
     return false;
   }
-  KeySlot *slot = &_slots[slot_idx];
+
   Addr addr = slot->Addr();
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = global_page_manger->Page(page_id);
   meta->ClearPos(AddrParser::Off(addr));
+
+  _allocing_list_latch[meta->SlabClass()].WLock();
   global_page_manger->Mount(&_allocing_tail[meta->SlabClass()], meta);
   if (meta->Empty() && _allocing_pages[meta->SlabClass()]->PageId() != page_id) {
     if (_allocing_tail[meta->SlabClass()]->PageId() == page_id) {
@@ -178,10 +128,9 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
     global_page_manger->Unmount(meta);
     global_page_manger->FreePage(page_id);
   }
+  _allocing_list_latch[meta->SlabClass()].WUnlock();
 
-  slot->SetAddr(INVALID_ADDR);
-  slot->SetNext(_free_slot_head);
-  _free_slot_head = slot_idx;
+  _hash_index->GetSlotMonitor()->FreeSlot(slot);
   return true;
 }
 
@@ -192,6 +141,8 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val) {
   PageMeta *meta = global_page_manger->Page(page_id);
   assert(meta->SlabClass() != val.size() / kSlabSize);
   meta->ClearPos(AddrParser::Off(addr));
+
+  _allocing_list_latch[meta->SlabClass()].WLock();
   global_page_manger->Mount(&_allocing_tail[meta->SlabClass()], meta);
   if (meta->Empty() && _allocing_pages[meta->SlabClass()]->PageId() != page_id) {
     if (_allocing_tail[meta->SlabClass()]->PageId() == page_id) {
@@ -201,22 +152,28 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val) {
     global_page_manger->Unmount(meta);
     global_page_manger->FreePage(page_id);
   }
+  _allocing_list_latch[meta->SlabClass()].WUnlock();
+
   // rewrite to meta
   uint8_t slab_class = val.size() / kSlabSize;
 
+  _allocing_list_latch[slab_class].WLock();
   PageEntry *page = _allocing_pages[slab_class];
   meta = global_page_manger->Page(page->PageId());
   if (meta->Full()) {
     page = mountNewPage(slab_class);
     meta = global_page_manger->Page(page->PageId());
+  } else {
+    page->WLock();
   }
+  _allocing_list_latch[slab_class].WUnlock();
 
   // modify bitmap
   int off = meta->SetFirstFreePos();
-  _latch.WUnlock();
 
   memcpy((char *)(page->Data() + val.size() * off), val.data(), val.size());
   if (!page->Dirty) page->Dirty = true;
+  _buffer_pool->Release(page, true);
 
   LOG_ASSERT(off != -1, "set bitmap failed.");
   addr = AddrParser::GenAddrFrom(meta->PageId(), off);
@@ -227,7 +184,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class) {
   PageEntry *old_entry = _allocing_pages[slab_class];
   PageMeta *old_meta = global_page_manger->Page(old_entry->PageId());
   _buffer_pool->UnpinPage(old_entry);
-  _buffer_pool->Release(old_entry);
+
   _allocing_pages[slab_class] = nullptr;
 
   PageMeta *meta = old_meta->Next();
@@ -254,6 +211,8 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class) {
       auto ret = batch.FinishBatch();
       LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
       _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
+    } else {
+      entry->WLock();
     }
 
     _buffer_pool->PinPage(entry);
@@ -264,9 +223,10 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class) {
   // replacement
   LOG_ASSERT(!meta->Full(), "invalid allocing page.");
   global_page_manger->Unmount(old_meta);
-  entry = _buffer_pool->Lookup(meta->PageId());
+  PageId page_id = meta->PageId();
+  entry = _buffer_pool->Lookup(page_id, true);
   if (entry == nullptr) {
-    entry = replacement(meta->PageId(), slab_class);
+    entry = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, slab_class);
   }
   _buffer_pool->PinPage(entry);
   _allocing_pages[slab_class] = entry;
@@ -301,33 +261,30 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class) {
   return victim;
 }
 
-void Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
+bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
 #ifdef STAT
   stat::insert_num.fetch_add(1);
 #endif
   // write key
-  int insert_slot = _free_slot_head;
-  KeySlot *slot = &_slots[_free_slot_head];
-  _free_slot_head = slot->Next();
-  slot->SetKey(key);
-  slot->SetNext(-1);
-
-  _hash_index->Insert(key, hash, insert_slot);
+  KeySlot *slot = _hash_index->Insert(key, hash);
 
   // write value
   uint8_t slab_class = val.size() / kSlabSize;
 
+  _allocing_list_latch[slab_class].WLock();
   PageEntry *page = _allocing_pages[slab_class];
   PageMeta *meta = global_page_manger->Page(page->PageId());
   // TODO：火焰图上这里的Full占用太多
   if (meta->Full()) {
     page = mountNewPage(slab_class);
     meta = global_page_manger->Page(page->PageId());
+  } else {
+    page->WLock();
   }
+  _allocing_list_latch[slab_class].WUnlock();
 
   // modify bitmap
   int off = meta->SetFirstFreePos();
-  _latch.WUnlock();
   // LOG_ASSERT(off != -1, "set bitmap failed.");
   Addr addr = AddrParser::GenAddrFrom(meta->PageId(), off);
   slot->SetAddr(addr);
@@ -335,6 +292,8 @@ void Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   // copy data
   memcpy((void *)(page->Data() + off * val.size()), val.data(), val.size());
   if (!page->Dirty) page->Dirty = true;
+  _buffer_pool->Release(page, true);
+  return true;
 }
 
 int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {

@@ -13,18 +13,27 @@ class PageMeta {
   friend class PageManager;
 
   int SetFirstFreePos() {
+    _latch.WLock();
     _used++;
-    return _bitmap->SetFirstFreePos();
+    int pos = _bitmap->SetFirstFreePos();
+    _latch.WUnlock();
+    return pos;
   }
 
   void ClearPos(int idx) {
+    _latch.WLock();
     _used--;
     _bitmap->Clear(idx);
+    _latch.WUnlock();
   }
 
-  bool Full() const { return _used == _cap; }
+  bool Full() const {
+    return (_used == _cap);
+  }
 
-  bool Empty() const { return _used == 0; }
+  bool Empty() const {
+    return _used == 0;
+  }
 
   kv::PageId PageId() const { return _page_id; }
 
@@ -49,6 +58,7 @@ class PageMeta {
   uint16_t _cap = 0;
   uint16_t _used = 0;
   uint8_t _slab_class;
+  mutable SpinLatch _latch;
 };
 
 /**

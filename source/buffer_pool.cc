@@ -1,11 +1,10 @@
 #include "buffer_pool.h"
 #include <list>
-#include "hash_table.h"
+#include "hash_index.h"
 #include "util/busy_bits.h"
 #include "util/lockfree_queue.h"
 
 namespace kv {
-// #define LOCAL
 class ClockReplacer {
  public:
   static constexpr uint8_t REF = 0x80;
@@ -20,47 +19,54 @@ class ClockReplacer {
   }
   ~ClockReplacer() { delete[] frames_; }
 
-  // not thread-safe
+  // thread-safe
   bool Victim(FrameId *frame_id) {
     assert(frame_id != nullptr);
+    _lock.Lock();
     *frame_id = this->pop();
-    LOG_ASSERT(!frames_[*frame_id].pin_, "frame_id %d is pinned", *frame_id);
+    frames_[*frame_id]._victim = true;
+    _lock.Unlock();
+    LOG_ASSERT(!frames_[*frame_id]._pin, "frame_id %d is pinned", *frame_id);
     return *frame_id != INVALID_FRAME_ID;
   }
 
+  // thread-safe
   bool GetFrame(FrameId *frame_id) {
+    _lock.Lock();
     if (free_list_.empty()) {
+      _lock.Unlock();
       return false;
     }
     *frame_id = free_list_.front();
     free_list_.pop_front();
+    _lock.Unlock();
     return true;
   }
 
   // thread-safe
   void Pin(FrameId frame_id) {
-    LOG_ASSERT(!frames_[frame_id].pin_, "frame_id %d is pinned", frame_id);
-    frames_[frame_id].pin_ = true;
+    LOG_ASSERT(!frames_[frame_id]._pin, "frame_id %d is pinned", frame_id);
+    frames_[frame_id]._pin = true;
   }
 
   // thread-safe
   void Unpin(FrameId frame_id) {
-    assert(frames_[frame_id].pin_);
-    frames_[frame_id].pin_ = false;
+    assert(frames_[frame_id]._pin);
+    frames_[frame_id]._pin = false;
   }
 
   void Ref(FrameId frame_id) {
-    if (frames_[frame_id].victim_) frames_[frame_id].victim_ = false;
-    if (!frames_[frame_id].ref_) frames_[frame_id].ref_ = true;
+    if (frames_[frame_id]._victim) frames_[frame_id]._victim = false;
+    if (!frames_[frame_id]._ref) frames_[frame_id]._ref = true;
   }
 
  private:
   struct Frame {
     Frame() = default;
     FrameId _frame = INVALID_FRAME_ID;
-    bool pin_ = false;
-    bool ref_ = false;
-    bool victim_ = true;
+    bool _pin = false;
+    bool _ref = false;
+    bool _victim = true;
   };
 
   int walk() {
@@ -72,10 +78,10 @@ class ClockReplacer {
   FrameId pop() {
     while (true) {
       uint8_t tmp = 0;
-      if (!frames_[hand_].pin_ && !frames_[hand_].ref_ && !frames_[hand_].victim_) {
+      if (!frames_[hand_]._pin && !frames_[hand_]._ref && !frames_[hand_]._victim) {
         break;
-      } else if (!frames_[hand_].pin_) {
-        frames_[hand_].ref_ = false;
+      } else if (!frames_[hand_]._pin) {
+        frames_[hand_]._ref = false;
       }
       walk();
     }
@@ -85,6 +91,7 @@ class ClockReplacer {
   size_t frame_num_;
   Frame *frames_ = nullptr;
   std::list<FrameId> free_list_;
+  SpinLock _lock;
 };
 
 struct Slot {
@@ -120,6 +127,7 @@ class SAllocator {
   }
 } /*sallcator*/;
 
+// thread-safe
 class FrameHashTable {
  public:
   FrameHashTable(size_t size) {
@@ -130,20 +138,15 @@ class FrameHashTable {
     }
     _size = PrimeList[logn];
     _slots = new Slot[_size];
-#ifdef LOCAL
     _slot_latch = new SpinLatch[_size];
-#endif
-    // counter_ = new uint8_t[_size]{0};
   }
 
   FrameId Find(PageId page_id) {
     uint32_t index = page_id % _size;
 
     Slot *slot = &_slots[index];
-#ifdef LOCAL
     _slot_latch[index].RLock();
     defer { _slot_latch[index].RUnlock(); };
-#endif
 
     if (slot->_page_id == INVALID_PAGE_ID) {
       return INVALID_FRAME_ID;
@@ -162,14 +165,11 @@ class FrameHashTable {
     uint32_t index = page_id % _size;
     Slot *slot = &_slots[index];
 
-#ifdef LOCAL
     _slot_latch[index].WLock();
     defer { _slot_latch[index].WUnlock(); };
-#endif
     if (slot->_page_id == INVALID_PAGE_ID) {
       slot->_page_id = page_id;
       slot->_frame = frame;
-      // counter_[index]++;
       return;
     }
 
@@ -184,12 +184,10 @@ class FrameHashTable {
 
     // insert into head
     slot = new Slot;
-    // slot = sallcator.Alloc();
     slot->_page_id = page_id;
     slot->_frame = frame;
     slot->_next = _slots[index]._next;
     _slots[index]._next = slot;
-    // counter_[index]++;
   }
 
   bool Remove(PageId page_id, FrameId frame) {
@@ -197,10 +195,8 @@ class FrameHashTable {
 
     Slot *slot = &_slots[index];
 
-#ifdef LOCAL
     _slot_latch[index].WLock();
     defer { _slot_latch[index].WUnlock(); };
-#endif
 
     if (slot->_page_id == INVALID_PAGE_ID) {
       return false;
@@ -219,7 +215,6 @@ class FrameHashTable {
         slot->_frame = INVALID_FRAME_ID;
         slot->_next = nullptr;
       }
-      // counter_[index]--;
       return true;
     }
 
@@ -229,7 +224,6 @@ class FrameHashTable {
       if (page_id == slot->_page_id) {
         front->_next = slot->_next;
         // delete slot;
-        // counter_[index]--;
         return true;
       }
       front = slot;
@@ -243,9 +237,7 @@ class FrameHashTable {
 
  private:
   Slot *_slots;
-#ifdef LOCAL
   SpinLatch *_slot_latch;
-#endif
   size_t _size;
 };
 
@@ -266,9 +258,7 @@ BufferPool::~BufferPool() {
     perror("ibv_derge_mr failed.");
     LOG_ERROR("ibv_derge_mr failed.");
   }
-  // LOG_INFO("cache hash table");
-  // LOG_INFO("cache lookup conflict %u", lookup_count_);
-  // hash_table_->PrintCounter();
+
   delete[] _pages;
   delete[] _entries;
   delete _hash_table;
@@ -286,6 +276,8 @@ bool BufferPool::Init(ibv_pd *pd) {
 
 PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
   FrameId fid;
+  // _latch.WLock();
+  // defer { _latch.WUnlock(); };
   if (_replacer->GetFrame(&fid)) {
     PageEntry *new_entry = &_entries[fid];
     new_entry->_page_id = page_id;
@@ -297,32 +289,39 @@ PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
   return nullptr;
 }
 
-PageEntry *BufferPool::Lookup(PageId page_id) {
-#ifdef LOCAL
-  _latch.RLock();
-  defer { _latch.RUnlock(); };
-#endif
+PageEntry *BufferPool::Lookup(PageId page_id, bool writer) {
+  // _latch.RLock();
+  // defer { _latch.RUnlock(); };
+  FrameId fid;
   while (true) {
-    auto fid = _hash_table->Find(page_id);
+    fid = _hash_table->Find(page_id);
     if (fid == INVALID_FRAME_ID) {
       return nullptr;
     }
-
-    if (!(page_id == _entries[fid]._page_id)) {
-      // lookup_count_++;
-      continue;
+    if (writer) {
+      if (_entries[fid].TryWLock()) break;
+    } else {
+      if (_entries[fid].TryRLock()) break;
     }
-
-    LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
-    _replacer->Ref(fid);
-    // LOG_DEBUG("[shard %d] lookup page %d", _shard, page_id);
-    return &_entries[fid];
   }
+  LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
+  _replacer->Ref(fid);
+  // LOG_DEBUG("[shard %d] lookup page %d", _shard, page_id);
+  return &_entries[fid];
 }
 
-void BufferPool::Release(PageEntry *entry) { _replacer->Ref(entry->_frame_id); }
+void BufferPool::Release(PageEntry *entry, bool writer) {
+  if (writer) {
+    entry->WUnlock();
+  } else {
+    entry->RUnlock();
+  }
+  _replacer->Ref(entry->_frame_id);
+}
 
 void BufferPool::InsertPage(PageEntry *page, PageId page_id, uint8_t slab_class) {
+  // _latch.WLock();
+  // defer { _latch.WUnlock(); };
   page->_page_id = page_id;
   page->_slab_class = slab_class;
   _hash_table->Insert(page_id, page->_frame_id);
@@ -330,16 +329,14 @@ void BufferPool::InsertPage(PageEntry *page, PageId page_id, uint8_t slab_class)
 }
 
 PageEntry *BufferPool::Evict() {
-#ifdef LOCAL
-  _latch.WLock();
-  defer { _latch.WUnlock(); };
-#endif
+  // _latch.WLock();
+  // defer { _latch.WUnlock(); };
   FrameId fid;
   auto succ = _replacer->Victim(&fid);
   assert(succ);
 
   PageEntry *victim = &_entries[fid];
-
+  victim->WLock();
   // remove from old hash table
   _hash_table->Remove(victim->_page_id, victim->_frame_id);
   return victim;

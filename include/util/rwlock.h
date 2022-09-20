@@ -123,7 +123,7 @@ class alignas(64) SpinLatch {
   std::atomic_int8_t lock_{0};
 };
 
-class SpinLock {
+class alignas(64) SpinLock {
  public:
   void Lock() {
     while (lock_.test_and_set(std::memory_order_acquire))
