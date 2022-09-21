@@ -162,7 +162,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val) {
   _allocing_list_latch[slab_class].WLock();
   PageEntry *page = _allocing_pages[slab_class];
   meta = global_page_manager->Page(page->PageId());
-  if (meta->Full()) {
+  if (UNLIKELY(meta->Full())) {
     page = mountNewPage(slab_class);
     meta = global_page_manager->Page(page->PageId());
   } else {
