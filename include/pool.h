@@ -31,7 +31,6 @@ class Pool NOCOPYABLE {
   bool Write(const Slice &key, uint32_t hash, const Slice &val);
   bool Delete(const Slice &key, uint32_t hash);
 
-
  private:
   bool writeNew(const Slice &key, uint32_t hash, const Slice &val);
   using WriteNewFunc = std::function<bool(const Slice &, uint32_t, const Slice &)>;
@@ -79,6 +78,7 @@ class RemotePool NOCOPYABLE {
     ValueBlock *block = &_blocks[cur];
     auto succ = block->Init(_pd);
     LOG_ASSERT(succ, "Failed to init memblock  %d.", cur);
+    LOG_INFO("Alloc block %d successfully, prepare response.", cur);
     return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey()};
   }
 

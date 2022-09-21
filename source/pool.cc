@@ -94,8 +94,6 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
     }
 
     // cache miss
-    // _lock.Lock();
-    // defer { _lock.Unlock(); };
     PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), true);
     memcpy((char *)(victim->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
     if (!victim->Dirty) victim->Dirty = true;
@@ -104,7 +102,9 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
     return true;
   }
 
+  _lock.Lock();
   modifyLength(slot, val);
+  _lock.Unlock();
   return true;
 }
 
@@ -192,7 +192,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class) {
   PageEntry *entry = nullptr;
   if (meta == nullptr) {
     assert(old_meta->Next() == nullptr);
-    assert(old_meta->Prev() == nullptr);
+    assert(old_meta->Prev() == nullptr); // TODO：这里assert了
     // allocing list is empty, need alloc new page
     meta = global_page_manager->AllocNewPage(slab_class);
     entry = _buffer_pool->FetchNew(meta->PageId(), slab_class);
@@ -283,7 +283,6 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   _allocing_list_latch[slab_class].WLock();
   PageEntry *page = _allocing_pages[slab_class];
   PageMeta *meta = global_page_manager->Page(page->PageId());
-  // TODO：火焰图上这里的Full占用太多
   if (UNLIKELY(meta->Full())) {
     page = mountNewPage(slab_class);
     meta = global_page_manager->Page(page->PageId());

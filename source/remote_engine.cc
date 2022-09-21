@@ -50,7 +50,6 @@ void RemoteEngine::handler(RPCTask *task) {
       AllocRequest *req = task->GetRequest<AllocRequest>();
       LOG_INFO("Alloc msg");
       auto access = _pool->AllocBlock();
-      LOG_INFO("Alloc block %d successfully, prepare response.", _pool->BlockNum());
 
       AllocResponse resp;
       resp.addr = access.addr;

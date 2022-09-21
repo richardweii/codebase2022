@@ -20,17 +20,19 @@ constexpr static const unsigned long PrimeList[] = {
     201326611ul, 402653189ul, 805306457ul, 1610612741ul, 3221225473ul, 4294967291ul};
 
 constexpr int kSegLatchOff = 5;
+constexpr int kSegLatchMask = (kKeyNum / kPoolShardingNum) >> kSegLatchOff;
+// constexpr int kSegLatchMask = (1UL << kSegLatchOff) - 1;
 
 class KeySlot {
  public:
   constexpr static int INVALID_SLOT_ID = -1;
   void SetKey(const Slice &s) { memcpy(_key, s.data(), kKeyLength); }
   void SetAddr(Addr addr) { _addr = addr; }
-  void SetNext(int next) { _next.store(next, std::memory_order_relaxed); }
+  void SetNext(int next) { _next = next; }
 
   const char *Key() const { return _key; }
   kv::Addr Addr() const { return _addr; }
-  int Next() const { return _next.load(std::memory_order_relaxed); }
+  int Next() const { return _next; }
 
  private:
   friend class SlotMonitor;
@@ -38,7 +40,7 @@ class KeySlot {
   // TODO: 可以把这个用一个指针指向，这样L3缓存可以缓存更多条目（感觉没什么用，访问不具备空间局部性）
   char _key[kKeyLength];
   kv::Addr _addr = INVALID_ADDR;
-  std::atomic_int _next = {-1};  // next hashtable node or next free slot
+  int _next = -1;  // next hashtable node or next free slot
 };
 
 class SlotMonitor {
@@ -56,7 +58,7 @@ class SlotMonitor {
  private:
   // TODO: lock-free list
   SpinLock _lock;
-  int _free_slot_head = -1;
+  std::atomic<int> _free_slot_head {-1};
   KeySlot _slots[kKeyNum / kPoolShardingNum];
 };
 
@@ -75,6 +77,22 @@ class HashTable {
   KeySlot *Remove(const Slice &key, uint32_t hash);
 
   SlotMonitor *GetSlotMonitor() { return &_monitor; }
+
+  void RLock(uint32_t index) {
+    _seg_latch[index % kSegLatchMask].RLock();
+  }
+
+  void RUnlock(uint32_t index) {
+    _seg_latch[index % kSegLatchMask].RUnlock();
+  }
+
+  void WLock(uint32_t index) {
+    _seg_latch[index % kSegLatchMask].WLock();
+  }
+
+  void WUnlock(uint32_t index) {
+    _seg_latch[index % kSegLatchMask].WUnlock();
+  }
 
  private:
   SlotMonitor _monitor;

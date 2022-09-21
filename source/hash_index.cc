@@ -10,24 +10,27 @@ SlotMonitor::SlotMonitor() {
 
 int SlotMonitor::GetNewSlot(KeySlot **out) {
   LOG_ASSERT(out, "empty slot ptr");
-  _lock.Lock();
-  int insert_slot = _free_slot_head;
-  KeySlot *slot = &_slots[_free_slot_head];
-  _free_slot_head = slot->Next();
-  slot->SetNext(-1);
-  _lock.Unlock();
-  *out = slot;
-  return insert_slot;
+
+RETRY:
+  int old_free_slot_head = _free_slot_head;
+  KeySlot *slot = &_slots[old_free_slot_head];
+  int next = slot->Next();
+  if (_free_slot_head.compare_exchange_strong(old_free_slot_head, next)) {
+    slot->SetNext(-1);
+    *out = slot;
+    return old_free_slot_head;
+  }
+  goto RETRY;
 }
 
 void SlotMonitor::FreeSlot(KeySlot *slot) {
   LOG_ASSERT(slot, "empty slot ptr");
-  _lock.Lock();
+  int old_free_slot_head = _free_slot_head;
   int slot_idx = static_cast<int>(slot - _slots);
-  slot->SetAddr(INVALID_ADDR);
-  slot->SetNext(_free_slot_head);
-  _free_slot_head = slot_idx;
-  _lock.Unlock();
+  if (_free_slot_head.compare_exchange_strong(old_free_slot_head, slot_idx)) {
+    slot->SetAddr(INVALID_ADDR);
+    slot->SetNext(old_free_slot_head);
+  }
 }
 
 HashTable::HashTable(size_t size) {
@@ -49,10 +52,9 @@ KeySlot *HashTable::Find(const Slice &key, uint32_t hash) {
   hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
-  int seg = index >> kSegLatchOff;
-  _seg_latch[seg].RLock();
-  defer { _seg_latch[seg].RUnlock(); };
-  
+  // RLock(index);
+  // defer { RUnlock(index); };
+
   int slot_id = _bucket[index];
   KeySlot *slot = nullptr;
   while (slot_id != KeySlot::INVALID_SLOT_ID) {
@@ -73,9 +75,8 @@ KeySlot *HashTable::Insert(const Slice &key, uint32_t hash) {
 
   hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
-  int seg = index >> kSegLatchOff;
-  _seg_latch[seg].WLock();
-  defer { _seg_latch[seg].WUnlock(); };
+  // WLock(index);
+  // defer { WUnlock(index); };
 
   int slot_id = _bucket[index];
   if (slot_id == KeySlot::INVALID_SLOT_ID) {
@@ -108,9 +109,8 @@ KeySlot *HashTable::Remove(const Slice &key, uint32_t hash) {
   hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
-  int seg = index >> kSegLatchOff;
-  _seg_latch[seg].WLock();
-  defer { _seg_latch[seg].WUnlock(); };
+  // WLock(index);
+  // defer { WUnlock(index); };
 
   int slot_id = _bucket[index];
   if (slot_id == KeySlot::INVALID_SLOT_ID) {
