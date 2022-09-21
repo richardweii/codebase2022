@@ -75,6 +75,8 @@ constexpr uint32_t PAGE_MASK = 0x7fff;
 constexpr uint32_t PAGE_OFF_MASK = 0x3ff;
 constexpr uint32_t OFF_BIT = 17;  // MAX 4096
 constexpr uint32_t OFF_MASK = 0x1ffff;
+constexpr int kParallelNewThread = 1;
+
 #else
 
 constexpr uint32_t PAGE_BIT = 19;
@@ -82,11 +84,13 @@ constexpr uint32_t PAGE_MASK = 0x7ffff;
 constexpr uint32_t PAGE_OFF_MASK = 0x3fff;
 constexpr uint32_t OFF_BIT = 13;  // MAX 4096
 constexpr uint32_t OFF_MASK = 0x1fff;
+constexpr int kParallelNewThread = 8;
+
+#endif
 constexpr int MAX_BLOCK_NUM = 32;
 constexpr int MAX_SLOT_NUM = 1 * 1024 * 1024;
 constexpr int kCoreNum = 16;
 
-#endif
 class AddrParser {
  public:
   static kv::PageId PageId(Addr addr) { return (addr >> OFF_BIT) & PAGE_MASK; }

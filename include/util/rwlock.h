@@ -110,7 +110,7 @@ class alignas(64) SpinLatch {
 
   bool TryRLock() {
     int8_t lock = lock_.fetch_add(2, std::memory_order_acquire);
-    auto succ = !(lock_.load(std::memory_order_relaxed) & 1);
+    auto succ = !(lock & 1);
     if (!succ) {
       lock_.fetch_add(-2, std::memory_order_release);
     }

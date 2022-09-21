@@ -87,10 +87,10 @@ KeySlot *HashTable::Insert(const Slice &key, uint32_t hash) {
 #ifdef TEST_CONFIG
   // find
   while (slot_id != KeySlot::INVALID_SLOT_ID) {
-    slot = &_slots[slot_id];
+    slot = _monitor[slot_id];
     if ((memcmp(key.data(), slot->Key(), kKeyLength) == 0)) {
       LOG_DEBUG("duplicate of slot %d", new_slot_id);
-      return false;
+      return nullptr;
     }
     slot_id = slot->Next();
   }

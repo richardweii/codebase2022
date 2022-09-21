@@ -25,19 +25,33 @@ class PageEntry {
   kv::PageId PageId() const { return _page_id; }
   char *Data() { return _data->data; }
   uint8_t SlabClass() const { return _slab_class; }
-  
+
   bool TryRLock() { return _latch.TryRLock(); }
+  void RLock() { _latch.RLock(); }
   void RUnlock() { _latch.RUnlock(); }
 
-  bool TryWLock() { return _latch.TryWLock(); }
-  void WLock() { _latch.WLock(); }
-  void WUnlock() { _latch.WUnlock(); }
+  bool TryWLock() {
+    if (_latch.TryWLock()) {
+      _writer = true;
+      return true;
+    }
+    return false;
+  }
+  void WLock() {
+    _latch.WLock();
+    _writer = true;
+  }
+  void WUnlock() {
+    _writer = false;
+    _latch.WUnlock();
+  }
 
  private:
   kv::PageId _page_id = INVALID_PAGE_ID;
   PageData *_data;
   uint8_t _slab_class = 0;
   FrameId _frame_id = INVALID_FRAME_ID;
+  bool _writer = false;
   SpinLatch _latch;
   // TODO: maybe need a latch
 };
@@ -52,9 +66,9 @@ class BufferPool {
   // return nullptr if no free page
   PageEntry *FetchNew(PageId page_id, uint8_t slab_class);
 
-  PageEntry *Lookup(PageId page_id, bool write = false);
+  PageEntry *Lookup(PageId page_id, bool writer = false);
 
-  void Release(PageEntry *entry, bool write = false);
+  void Release(PageEntry *entry);
   // used with evict
   void InsertPage(PageEntry *page, PageId page_id, uint8_t slab_class);
 
@@ -68,6 +82,7 @@ class BufferPool {
   ibv_mr *MR() const { return _mr; }
 
  private:
+  std::atomic_int pin{0};
   PageData *_pages;
   PageEntry *_entries;
 

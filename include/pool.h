@@ -31,15 +31,16 @@ class Pool NOCOPYABLE {
   bool Write(const Slice &key, uint32_t hash, const Slice &val);
   bool Delete(const Slice &key, uint32_t hash);
 
+
  private:
   bool writeNew(const Slice &key, uint32_t hash, const Slice &val);
-  using WriteNewFunc = std::function<bool(const Slice &key, uint32_t hash, const Slice &val)>;
+  using WriteNewFunc = std::function<bool(const Slice &, uint32_t, const Slice &)>;
   WriteNewFunc _writeNew;
 
   PageEntry *mountNewPage(uint8_t slab_class);
 
-  PageEntry *replacement(PageId page_id, uint8_t slab_class);
-  using ReplacementFunc = std::function<PageEntry *(PageId page_id, uint8_t slab_class)>;
+  PageEntry *replacement(PageId page_id, uint8_t slab_class, bool writer = false);
+  using ReplacementFunc = std::function<PageEntry *(PageId, uint8_t, bool)>;
   ReplacementFunc _replacement;
 
   void modifyLength(KeySlot *slot, const Slice &val);
@@ -65,6 +66,7 @@ class Pool NOCOPYABLE {
   uint8_t _shard;
 
   SpinLatch _allocing_list_latch[kSlabSizeMax + 1];
+  SpinLock _lock;
 };
 
 class RemotePool NOCOPYABLE {

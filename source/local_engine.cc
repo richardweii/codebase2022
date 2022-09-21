@@ -35,9 +35,9 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   _client->Start();
 
   Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
-  global_page_manger = new PageManager(kPoolSize / kPageSize);
+  global_page_manager = new PageManager(kPoolSize / kPageSize);
 
-  int thread_num = 8;
+  int thread_num = kParallelNewThread;
   std::vector<std::thread> threads;
   for (int t = 0; t < thread_num; t++) {
     threads.emplace_back(
@@ -104,10 +104,10 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
 void LocalEngine::stop() {
   _client->Stop();
   delete _client;
-  // for (int i = 0; i < kPoolShardingNum; i++) {
-  //   delete _pool[i];
-  // }
-  // delete global_page_manager;
+  for (int i = 0; i < kPoolShardingNum; i++) {
+    delete _pool[i];
+  }
+  delete global_page_manager;
   LOG_INFO(" ========== Performance Statistics ============");
   LOG_INFO(" Total read %ld times, write %ld times", stat::read_times.load(), stat::write_times.load());
   LOG_INFO(" Unique insert %ld  times", stat::insert_num.load());

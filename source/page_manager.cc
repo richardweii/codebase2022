@@ -2,7 +2,7 @@
 
 namespace kv {
 
-PageManager *global_page_manger = nullptr;
+PageManager *global_page_manager = nullptr;
 
 PageManager::PageManager(size_t page_num) : _page_num(page_num) {
   _pages = new PageMeta[page_num];

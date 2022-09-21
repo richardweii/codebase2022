@@ -100,33 +100,6 @@ struct Slot {
   Slot *_next = nullptr;
 };
 
-// 包含核心个数(16)个分配器，多线程访问时通过BusyBits找到一个空闲的分配器进行分配
-class SAllocator {
- public:
-  Slot *Alloc() {
-    Slot *slot;
-    // 找到一个空闲的分配器
-    int t_idle = busy_bits.GetIdleBit();
-    while (!queue[t_idle]->dequeue(slot))
-      ;
-    busy_bits.UnsetBit(t_idle);
-    return slot;
-  }
-
-  BusyBits busy_bits{kCoreNum};
-  LFQueue<Slot *> **queue;
-  SAllocator() {
-    queue = new LFQueue<Slot *> *[kCoreNum];
-    for (int i = 0; i < kCoreNum; i++) {
-      queue[i] = new LFQueue<Slot *>(MAX_SLOT_NUM >> 4);
-      for (int j = 0; j < MAX_SLOT_NUM >> 4; j++) {
-        Slot *slot = new Slot;
-        queue[i]->enqueue(slot);
-      }
-    }
-  }
-} /*sallcator*/;
-
 // thread-safe
 class FrameHashTable {
  public:
@@ -258,6 +231,7 @@ BufferPool::~BufferPool() {
     perror("ibv_derge_mr failed.");
     LOG_ERROR("ibv_derge_mr failed.");
   }
+  // LOG_ASSERT(pin == 60, "pin & unpin not matched. pin %d", pin.load());
 
   delete[] _pages;
   delete[] _entries;
@@ -299,10 +273,12 @@ PageEntry *BufferPool::Lookup(PageId page_id, bool writer) {
       return nullptr;
     }
     if (writer) {
-      if (_entries[fid].TryWLock()) break;
+      if (_entries[fid].TryWLock() && _entries[fid]._page_id == page_id) break;
     } else {
-      if (_entries[fid].TryRLock()) break;
+      if (_entries[fid].TryRLock() && _entries[fid]._page_id == page_id) break;
     }
+    // if ( _entries[fid]._page_id == page_id) break;
+
   }
   LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
   _replacer->Ref(fid);
@@ -310,8 +286,8 @@ PageEntry *BufferPool::Lookup(PageId page_id, bool writer) {
   return &_entries[fid];
 }
 
-void BufferPool::Release(PageEntry *entry, bool writer) {
-  if (writer) {
+void BufferPool::Release(PageEntry *entry) {
+  if (entry->_writer) {
     entry->WUnlock();
   } else {
     entry->RUnlock();
@@ -348,6 +324,10 @@ PageEntry *BufferPool::EvictBatch(int batch_size, std::vector<PageEntry *> *page
   return nullptr;
 }
 
-void BufferPool::PinPage(PageEntry *entry) { _replacer->Pin(entry->_frame_id); }
-void BufferPool::UnpinPage(PageEntry *entry) { _replacer->Unpin(entry->_frame_id); }
+void BufferPool::PinPage(PageEntry *entry) {
+  _replacer->Pin(entry->_frame_id);
+}
+void BufferPool::UnpinPage(PageEntry *entry) {
+  _replacer->Unpin(entry->_frame_id);
+}
 }  // namespace kv
