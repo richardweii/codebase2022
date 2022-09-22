@@ -77,11 +77,11 @@ class SingleFlight<PageId, PageEntry *> {
       while (!pRes->_done)
         ;
       // return result
-      if (writer) {
-        pRes->_result->WLock();
-      } else {
-        pRes->_result->RLock();
-      }
+      // if (writer) {
+      //   pRes->_result->WLock();
+      // } else {
+      //   pRes->_result->RLock();
+      // }
       return pRes->_result;
     }
     // create new task

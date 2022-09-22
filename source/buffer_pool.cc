@@ -272,12 +272,12 @@ PageEntry *BufferPool::Lookup(PageId page_id, bool writer) {
     if (fid == INVALID_FRAME_ID) {
       return nullptr;
     }
-    if (writer) {
-      if (_entries[fid].TryWLock() && _entries[fid]._page_id == page_id) break;
-    } else {
-      if (_entries[fid].TryRLock() && _entries[fid]._page_id == page_id) break;
-    }
-    // if ( _entries[fid]._page_id == page_id) break;
+    // if (writer) {
+    //   if (_entries[fid].TryWLock() && _entries[fid]._page_id == page_id) break;
+    // } else {
+    //   if (_entries[fid].TryRLock() && _entries[fid]._page_id == page_id) break;
+    // }
+    if ( _entries[fid]._page_id == page_id) break;
 
   }
   LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
@@ -287,11 +287,11 @@ PageEntry *BufferPool::Lookup(PageId page_id, bool writer) {
 }
 
 void BufferPool::Release(PageEntry *entry) {
-  if (entry->_writer) {
-    entry->WUnlock();
-  } else {
-    entry->RUnlock();
-  }
+  // if (entry->_writer) {
+  //   entry->WUnlock();
+  // } else {
+  //   entry->RUnlock();
+  // }
   _replacer->Ref(entry->_frame_id);
 }
 
@@ -312,7 +312,7 @@ PageEntry *BufferPool::Evict() {
   assert(succ);
 
   PageEntry *victim = &_entries[fid];
-  victim->WLock();
+  // victim->WLock();
   // remove from old hash table
   _hash_table->Remove(victim->_page_id, victim->_frame_id);
   return victim;

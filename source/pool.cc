@@ -52,9 +52,6 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = global_page_manager->Page(page_id);
   {  // lock-free phase
-    // _latch.RLock();
-    // defer { _latch.RUnlock(); };
-    // cache
     PageEntry *entry = _buffer_pool->Lookup(page_id);
 
     if (entry != nullptr) {
@@ -258,7 +255,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
       page = mountNewPage(slab_class, hash);
       meta = global_page_manager->Page(page->PageId());
     } else {
-      page->WLock();
+      // page->WLock();
     }
     // modify bitmap
     off = meta->SetFirstFreePos();
@@ -269,7 +266,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
       page = mountNewPage(slab_class, hash);
       meta = global_page_manager->Page(page->PageId());
     } else {
-      page->WLock();
+      // page->WLock();
     }
     // modify bitmap
     off = meta->SetFirstFreePos();
@@ -322,7 +319,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
         }
         _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
       } else {
-        entry->WLock();
+        // entry->WLock();
       }
 
       _buffer_pool->PinPage(entry);
@@ -375,7 +372,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
         }
         _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
       } else {
-        entry->WLock();
+        // entry->WLock();
       }
 
       _buffer_pool->PinPage(entry);
@@ -453,7 +450,7 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
       page = mountNewPage(slab_class, hash);
       meta = global_page_manager->Page(page->PageId());
     } else {
-      page->WLock();
+      // page->WLock();
     }
     // modify bitmap
     off = meta->SetFirstFreePos();
@@ -464,7 +461,7 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
       page = mountNewPage(slab_class, hash);
       meta = global_page_manager->Page(page->PageId());
     } else {
-      page->WLock();
+      // page->WLock();
     }
     // modify bitmap
     off = meta->SetFirstFreePos();
