@@ -42,7 +42,7 @@ void Pool::Init() {
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   // existence
   KeySlot *slot = _hash_index->Find(key, hash);
-  if (UNLIKELY(slot == nullptr)) {
+  if (slot == nullptr) {
 #ifdef STAT
     stat::read_miss.fetch_add(1);
 #endif
@@ -51,28 +51,84 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   Addr addr = slot->Addr();
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = global_page_manager->Page(page_id);
-  // cache
-  PageEntry *entry = _buffer_pool->Lookup(page_id);
+  {  // lock-free phase
+    // _latch.RLock();
+    // defer { _latch.RUnlock(); };
+    // cache
+    PageEntry *entry = _buffer_pool->Lookup(page_id);
 
-  if (LIKELY(entry != nullptr)) {
+    if (entry != nullptr) {
 #ifdef STAT
-    stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
+      stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-    uint32_t val_len = entry->SlabClass() * kSlabSize;
+      uint32_t val_len = entry->SlabClass() * kSlabSize;
+      val.resize(val_len);
+      memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
+      _buffer_pool->Release(entry);
+      return true;
+    }
+  }
+  {
+    _latch.WLock();
+
+    //     // recheck
+    //     PageEntry *entry = _buffer_pool->Lookup(page_id);
+    //     if (entry != nullptr) {
+    // #ifdef STAT
+    //       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
+    // #endif
+    //       _latch.WUnlock();
+    //       uint32_t val_len = entry->SlabClass() * kSlabSize;
+    //       val.resize(val_len);
+    //       memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
+    //       _buffer_pool->Release(entry);
+    //       return true;
+    //     }
+
+    // cache miss
+    PageEntry *victim = replacement(page_id, meta->SlabClass());
+    _latch.WUnlock();
+
+    uint32_t val_len = victim->SlabClass() * kSlabSize;
     val.resize(val_len);
-    memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
-    _buffer_pool->Release(entry);
+    memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
+
+    _buffer_pool->Release(victim);
     return true;
   }
+  //   // existence
+  //   KeySlot *slot = _hash_index->Find(key, hash);
+  //   if (UNLIKELY(slot == nullptr)) {
+  // #ifdef STAT
+  //     stat::read_miss.fetch_add(1);
+  // #endif
+  //     return false;
+  //   }
+  //   Addr addr = slot->Addr();
+  //   PageId page_id = AddrParser::PageId(addr);
+  //   PageMeta *meta = global_page_manager->Page(page_id);
+  //   // cache
+  //   PageEntry *entry = _buffer_pool->Lookup(page_id);
 
-  // cache miss
-  PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
-  uint32_t val_len = victim->SlabClass() * kSlabSize;
-  val.resize(val_len);
-  memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
+  //   if (LIKELY(entry != nullptr)) {
+  // #ifdef STAT
+  //     stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
+  // #endif
+  //     uint32_t val_len = entry->SlabClass() * kSlabSize;
+  //     val.resize(val_len);
+  //     memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
+  //     _buffer_pool->Release(entry);
+  //     return true;
+  //   }
 
-  _buffer_pool->Release(victim);
-  return true;
+  //   // cache miss
+  //   PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
+  //   uint32_t val_len = victim->SlabClass() * kSlabSize;
+  //   val.resize(val_len);
+  //   memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
+
+  //   _buffer_pool->Release(victim);
+  //   return true;
 }
 
 bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
@@ -386,9 +442,9 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   uint8_t slab_class = val.size() / kSlabSize;
 
   int al_index = (hash>>24) % kAllocingListShard;
-  PageEntry* page;
+  PageEntry *page;
   int off;
-  PageMeta* meta;
+  PageMeta *meta;
   allocingListWLock(al_index, slab_class);
   if (isSmallSlabSize(slab_class)) {
     page = _small_allocing_pages[al_index][slab_class];

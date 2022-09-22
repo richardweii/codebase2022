@@ -92,6 +92,7 @@ class Pool NOCOPYABLE {
   uint8_t _shard;
 
   SpinLock _lock;
+  SpinLatch _latch;
 };
 
 class RemotePool NOCOPYABLE {
