@@ -26,7 +26,7 @@ class ClockReplacer {
     *frame_id = this->pop();
     frames_[*frame_id]._victim = true;
     _lock.Unlock();
-    LOG_ASSERT(!frames_[*frame_id]._pin, "frame_id %d is pinned", *frame_id); // TODO：这里发生了一次assert错误
+    LOG_ASSERT(!frames_[*frame_id]._pin, "frame_id %d is pinned", *frame_id);  // TODO：这里发生了一次assert错误
     return *frame_id != INVALID_FRAME_ID;
   }
 
@@ -250,8 +250,6 @@ bool BufferPool::Init(ibv_pd *pd) {
 
 PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
   FrameId fid;
-  // _latch.WLock();
-  // defer { _latch.WUnlock(); };
   if (_replacer->GetFrame(&fid)) {
     PageEntry *new_entry = &_entries[fid];
     new_entry->_page_id = page_id;
@@ -264,21 +262,14 @@ PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
 }
 
 PageEntry *BufferPool::Lookup(PageId page_id, bool writer) {
-  // _latch.RLock();
-  // defer { _latch.RUnlock(); };
   FrameId fid;
   while (true) {
     fid = _hash_table->Find(page_id);
     if (fid == INVALID_FRAME_ID) {
       return nullptr;
     }
-    // if (writer) {
-    //   if (_entries[fid].TryWLock() && _entries[fid]._page_id == page_id) break;
-    // } else {
-    //   if (_entries[fid].TryRLock() && _entries[fid]._page_id == page_id) break;
-    // }
-    if ( _entries[fid]._page_id == page_id) break;
 
+    if (_entries[fid]._page_id == page_id) break;
   }
   LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
   _replacer->Ref(fid);
@@ -286,18 +277,9 @@ PageEntry *BufferPool::Lookup(PageId page_id, bool writer) {
   return &_entries[fid];
 }
 
-void BufferPool::Release(PageEntry *entry) {
-  // if (entry->_writer) {
-  //   entry->WUnlock();
-  // } else {
-  //   entry->RUnlock();
-  // }
-  _replacer->Ref(entry->_frame_id);
-}
+void BufferPool::Release(PageEntry *entry) { _replacer->Ref(entry->_frame_id); }
 
 void BufferPool::InsertPage(PageEntry *page, PageId page_id, uint8_t slab_class) {
-  // _latch.WLock();
-  // defer { _latch.WUnlock(); };
   page->_page_id = page_id;
   page->_slab_class = slab_class;
   _hash_table->Insert(page_id, page->_frame_id);
@@ -312,7 +294,6 @@ PageEntry *BufferPool::Evict() {
   assert(succ);
 
   PageEntry *victim = &_entries[fid];
-  // victim->WLock();
   // remove from old hash table
   _hash_table->Remove(victim->_page_id, victim->_frame_id);
   return victim;
@@ -324,10 +305,6 @@ PageEntry *BufferPool::EvictBatch(int batch_size, std::vector<PageEntry *> *page
   return nullptr;
 }
 
-void BufferPool::PinPage(PageEntry *entry) {
-  _replacer->Pin(entry->_frame_id);
-}
-void BufferPool::UnpinPage(PageEntry *entry) {
-  _replacer->Unpin(entry->_frame_id);
-}
+void BufferPool::PinPage(PageEntry *entry) { _replacer->Pin(entry->_frame_id); }
+void BufferPool::UnpinPage(PageEntry *entry) { _replacer->Unpin(entry->_frame_id); }
 }  // namespace kv

@@ -49,7 +49,7 @@ class Pool NOCOPYABLE {
   int readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch);
 
   bool isSmallSlabSize(int slab_size) {
-    return slab_size >= 5 && slab_size <= 8;
+    return slab_size >= 5 && slab_size <= 16;
   }
 
   void allocingListWLock(uint32_t al_index, int slab_size) {
@@ -73,10 +73,10 @@ class Pool NOCOPYABLE {
   SingleFlight<PageId, PageEntry *> _replacement_sgfl;
   SingleFlight<std::string, bool> _write_new_sgfl;
 
-  // small page只存储 slab size为 5~8的
+  // small page只存储 slab size为 5 ~ 16 的
   PageEntry *_small_allocing_pages[kAllocingListShard][kSlabSizeMax + 1];
   PageMeta *_small_allocing_tail[kAllocingListShard][kSlabSizeMax + 1];
-  // big page存储 slab size 为9 ~ 64的
+  // big page存储 slab size 为16 ~ 64 的
   PageEntry *_big_allocing_pages[kSlabSizeMax + 1];
   PageMeta *_big_allocing_tail[kSlabSizeMax + 1];
   // allocing list latch

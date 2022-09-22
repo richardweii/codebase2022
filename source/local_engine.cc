@@ -34,9 +34,10 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   if (!_client->Init(addr, port)) return false;
   _client->Start();
 
+  LOG_INFO("client start");
   Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
   global_page_manager = new PageManager(kPoolSize / kPageSize);
-
+  LOG_INFO("global_page_manager created");
   int thread_num = kParallelNewThread;
   std::vector<std::thread> threads;
   for (int t = 0; t < thread_num; t++) {
@@ -82,8 +83,10 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
     th.join();
   }
 
+  LOG_INFO("pool init & remote Value block allocated");
+
   auto watcher = std::thread([&]() {
-    sleep(60*12);
+    sleep(60 * 12);
     fflush(stdout);
     abort();
   });
@@ -92,7 +95,8 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   auto time_end = TIME_NOW;
   auto time_delta = time_end - time_now;
   auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
-  std::cout << "init time:" << count * 1.0 / 1000 / 1000 << "s" << std::endl;
+  LOG_INFO("init time: %lf s", count * 1.0 / 1000 / 1000);
+  // std::cout << "init time:" << count * 1.0 / 1000 / 1000 << "s" << std::endl;
 
   return true;
 }

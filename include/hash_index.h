@@ -37,7 +37,6 @@ class KeySlot {
  private:
   friend class SlotMonitor;
   KeySlot() = default;
-  // TODO: 可以把这个用一个指针指向，这样L3缓存可以缓存更多条目（感觉没什么用，访问不具备空间局部性）
   char _key[kKeyLength];
   kv::Addr _addr = INVALID_ADDR;
   int _next = -1;  // next hashtable node or next free slot
