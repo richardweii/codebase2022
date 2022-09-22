@@ -42,7 +42,7 @@ void Pool::Init() {
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   // existence
   KeySlot *slot = _hash_index->Find(key, hash);
-  if (slot == nullptr) {
+  if (UNLIKELY(slot == nullptr)) {
 #ifdef STAT
     stat::read_miss.fetch_add(1);
 #endif
@@ -51,81 +51,28 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   Addr addr = slot->Addr();
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = global_page_manager->Page(page_id);
-  {  // lock-free phase
-    PageEntry *entry = _buffer_pool->Lookup(page_id);
+  // cache
+  PageEntry *entry = _buffer_pool->Lookup(page_id);
 
-    if (entry != nullptr) {
+  if (LIKELY(entry != nullptr)) {
 #ifdef STAT
-      stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
+    stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-      uint32_t val_len = entry->SlabClass() * kSlabSize;
-      val.resize(val_len);
-      memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
-      _buffer_pool->Release(entry);
-      return true;
-    }
-  }
-  {
-    _latch.WLock();
-
-    //     // recheck
-    //     PageEntry *entry = _buffer_pool->Lookup(page_id);
-    //     if (entry != nullptr) {
-    // #ifdef STAT
-    //       stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
-    // #endif
-    //       _latch.WUnlock();
-    //       uint32_t val_len = entry->SlabClass() * kSlabSize;
-    //       val.resize(val_len);
-    //       memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
-    //       _buffer_pool->Release(entry);
-    //       return true;
-    //     }
-
-    // cache miss
-    PageEntry *victim = replacement(page_id, meta->SlabClass());
-    _latch.WUnlock();
-
-    uint32_t val_len = victim->SlabClass() * kSlabSize;
+    uint32_t val_len = entry->SlabClass() * kSlabSize;
     val.resize(val_len);
-    memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
-
-    _buffer_pool->Release(victim);
+    memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
+    _buffer_pool->Release(entry);
     return true;
   }
-  //   // existence
-  //   KeySlot *slot = _hash_index->Find(key, hash);
-  //   if (UNLIKELY(slot == nullptr)) {
-  // #ifdef STAT
-  //     stat::read_miss.fetch_add(1);
-  // #endif
-  //     return false;
-  //   }
-  //   Addr addr = slot->Addr();
-  //   PageId page_id = AddrParser::PageId(addr);
-  //   PageMeta *meta = global_page_manager->Page(page_id);
-  //   // cache
-  //   PageEntry *entry = _buffer_pool->Lookup(page_id);
 
-  //   if (LIKELY(entry != nullptr)) {
-  // #ifdef STAT
-  //     stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
-  // #endif
-  //     uint32_t val_len = entry->SlabClass() * kSlabSize;
-  //     val.resize(val_len);
-  //     memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
-  //     _buffer_pool->Release(entry);
-  //     return true;
-  //   }
+  // cache miss
+  PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
+  uint32_t val_len = victim->SlabClass() * kSlabSize;
+  val.resize(val_len);
+  memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
 
-  //   // cache miss
-  //   PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
-  //   uint32_t val_len = victim->SlabClass() * kSlabSize;
-  //   val.resize(val_len);
-  //   memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
-
-  //   _buffer_pool->Release(victim);
-  //   return true;
+  _buffer_pool->Release(victim);
+  return true;
 }
 
 bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
@@ -181,7 +128,7 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = global_page_manager->Page(page_id);
 
-  int al_index = (hash>>24) % kAllocingListShard;
+  int al_index = (hash >> 24) % kAllocingListShard;
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
   if (isSmallSlabSize(meta->SlabClass())) {
@@ -216,7 +163,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   PageMeta *meta = global_page_manager->Page(page_id);
   assert(meta->SlabClass() != val.size() / kSlabSize);
 
-  int al_index = (hash>>24) % kAllocingListShard;
+  int al_index = (hash >> 24) % kAllocingListShard;
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
   if (isSmallSlabSize(meta->SlabClass())) {
@@ -284,7 +231,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
 
 // 这个函数if else是相同的逻辑，只是调用的成员对象不同，懒得复用代码，看的时候只看一个分支就行
 PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
-  int al_index = (hash>>24) % kAllocingListShard;
+  int al_index = (hash >> 24) % kAllocingListShard;
   if (isSmallSlabSize(slab_class)) {
     PageEntry *old_entry = _small_allocing_pages[al_index][slab_class];
     PageMeta *old_meta = global_page_manager->Page(old_entry->PageId());
@@ -438,7 +385,7 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   // write value
   uint8_t slab_class = val.size() / kSlabSize;
 
-  int al_index = (hash>>24) % kAllocingListShard;
+  int al_index = (hash >> 24) % kAllocingListShard;
   PageEntry *page;
   int off;
   PageMeta *meta;
