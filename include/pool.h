@@ -36,25 +36,52 @@ class Pool NOCOPYABLE {
   using WriteNewFunc = std::function<bool(const Slice &, uint32_t, const Slice &)>;
   WriteNewFunc _writeNew;
 
-  PageEntry *mountNewPage(uint8_t slab_class);
+  PageEntry *mountNewPage(uint8_t slab_class, uint32_t hash);
 
   PageEntry *replacement(PageId page_id, uint8_t slab_class, bool writer = false);
   using ReplacementFunc = std::function<PageEntry *(PageId, uint8_t, bool)>;
   ReplacementFunc _replacement;
 
-  void modifyLength(KeySlot *slot, const Slice &val);
+  void modifyLength(KeySlot *slot, const Slice &val, uint32_t hash);
 
   int writeToRemote(PageEntry *entry, RDMAManager::Batch *batch);
 
   int readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch);
+
+  bool isSmallSlabSize(int slab_size) {
+    return slab_size >= 5 && slab_size <= 8;
+  }
+
+  void allocingListWLock(uint32_t al_index, int slab_size) {
+    if (isSmallSlabSize(slab_size)) {
+      _small_allocing_list_latch[al_index][slab_size].WLock();
+    } else {
+      _big_allocing_list_latch[slab_size].WLock();
+    }
+  }
+
+  void allocingListWUnlock(uint32_t al_index, int slab_size) {
+    if (isSmallSlabSize(slab_size)) {
+      _small_allocing_list_latch[al_index][slab_size].WUnlock();
+    } else {
+      _big_allocing_list_latch[slab_size].WUnlock();
+    }
+  }
 
   HashTable *_hash_index = nullptr;
 
   SingleFlight<PageId, PageEntry *> _replacement_sgfl;
   SingleFlight<std::string, bool> _write_new_sgfl;
 
-  PageEntry *_allocing_pages[kSlabSizeMax + 1];
-  PageMeta *_allocing_tail[kSlabSizeMax + 1];
+  // small page只存储 slab size为 5~8的
+  PageEntry *_small_allocing_pages[kAllocingListShard][kSlabSizeMax + 1];
+  PageMeta *_small_allocing_tail[kAllocingListShard][kSlabSizeMax + 1];
+  // big page存储 slab size 为9 ~ 64的
+  PageEntry *_big_allocing_pages[kSlabSizeMax + 1];
+  PageMeta *_big_allocing_tail[kSlabSizeMax + 1];
+  // allocing list latch
+  SpinLatch _small_allocing_list_latch[kAllocingListShard][kSlabSizeMax + 1];
+  SpinLatch _big_allocing_list_latch[kSlabSizeMax + 1];
 
   std::vector<MemoryAccess> *_access_table = nullptr;
 
@@ -64,7 +91,6 @@ class Pool NOCOPYABLE {
 
   uint8_t _shard;
 
-  SpinLatch _allocing_list_latch[kSlabSizeMax + 1];
   SpinLock _lock;
 };
 
