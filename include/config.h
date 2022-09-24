@@ -6,6 +6,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include "util/logging.h"
 #include "util/rwlock.h"
 
 // #define TEST_CONFIG  // test configuration marco switch
@@ -35,6 +36,7 @@ constexpr int kPoolShardingBits = 1;  // for test
 
 #else
 constexpr int kPoolShardingBits = 6;
+constexpr int kPoolShardingMask = (1 << kPoolShardingBits) - 1;
 #endif
 constexpr int kPoolShardingNum = 1 << kPoolShardingBits;  // sharding num
 
@@ -108,11 +110,11 @@ class AddrParser {
 
 // 全局变量
 constexpr size_t TOTAL_PAGE_NUM = kPoolSize / kPageSize;
-static SpinLock page_locks_[TOTAL_PAGE_NUM];
+extern SpinLock page_locks_[TOTAL_PAGE_NUM];
 class PageEntry;
 struct _Result {
   volatile bool _done;
   PageEntry *_result;
 };
-static std::shared_ptr<_Result> _do[TOTAL_PAGE_NUM];
+extern std::shared_ptr<_Result> _do[TOTAL_PAGE_NUM];
 }  // namespace kv

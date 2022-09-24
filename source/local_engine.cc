@@ -294,4 +294,8 @@ bool LocalEngine::deleteK(const std::string &key) {
   return _pool[index]->Delete(Slice(key), hash);
 }
 
+// 全局变量，通过config.h extern出去
+SpinLock page_locks_[TOTAL_PAGE_NUM];
+class PageEntry;
+std::shared_ptr<_Result> _do[TOTAL_PAGE_NUM];
 }  // namespace kv

@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(IPP_LIB "-lippcp")
 # set(RDMA_LIB "-lrdmacm -libverbs -libumad -lpci")
 set(RDMA_LIB "-lrdmacm -libverbs -libumad -lpci -lefa")
-set(CMAKE_CXX_FLAGS "-std=c++17 ${CMAKE_CXX_FLAGS} -faligned-new")
+set(CMAKE_CXX_FLAGS "-std=c++17 ${CMAKE_CXX_FLAGS} -faligned-new -march=native")
 set(CMAKE_CXX_FLAGS "-pthread -ldl -lrt ${IPP_LIB} ${RDMA_LIB} -${CMAKE_CXX_FLAGS}")
 
 if( CMAKE_BUILD_TYPE STREQUAL "Debug" )
