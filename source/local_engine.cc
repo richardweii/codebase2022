@@ -52,38 +52,35 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   }
 
   // RDMA access global table
-  for (int t = 0; t < thread_num; t++) {
-    threads.emplace_back([&] {
-      std::vector<MessageBlock *> msgs;
-      for (int i = 0; i < kMrBlockNum / thread_num; i++) {
-        AllocRequest req;
-        req.size = kMaxBlockSize;
-        req.type = MSG_ALLOC;
+  std::vector<MessageBlock *> msgs;
+  for (int i = 0; i < kMrBlockNum; i++) {
+    AllocRequest req;
+    req.size = kMaxBlockSize;
+    req.type = MSG_ALLOC;
 
-        AllocResponse resp;
-        MessageBlock *msg;
-        _client->RPCSend(req, msg);
-        msgs.emplace_back(msg);
-      }
-
-      for (int i = 0; i < kMrBlockNum / thread_num; i++) {
-        AllocResponse resp;
-        _client->RPCRecv(resp, msgs[i]);
-        if (resp.status != RES_OK) {
-          LOG_FATAL("Failed to alloc new block.");
-        }
-
-        MemoryAccess access{.addr = resp.addr, .rkey = resp.rkey};
-        _global_access_table.push_back(access);
-      }
-    });
+    AllocResponse resp;
+    MessageBlock *msg;
+    _client->RPCSend(req, msg);
+    msgs.emplace_back(msg);
   }
+
+  for (int i = 0; i < kMrBlockNum; i++) {
+    AllocResponse resp;
+    _client->RPCRecv(resp, msgs[i]);
+    if (resp.status != RES_OK) {
+      LOG_FATAL("Failed to alloc new block.");
+    }
+
+    MemoryAccess access{.addr = resp.addr, .rkey = resp.rkey};
+    _global_access_table.push_back(access);
+  }
+  LOG_INFO("remote Value block allocated");
 
   for (auto &th : threads) {
     th.join();
   }
 
-  LOG_INFO("pool init & remote Value block allocated");
+  LOG_INFO("pool init");
 
   auto watcher = std::thread([&]() {
     sleep(60 * 12);
@@ -96,7 +93,6 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   auto time_delta = time_end - time_now;
   auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
   LOG_INFO("init time: %lf s", count * 1.0 / 1000 / 1000);
-  // std::cout << "init time:" << count * 1.0 / 1000 / 1000 << "s" << std::endl;
 
   return true;
 }

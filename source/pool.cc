@@ -66,9 +66,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   }
 
   // cache miss
-  page_locks_[page_id].Lock();
-  PageEntry *victim = replacement(page_id, meta->SlabClass());
-  page_locks_[page_id].Unlock();
+  PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
   uint32_t val_len = victim->SlabClass() * kSlabSize;
   val.resize(val_len);
   memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
@@ -104,9 +102,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
     }
 
     // cache miss
-    page_locks_[page_id].Lock();
-    PageEntry *victim = replacement(page_id, meta->SlabClass());
-    page_locks_[page_id].Unlock();
+    PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), true);
     memcpy((char *)(victim->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
     if (!victim->Dirty) victim->Dirty = true;
 
@@ -277,9 +273,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
     PageId page_id = meta->PageId();
     entry = _buffer_pool->Lookup(page_id, true);
     if (entry == nullptr) {
-      page_locks_[page_id].Lock();
-      entry = replacement(page_id, slab_class);
-      page_locks_[page_id].Unlock();
+      entry = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, slab_class, true);
     }
     _buffer_pool->PinPage(entry);
     _small_allocing_pages[al_index][slab_class] = entry;
@@ -332,9 +326,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
     PageId page_id = meta->PageId();
     entry = _buffer_pool->Lookup(page_id, true);
     if (entry == nullptr) {
-      page_locks_[page_id].Lock();
-      entry = replacement(page_id, slab_class);
-      page_locks_[page_id].Unlock();
+      entry = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, slab_class, true);
     }
     _buffer_pool->PinPage(entry);
     _big_allocing_pages[slab_class] = entry;
@@ -352,6 +344,8 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
   }
 #endif
   // recheck
+  // 这里必须要recheck，因为在调用replacement之前的check中，虽然这个page_id不在本地，但是由于没有锁的保证，所以可能在你check完之后它又在了
+  // 如果不recheck，那么会从远端读取数据，而本地的那个可能发生更改，那么就会导致远端的旧数据覆盖本地写入的新数据，导致读取发生错误
   PageEntry *entry = _buffer_pool->Lookup(page_id, writer);
   if (entry != nullptr) {
     return entry;

@@ -86,7 +86,7 @@ constexpr uint32_t PAGE_MASK = 0x7ffff;
 constexpr uint32_t PAGE_OFF_MASK = 0x3fff;
 constexpr uint32_t OFF_BIT = 13;  // MAX 4096
 constexpr uint32_t OFF_MASK = 0x1fff;
-constexpr int kParallelNewThread = 8;
+constexpr int kParallelNewThread = 16;
 
 #endif
 constexpr int MAX_BLOCK_NUM = 32;
@@ -106,6 +106,13 @@ class AddrParser {
   static uint32_t GetBlockOffFromPageId(kv::PageId page_id) { return page_id & PAGE_OFF_MASK; }
 };
 
+// 全局变量
 constexpr size_t TOTAL_PAGE_NUM = kPoolSize / kPageSize;
 static SpinLock page_locks_[TOTAL_PAGE_NUM];
+class PageEntry;
+struct _Result {
+  volatile bool _done;
+  PageEntry *_result;
+};
+static std::shared_ptr<_Result> _do[TOTAL_PAGE_NUM];
 }  // namespace kv
