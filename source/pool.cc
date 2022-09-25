@@ -66,7 +66,10 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   }
 
   // cache miss
-  PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
+  page_locks_[page_id].Lock();
+  PageEntry* victim = replacement(page_id, meta->SlabClass(), false);
+  // PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
+  page_locks_[page_id].Unlock();
   uint32_t val_len = victim->SlabClass() * kSlabSize;
   val.resize(val_len);
   memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
