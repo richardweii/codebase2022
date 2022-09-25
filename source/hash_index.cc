@@ -62,12 +62,12 @@ KeySlot *HashTable::Find(const Slice &key, uint32_t hash) {
     // if (memcmp_128bit_eq_a(key.data(), slot->Key())) {
     //   return slot;
     // }
-    if (__int128(*(__int128 *)key.data()) == __int128(*(__int128 *)slot->Key())) {
-      return slot;
-    }
-    // if ((memcmp(key.data(), slot->Key(), kKeyLength) == 0)) {
+    // if (__int128(*(__int128 *)key.data()) == __int128(*(__int128 *)slot->Key())) {
     //   return slot;
     // }
+    if ((memcmp(key.data(), slot->Key(), kKeyLength) == 0)) {
+      return slot;
+    }
     slot_id = slot->Next();
   }
   return nullptr;
