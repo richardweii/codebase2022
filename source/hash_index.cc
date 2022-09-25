@@ -59,15 +59,15 @@ KeySlot *HashTable::Find(const Slice &key, uint32_t hash) {
   KeySlot *slot = nullptr;
   while (slot_id != KeySlot::INVALID_SLOT_ID) {
     slot = _monitor[slot_id];
-    // if (memcmp_128bit_eq_a(key.data(), slot->Key())) {
-    //   return slot;
-    // }
+    if (!memcmp_128bit_eq_a(key.data(), slot->Key())) {
+      return slot;
+    }
     // if (__int128(*(__int128 *)key.data()) == __int128(*(__int128 *)slot->Key())) {
     //   return slot;
     // }
-    if ((memcmp(key.data(), slot->Key(), kKeyLength) == 0)) {
-      return slot;
-    }
+    // if ((memcmp(key.data(), slot->Key(), kKeyLength) == 0)) {
+    //   return slot;
+    // }
     slot_id = slot->Next();
   }
   return nullptr;
@@ -125,36 +125,36 @@ KeySlot *HashTable::Remove(const Slice &key, uint32_t hash) {
 
   // head
   KeySlot *slot = _monitor[slot_id];
-  // if (memcmp_128bit_eq_a(key.data(), slot->Key())) {
-  //   _bucket[index] = slot->Next();
-  //   return slot;
-  // }
+  if (!memcmp_128bit_eq_a(key.data(), slot->Key())) {
+    _bucket[index] = slot->Next();
+    return slot;
+  }
   // if (__int128(*(__int128 *)key.data()) == __int128(*(__int128 *)slot->Key())) {
   //   _bucket[index] = slot->Next();
   //   return slot;
   // }
-  if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
-    _bucket[index] = slot->Next();
-    return slot;
-  }
+  // if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
+  //   _bucket[index] = slot->Next();
+  //   return slot;
+  // }
 
   // find
   int front_slot_id = slot_id;
   int cur_slot_id = slot->Next();
   while (cur_slot_id != KeySlot::INVALID_SLOT_ID) {
     slot = _monitor[cur_slot_id];
-    // if (memcmp_128bit_eq_a(key.data(), slot->Key())) {
-    //   _monitor[front_slot_id]->SetNext(slot->Next());
-    //   return slot;
-    // }
+    if (!memcmp_128bit_eq_a(key.data(), slot->Key())) {
+      _monitor[front_slot_id]->SetNext(slot->Next());
+      return slot;
+    }
     // if (__int128(*(__int128 *)key.data()) == __int128(*(__int128 *)slot->Key())) {
     //   _monitor[front_slot_id]->SetNext(slot->Next());
     //   return slot;
     // }
-    if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
-      _monitor[front_slot_id]->SetNext(slot->Next());
-      return slot;
-    }
+    // if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
+    //   _monitor[front_slot_id]->SetNext(slot->Next());
+    //   return slot;
+    // }
     front_slot_id = cur_slot_id;
     cur_slot_id = slot->Next();
   }

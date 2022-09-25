@@ -155,7 +155,7 @@ bool LocalEngine::set_aes() {
   return true;
 }
 
-crypto_message_t *LocalEngine::get_aes() {  sleep(30); return &_aes; }
+crypto_message_t *LocalEngine::get_aes() { return &_aes; }
 
 bool LocalEngine::encrypt(const std::string value, std::string &encrypt_value) {
   assert(value.size() % 16 == 0);
