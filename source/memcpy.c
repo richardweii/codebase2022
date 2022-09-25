@@ -8,317 +8,277 @@ extern "C" {
 
 // 采用16字节对齐
 // 16B
-static inline void *memcpy_128bit_16B_as(void *dest, const void *src) {
-  const __m128i *s = (__m128i *)src;
-  __m128i *d = (__m128i *)dest;
+static inline void memcpy_128bit_16B_as(void *dest, const void *src) {
+  __m128i xmm0;
 
-  _mm_storeu_si128(d++, _mm_loadu_si128(s++));
-
-  return dest;
+  xmm0 = _mm_loadu_si128((const __m128i *)src);
+  _mm_storeu_si128((__m128i *)dest, xmm0);
 }
 
 // 32B
-static inline void *memcpy_128bit_32B_as(void *dest, const void *src) {
-  __m256i *s = (__m256i *)src;
-  __m256i *d = (__m256i *)dest;
+static inline void memcpy_256bit_32B_as(void *dest, const void *src) {
+  __m256i ymm0;
 
-  __m256i m0 = _mm256_loadu_si256(s);
-  _mm256_storeu_si256(dest, m0);
-
-  return dest;
+  ymm0 = _mm256_loadu_si256((const __m256i *)src);
+  _mm256_storeu_si256((__m256i *)dest, ymm0);
 }
 
 // 64B
-static inline void *memcpy_512bit_64B_as(void *dest, const void *src) {
-  const __m512i *s = (__m512i *)src;
-  __m512i *d = (__m512i *)dest;
+static inline void memcpy_512bit_64B_as(void *dest, const void *src) {
+  __m512i zmm0;
 
-  _mm512_storeu_si512(d, _mm512_loadu_si512(s));
-  _mm_sfence();
-
-  return dest;
+  zmm0 = _mm512_loadu_si512((const void *)src);
+  _mm512_storeu_si512((void *)dest, zmm0);
 }
 
 // 128B
-static inline void *memcpy_512bit_128B_as(void *dest, const void *src) {
-  const __m512i *s = (__m512i *)src;
-  __m512i *d = (__m512i *)dest;
-
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 1
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 2
-  _mm_sfence();
-
-  return dest;
+static inline void memcpy_512bit_128B_as(void *dest, const void *src) {
+  memcpy_512bit_64B_as(dest + 0 * 64, src + 0 * 64);
+  memcpy_512bit_64B_as(dest + 1 * 64, src + 1 * 64);
 }
 
 // 256B
-static inline void *memcpy_512bit_256B_as(void *dest, const void *src) {
-  const __m512i *s = (__m512i *)src;
-  __m512i *d = (__m512i *)dest;
-
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 1
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 2
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 3
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 4
-  _mm_sfence();
-
-  return dest;
+static inline void memcpy_512bit_256B_as(void *dest, const void *src) {
+  memcpy_512bit_64B_as(dest + 0 * 64, src + 0 * 64);
+  memcpy_512bit_64B_as(dest + 1 * 64, src + 1 * 64);
+  memcpy_512bit_64B_as(dest + 2 * 64, src + 2 * 64);
+  memcpy_512bit_64B_as(dest + 3 * 64, src + 3 * 64);
 }
 
 // 512B
-static inline void *memcpy_512bit_512B_as(void *dest, const void *src) {
-  const __m512i *s = (__m512i *)src;
-  __m512i *d = (__m512i *)dest;
-
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 1
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 2
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 3
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 4
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 5
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 6
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 7
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 8
-
-  _mm_sfence();
-
-  return dest;
+static inline void memcpy_512bit_512B_as(void *dest, const void *src) {
+  memcpy_512bit_64B_as(dest + 0 * 64, src + 0 * 64);
+  memcpy_512bit_64B_as(dest + 1 * 64, src + 1 * 64);
+  memcpy_512bit_64B_as(dest + 2 * 64, src + 2 * 64);
+  memcpy_512bit_64B_as(dest + 3 * 64, src + 3 * 64);
+  memcpy_512bit_64B_as(dest + 4 * 64, src + 4 * 64);
+  memcpy_512bit_64B_as(dest + 5 * 64, src + 5 * 64);
+  memcpy_512bit_64B_as(dest + 6 * 64, src + 6 * 64);
+  memcpy_512bit_64B_as(dest + 7 * 64, src + 7 * 64);
 }
 
 // 1024B
-static inline void *memcpy_512bit_1kB_as(void *dest, const void *src) {
-  const __m512i *s = (__m512i *)src;
-  __m512i *d = (__m512i *)dest;
-
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 1
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 2
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 3
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 4
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 5
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 6
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 7
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 8
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 9
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 10
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 11
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 12
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 13
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 14
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 15
-  _mm512_storeu_si512(d++, _mm512_loadu_si512(s++));  // 16
-  _mm_sfence();
-
-  return dest;
+static inline void memcpy_512bit_1kB_as(void *dest, const void *src) {
+  memcpy_512bit_64B_as(dest + 0 * 64, src + 0 * 64);
+  memcpy_512bit_64B_as(dest + 1 * 64, src + 1 * 64);
+  memcpy_512bit_64B_as(dest + 2 * 64, src + 2 * 64);
+  memcpy_512bit_64B_as(dest + 3 * 64, src + 3 * 64);
+  memcpy_512bit_64B_as(dest + 4 * 64, src + 4 * 64);
+  memcpy_512bit_64B_as(dest + 5 * 64, src + 5 * 64);
+  memcpy_512bit_64B_as(dest + 6 * 64, src + 6 * 64);
+  memcpy_512bit_64B_as(dest + 7 * 64, src + 7 * 64);
+  memcpy_512bit_64B_as(dest + 8 * 64, src + 8 * 64);
+  memcpy_512bit_64B_as(dest + 9 * 64, src + 9 * 64);
+  memcpy_512bit_64B_as(dest + 10 * 64, src + 10 * 64);
+  memcpy_512bit_64B_as(dest + 11 * 64, src + 11 * 64);
+  memcpy_512bit_64B_as(dest + 12 * 64, src + 12 * 64);
+  memcpy_512bit_64B_as(dest + 13 * 64, src + 13 * 64);
+  memcpy_512bit_64B_as(dest + 14 * 64, src + 14 * 64);
+  memcpy_512bit_64B_as(dest + 15 * 64, src + 15 * 64);
 }
 
 //--------------
-static inline void *memcpy_80B_as(void *dest, const void *src) {
+static inline void memcpy_80B_as(void *dest, const void *src) {
   memcpy_512bit_64B_as(dest, src);
   memcpy_128bit_16B_as(dest + 64, src + 64);
-  return dest;
 }
 
-static inline void *memcpy_96B_as(void *dest, const void *src) {
+static inline void memcpy_96B_as(void *dest, const void *src) {
   memcpy_512bit_64B_as(dest, src);
-  memcpy_128bit_32B_as(dest + 64, src + 64);
-  return dest;
+  memcpy_256bit_32B_as(dest + 64, src + 64);
 }
 
-static inline void *memcpy_112B_as(void *dest, const void *src) {
+static inline void memcpy_112B_as(void *dest, const void *src) {
   memcpy_512bit_64B_as(dest, src);
-  memcpy_128bit_32B_as(dest + 64, src + 64);
+  memcpy_256bit_32B_as(dest + 64, src + 64);
   memcpy_128bit_16B_as(dest + 96, src + 96);
-  return dest;
 }
 
-static inline void *memcpy_128B_as(void *dest, const void *src) {
-  memcpy_512bit_128B_as(dest, src);
-  return dest;
-}
+static inline void memcpy_128B_as(void *dest, const void *src) { memcpy_512bit_128B_as(dest, src); }
 
-static inline void *memcpy_144B_as(void *dest, const void *src) {
+static inline void memcpy_144B_as(void *dest, const void *src) {
   memcpy_512bit_128B_as(dest, src);
   memcpy_128bit_16B_as(dest + 128, src + 128);
-  return dest;
 }
 
-static inline void *memcpy_160B_as(void *dest, const void *src) {
+static inline void memcpy_160B_as(void *dest, const void *src) {
   memcpy_512bit_128B_as(dest, src);
-  memcpy_128bit_32B_as(dest + 128, src + 128);
-  return dest;
+  memcpy_256bit_32B_as(dest + 128, src + 128);
 }
 
-static inline void *memcpy_176B_as(void *dest, const void *src) {
+static inline void memcpy_176B_as(void *dest, const void *src) {
   memcpy_512bit_128B_as(dest, src);
-  memcpy_128bit_32B_as(dest + 128, src + 128);
+  memcpy_256bit_32B_as(dest + 128, src + 128);
   memcpy_128bit_16B_as(dest + 160, src + 160);
-  return dest;
 }
 
 // 192 = 128 + 64
-static inline void *memcpy_192B_as(void *dest, const void *src) {
+static inline void memcpy_192B_as(void *dest, const void *src) {
   memcpy_512bit_128B_as(dest, src);
   memcpy_512bit_64B_as(dest + 128, src + 128);
-  return dest;
 }
 
-static inline void *memcpy_208B_as(void *dest, const void *src) {
+static inline void memcpy_208B_as(void *dest, const void *src) {
   memcpy_192B_as(dest, src);
   memcpy_128bit_16B_as(dest + 192, src + 192);
-  return dest;
 }
 
 // 224 = 128+64+32
-static inline void *memcpy_224B_as(void *dest, const void *src) {
+static inline void memcpy_224B_as(void *dest, const void *src) {
   memcpy_192B_as(dest, src);
-  memcpy_128bit_32B_as(dest + 192, src + 192);
-  return dest;
+  memcpy_256bit_32B_as(dest + 192, src + 192);
 }
 
 // 240 = 128+64+32+16
-static inline void *memcpy_240B_as(void *dest, const void *src) {
+static inline void memcpy_240B_as(void *dest, const void *src) {
   memcpy_224B_as(dest, src);
   memcpy_128bit_16B_as(dest + 224, src + 224);
-  return dest;
 }
 
-static inline void *memcpy_256B_as(void *dest, const void *src) {
-  memcpy_512bit_256B_as(dest, src);
-  return dest;
-}
+static inline void memcpy_256B_as(void *dest, const void *src) { memcpy_512bit_256B_as(dest, src); }
 
 // 320 = 256 + 64
-static inline void *memcpy_320B_as(void *dest, const void *src) {
+static inline void memcpy_320B_as(void *dest, const void *src) {
   memcpy_512bit_256B_as(dest, src);
   memcpy_512bit_64B_as(dest + 256, src + 256);
-  return dest;
 }
 
 // 384 = 256 + 128
-static inline void *memcpy_384B_as(void *dest, const void *src) {
+static inline void memcpy_384B_as(void *dest, const void *src) {
   memcpy_512bit_256B_as(dest, src);
   memcpy_512bit_128B_as(dest + 256, src + 256);
-  return dest;
 }
 
 // 448 = 256 + 128 + 64
-static inline void *memcpy_448B_as(void *dest, const void *src) {
+static inline void memcpy_448B_as(void *dest, const void *src) {
   memcpy_512bit_256B_as(dest, src);
   memcpy_512bit_128B_as(dest + 256, src + 256);
   memcpy_512bit_64B_as(dest + 384, src + 384);
-  return dest;
 }
 
-static inline void *memcpy_512B_as(void *dest, const void *src) {
-  memcpy_512bit_512B_as(dest, src);
-  return dest;
-}
+static inline void memcpy_512B_as(void *dest, const void *src) { memcpy_512bit_512B_as(dest, src); }
 
 // 576 = 512+64
-static inline void *memcpy_576B_as(void *dest, const void *src) {
+static inline void memcpy_576B_as(void *dest, const void *src) {
   memcpy_512bit_512B_as(dest, src);
   memcpy_512bit_64B_as(dest + 512, src + 512);
-  return dest;
 }
 
 // 640 = 512+128
-static inline void *memcpy_640B_as(void *dest, const void *src) {
+static inline void memcpy_640B_as(void *dest, const void *src) {
   memcpy_512bit_512B_as(dest, src);
   memcpy_512bit_128B_as(dest + 512, src + 512);
-  return dest;
 }
 
 // 704 = 512 + 128 + 64
-static inline void *memcpy_704B_as(void *dest, const void *src) {
+static inline void memcpy_704B_as(void *dest, const void *src) {
   memcpy_512bit_512B_as(dest, src);
   memcpy_192B_as(dest + 512, src + 512);
-  return dest;
 }
 
 // 768 = 512 + 256
-static inline void *memcpy_768B_as(void *dest, const void *src) {
+static inline void memcpy_768B_as(void *dest, const void *src) {
   memcpy_512bit_512B_as(dest, src);
   memcpy_512bit_256B_as(dest + 512, src + 512);
-  return dest;
 }
 
 // 832 = 512 + 256 + 64
-static inline void *memcpy_832B_as(void *dest, const void *src) {
+static inline void memcpy_832B_as(void *dest, const void *src) {
   memcpy_512bit_512B_as(dest, src);
   memcpy_320B_as(dest + 512, src + 512);
-  return dest;
 }
 
 // 896 = 512 + 256 + 128
-static inline void *memcpy_896B_as(void *dest, const void *src) {
+static inline void memcpy_896B_as(void *dest, const void *src) {
   memcpy_512bit_512B_as(dest, src);
   memcpy_384B_as(dest + 512, src + 512);
-  return dest;
 }
 
 // 960 = 512 + 256 + 196
-static inline void *memcpy_960B_as(void *dest, const void *src) {
+static inline void memcpy_960B_as(void *dest, const void *src) {
   memcpy_512bit_512B_as(dest, src);
   memcpy_448B_as(dest + 512, src + 512);
-  return dest;
 }
 
-static inline void *memcpy_1024B_as(void *dest, const void *src) {
-  memcpy_512bit_1kB_as(dest, src);
-  return dest;
-}
+static inline void memcpy_1024B_as(void *dest, const void *src) { memcpy_512bit_1kB_as(dest, src); }
 
-void *my_memcpy(void *dest, const void *src, size_t len) {
+void my_memcpy(void *dest, const void *src, size_t len) {
   switch (len) {
     case 80:
-      return memcpy_80B_as(dest, src);
+      memcpy_80B_as(dest, src);
+      return;
     case 96:
-      return memcpy_96B_as(dest, src);
+      memcpy_96B_as(dest, src);
+      return;
     case 112:
-      return memcpy_112B_as(dest, src);
+      memcpy_112B_as(dest, src);
+      return;
     case 128:
-      return memcpy_128B_as(dest, src);
+      memcpy_128B_as(dest, src);
+      return;
     case 144:
-      return memcpy_144B_as(dest, src);
+      memcpy_144B_as(dest, src);
+      return;
     case 160:
-      return memcpy_160B_as(dest, src);
+      memcpy_160B_as(dest, src);
+      return;
     case 176:
-      return memcpy_176B_as(dest, src);
+      memcpy_176B_as(dest, src);
+      return;
     case 192:
-      return memcpy_192B_as(dest, src);
+      memcpy_192B_as(dest, src);
+      return;
     case 208:
-      return memcpy_208B_as(dest, src);
+      memcpy_208B_as(dest, src);
+      return;
     case 224:
-      return memcpy_224B_as(dest, src);
+      memcpy_224B_as(dest, src);
+      return;
     case 240:
-      return memcpy_240B_as(dest, src);
+      memcpy_240B_as(dest, src);
+      return;
     case 256:
-      return memcpy_256B_as(dest, src);
+      memcpy_256B_as(dest, src);
+      return;
     case 320:
-      return memcpy_320B_as(dest, src);
+      memcpy_320B_as(dest, src);
+      return;
     case 384:
-      return memcpy_384B_as(dest, src);
+      memcpy_384B_as(dest, src);
+      return;
     case 448:
-      return memcpy_448B_as(dest, src);
+      memcpy_448B_as(dest, src);
+      return;
     case 512:
-      return memcpy_512B_as(dest, src);
+      memcpy_512B_as(dest, src);
+      return;
     case 576:
-      return memcpy_576B_as(dest, src);
+      memcpy_576B_as(dest, src);
+      return;
     case 640:
-      return memcpy_640B_as(dest, src);
+      memcpy_640B_as(dest, src);
+      return;
     case 704:
-      return memcpy_704B_as(dest, src);
+      memcpy_704B_as(dest, src);
+      return;
     case 768:
-      return memcpy_768B_as(dest, src);
+      memcpy_768B_as(dest, src);
+      return;
     case 832:
-      return memcpy_832B_as(dest, src);
+      memcpy_832B_as(dest, src);
+      return;
     case 896:
-      return memcpy_896B_as(dest, src);
+      memcpy_896B_as(dest, src);
+      return;
     case 960:
-      return memcpy_960B_as(dest, src);
+      memcpy_960B_as(dest, src);
+      return;
     case 1024:
-      return memcpy_1024B_as(dest, src);
+      memcpy_1024B_as(dest, src);
+      return;
     default:
-      return memcpy(dest, src, len);
+      memcpy(dest, src, len);
+      return;
   }
 }
 
