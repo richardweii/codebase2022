@@ -1,6 +1,7 @@
 #include "pool.h"
 #include "stat.h"
 #include "util/likely.h"
+#include "util/memcpy.h"
 
 namespace kv {
 
@@ -60,7 +61,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 #endif
     uint32_t val_len = entry->SlabClass() * kSlabSize;
     val.resize(val_len);
-    memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
+    my_memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
     _buffer_pool->Release(entry);
     return true;
   }
@@ -72,7 +73,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   page_locks_[page_id].Unlock();
   uint32_t val_len = victim->SlabClass() * kSlabSize;
   val.resize(val_len);
-  memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
+  my_memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
 
   _buffer_pool->Release(victim);
   return true;
@@ -99,14 +100,14 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 #endif
       if (!entry->Dirty) entry->Dirty = true;
 
-      memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
+      my_memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
       _buffer_pool->Release(entry);
       return true;
     }
 
     // cache miss
     PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), true);
-    memcpy((char *)(victim->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
+    my_memcpy((char *)(victim->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
     if (!victim->Dirty) victim->Dirty = true;
 
     _buffer_pool->Release(victim);
@@ -216,7 +217,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   }
   allocingListWUnlock(al_index, slab_class);
 
-  memcpy((char *)(page->Data() + val.size() * off), val.data(), val.size());
+  my_memcpy((char *)(page->Data() + val.size() * off), val.data(), val.size());
   if (!page->Dirty) page->Dirty = true;
   _buffer_pool->Release(page);
 
@@ -414,7 +415,7 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   slot->SetAddr(addr);
 
   // copy data
-  memcpy((void *)(page->Data() + off * val.size()), val.data(), val.size());
+  my_memcpy((void *)(page->Data() + off * val.size()), val.data(), val.size());
   if (!page->Dirty) page->Dirty = true;
   _buffer_pool->Release(page);
   return true;
