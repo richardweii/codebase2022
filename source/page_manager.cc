@@ -28,18 +28,31 @@ PageManager::~PageManager() {
 
 #define CAS(_p, _u, _v) (__atomic_compare_exchange_n(_p, _u, _v, false, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE))
 PageMeta *PageManager::AllocNewPage(uint8_t slab_class) {
-  PageMeta *old_free_list;
-  PageMeta *next;
-
-RETRY:
-  old_free_list = _free_list;
-  next = _free_list->_next;
-  if (CAS(&_free_list, &old_free_list, next)) {
-    old_free_list->reset(NewBitmap(kPageSize / kSlabSize / slab_class));
-    old_free_list->_slab_class = slab_class;
-    return old_free_list;
+  _lock.Lock();
+  defer { _lock.Unlock(); };
+  if (_free_list == nullptr) {
+    LOG_ERROR("page used up.");
+    return nullptr;
   }
-  goto RETRY;
+  PageMeta *res = _free_list;
+  _free_list = _free_list->_next;
+  // LOG_DEBUG("alloc new page for class %d", slab_class);
+  res->reset(NewBitmap(kPageSize / kSlabSize / slab_class));
+  res->_slab_class = slab_class;
+  return res;
+  // TODO: 下面的无锁实现线上出现Error: signal 11:
+  //   PageMeta *old_free_list;
+  //   PageMeta *next;
+
+  // RETRY:
+  //   old_free_list = _free_list;
+  //   next = _free_list->_next;
+  //   if (CAS(&_free_list, &old_free_list, next)) {
+  //     old_free_list->reset(NewBitmap(kPageSize / kSlabSize / slab_class));
+  //     old_free_list->_slab_class = slab_class;
+  //     return old_free_list;
+  //   }
+  //   goto RETRY;
 }
 
 void PageManager::FreePage(uint32_t page_id) {
