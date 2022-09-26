@@ -68,7 +68,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 
   // cache miss
   page_locks_[page_id].Lock();
-  PageEntry* victim = replacement(page_id, meta->SlabClass(), false);
+  PageEntry *victim = replacement(page_id, meta->SlabClass(), false);
   // PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
   page_locks_[page_id].Unlock();
   uint32_t val_len = victim->SlabClass() * kSlabSize;
@@ -240,7 +240,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
     PageEntry *entry = nullptr;
     if (meta == nullptr) {
       assert(old_meta->Next() == nullptr);
-      assert(old_meta->Prev() == nullptr);  // TODO：这里assert了
+      assert(old_meta->Prev() == nullptr);
       // allocing list is empty, need alloc new page
       meta = global_page_manager->AllocNewPage(slab_class);
       entry = _buffer_pool->FetchNew(meta->PageId(), slab_class);
@@ -258,12 +258,15 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
           auto ret = writeToRemote(entry, &batch);
           LOG_ASSERT(ret == 0, "rdma write failed.");
           entry->Dirty = false;
+          _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
+          _buffer_pool->PinPage(entry);
+          _small_allocing_pages[al_index][slab_class] = entry;
+          _small_allocing_tail[al_index][slab_class] = meta;
           ret = batch.FinishBatch();
           LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
+          return entry;
         }
         _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
-      } else {
-        // entry->WLock();
       }
 
       _buffer_pool->PinPage(entry);
@@ -272,7 +275,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
       return entry;
     }
     // replacement
-    LOG_ASSERT(!meta->Full(), "invalid allocing page.");  // TODO: 这里也assert了
+    LOG_ASSERT(!meta->Full(), "invalid allocing page.");
     global_page_manager->Unmount(old_meta);
     PageId page_id = meta->PageId();
     entry = _buffer_pool->Lookup(page_id, true);
@@ -311,12 +314,15 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
           auto ret = writeToRemote(entry, &batch);
           LOG_ASSERT(ret == 0, "rdma write failed.");
           entry->Dirty = false;
+          _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
+          _buffer_pool->PinPage(entry);
+          _big_allocing_pages[slab_class] = entry;
+          _big_allocing_tail[slab_class] = meta;
           ret = batch.FinishBatch();
           LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
+          return entry;
         }
         _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
-      } else {
-        // entry->WLock();
       }
 
       _buffer_pool->PinPage(entry);
@@ -366,10 +372,9 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
     victim->Dirty = false;
   }
   auto ret = readFromRemote(victim, page_id, &batch);
+  _buffer_pool->InsertPage(victim, page_id, slab_class);
   ret = batch.FinishBatch();
   LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
-
-  _buffer_pool->InsertPage(victim, page_id, slab_class);
   return victim;
 }
 

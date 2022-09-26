@@ -85,7 +85,6 @@ class PageManager {
  private:
   PageMeta *_pages = nullptr;
   PageMeta *_free_list;
-  int _free_page_num = 0;
   size_t _page_num = 0;
   SpinLock _lock;
 };
