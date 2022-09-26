@@ -372,8 +372,8 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
     victim->Dirty = false;
   }
   auto ret = readFromRemote(victim, page_id, &batch);
-  _buffer_pool->InsertPage(victim, page_id, slab_class);
   ret = batch.FinishBatch();
+  _buffer_pool->InsertPage(victim, page_id, slab_class);
   LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
   return victim;
 }
