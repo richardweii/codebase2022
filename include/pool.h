@@ -36,7 +36,7 @@ class Pool NOCOPYABLE {
   using WriteNewFunc = std::function<bool(const Slice &, uint32_t, const Slice &)>;
   WriteNewFunc _writeNew;
 
-  PageEntry *mountNewPage(uint8_t slab_class, uint32_t hash);
+  PageEntry *mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch** batch_ret);
 
   PageEntry *replacement(PageId page_id, uint8_t slab_class, bool writer = false);
   using ReplacementFunc = std::function<PageEntry *(PageId, uint8_t, bool)>;

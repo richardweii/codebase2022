@@ -194,13 +194,14 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   uint8_t slab_class = val.size() / kSlabSize;
 
   PageEntry *page;
+  RDMAManager::Batch *batch = nullptr;
   int off;
   allocingListWLock(al_index, slab_class);
   if (LIKELY(isSmallSlabSize(slab_class))) {
     page = _small_allocing_pages[al_index][slab_class];
     meta = global_page_manager->Page(page->PageId());
     if (UNLIKELY(meta->Full())) {
-      page = mountNewPage(slab_class, hash);
+      page = mountNewPage(slab_class, hash, &batch);
       meta = global_page_manager->Page(page->PageId());
     }
     // modify bitmap
@@ -209,7 +210,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
     page = _big_allocing_pages[slab_class];
     meta = global_page_manager->Page(page->PageId());
     if (UNLIKELY(meta->Full())) {
-      page = mountNewPage(slab_class, hash);
+      page = mountNewPage(slab_class, hash, &batch);
       meta = global_page_manager->Page(page->PageId());
     }
     // modify bitmap
@@ -224,10 +225,15 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   LOG_ASSERT(off != -1, "set bitmap failed.");
   addr = AddrParser::GenAddrFrom(meta->PageId(), off);
   slot->SetAddr(addr);
+
+  if (batch != nullptr) {
+    batch->FinishBatch();
+    delete batch;
+  }
 }
 
 // 这个函数if else是相同的逻辑，只是调用的成员对象不同，懒得复用代码，看的时候只看一个分支就行
-PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
+PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch **batch_ret) {
   int al_index = (hash >> 24) % kAllocingListShard;
   if (LIKELY(isSmallSlabSize(slab_class))) {
     PageEntry *old_entry = _small_allocing_pages[al_index][slab_class];
@@ -255,15 +261,16 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
 #ifdef STAT
           stat::dirty_write.fetch_add(1);
 #endif
-          auto ret = writeToRemote(entry, &batch);
+          auto ret = writeToRemote(entry, batch);
           LOG_ASSERT(ret == 0, "rdma write failed.");
           entry->Dirty = false;
           _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
           _buffer_pool->PinPage(entry);
           _small_allocing_pages[al_index][slab_class] = entry;
           _small_allocing_tail[al_index][slab_class] = meta;
-          ret = batch.FinishBatch();
-          LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
+          *batch_ret = batch;
+          // ret = batch->FinishBatch();
+          // LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
           return entry;
         }
         _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
@@ -311,15 +318,16 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash) {
 #ifdef STAT
           stat::dirty_write.fetch_add(1);
 #endif
-          auto ret = writeToRemote(entry, &batch);
+          auto ret = writeToRemote(entry, batch);
           LOG_ASSERT(ret == 0, "rdma write failed.");
           entry->Dirty = false;
           _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
           _buffer_pool->PinPage(entry);
           _big_allocing_pages[slab_class] = entry;
           _big_allocing_tail[slab_class] = meta;
-          ret = batch.FinishBatch();
-          LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
+          *batch_ret = batch;
+          // ret = batch->FinishBatch();
+          // LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
           return entry;
         }
         _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
@@ -367,12 +375,13 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
 #ifdef STAT
     stat::dirty_write.fetch_add(1);
 #endif
-    auto ret = writeToRemote(victim, &batch);
+    auto ret = writeToRemote(victim, batch);
     LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
     victim->Dirty = false;
   }
-  auto ret = readFromRemote(victim, page_id, &batch);
-  ret = batch.FinishBatch();
+  auto ret = readFromRemote(victim, page_id, batch);
+  ret = batch->FinishBatch();
+  delete batch;
   _buffer_pool->InsertPage(victim, page_id, slab_class);
   LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
   return victim;
@@ -393,12 +402,13 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   PageEntry *page;
   int off;
   PageMeta *meta;
+  RDMAManager::Batch *batch = nullptr;
   allocingListWLock(al_index, slab_class);
   if (LIKELY(isSmallSlabSize(slab_class))) {
     page = _small_allocing_pages[al_index][slab_class];
     meta = global_page_manager->Page(page->PageId());
     if (UNLIKELY(meta->Full())) {
-      page = mountNewPage(slab_class, hash);
+      page = mountNewPage(slab_class, hash, &batch);
       meta = global_page_manager->Page(page->PageId());
     }
     // modify bitmap
@@ -407,7 +417,7 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
     page = _big_allocing_pages[slab_class];
     meta = global_page_manager->Page(page->PageId());
     if (UNLIKELY(meta->Full())) {
-      page = mountNewPage(slab_class, hash);
+      page = mountNewPage(slab_class, hash, &batch);
       meta = global_page_manager->Page(page->PageId());
     }
     // modify bitmap
@@ -423,6 +433,11 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   my_memcpy((void *)(page->Data() + off * val.size()), val.data(), val.size());
   if (!page->Dirty) page->Dirty = true;
   _buffer_pool->Release(page);
+
+  if (batch != nullptr) {
+    batch->FinishBatch();
+    delete batch;
+  }
   return true;
 }
 
