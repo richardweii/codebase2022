@@ -65,7 +65,7 @@ class LocalEngine : public Engine {
   bool deleteK(const std::string &key);
 
  private:
-  static uint32_t Shard(uint32_t hash) { return (hash>>4) & kPoolShardingMask; }
+  static uint32_t Shard(uint32_t hash) { return (hash>>2) & kPoolShardingMask; }
 
   crypto_message_t _aes;
   Pool *_pool[kPoolShardingNum];
