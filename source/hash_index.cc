@@ -49,7 +49,7 @@ HashTable::HashTable(size_t size) {
 };
 
 KeySlot *HashTable::Find(const Slice &key, uint32_t hash) {
-  hash >>= kPoolShardingBits;
+  // hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
   // RLock(index);
@@ -79,7 +79,7 @@ KeySlot *HashTable::Insert(const Slice &key, uint32_t hash) {
   int new_slot_id = _monitor.GetNewSlot(&new_slot);
   assert(new_slot);
 
-  hash >>= kPoolShardingBits;
+  // hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
   // WLock(index);
   // defer { WUnlock(index); };
@@ -112,7 +112,7 @@ KeySlot *HashTable::Insert(const Slice &key, uint32_t hash) {
 }
 
 KeySlot *HashTable::Remove(const Slice &key, uint32_t hash) {
-  hash >>= kPoolShardingBits;
+  // hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
   // WLock(index);
