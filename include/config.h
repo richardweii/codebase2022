@@ -64,7 +64,7 @@ constexpr size_t kMaxBlockSize = (size_t)1 * 1024 * 1024;  // 1MB mr
 
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                   // 16 * 12M key
 constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remote pool
-constexpr size_t kBufferPoolSize = (size_t)3 * 853 * 1024 * 1024;  // 2GB cache
+constexpr size_t kBufferPoolSize = (size_t)4 * 1024 * 1024 * 1024;  // 2GB cache
 constexpr size_t kMaxBlockSize = (size_t)1 * 1024 * 1024 * 1024;    // 1GB mr
 #endif
 
