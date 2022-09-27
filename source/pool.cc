@@ -216,6 +216,10 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
     // modify bitmap
     off = meta->SetFirstFreePos();
   }
+  if (batch != nullptr) {
+    batch->FinishBatch();
+    delete batch;
+  }
   allocingListWUnlock(al_index, slab_class);
 
   my_memcpy((char *)(page->Data() + val.size() * off), val.data(), val.size());
@@ -225,11 +229,6 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   LOG_ASSERT(off != -1, "set bitmap failed.");
   addr = AddrParser::GenAddrFrom(meta->PageId(), off);
   slot->SetAddr(addr);
-
-  if (batch != nullptr) {
-    batch->FinishBatch();
-    delete batch;
-  }
 }
 
 // 这个函数if else是相同的逻辑，只是调用的成员对象不同，懒得复用代码，看的时候只看一个分支就行
@@ -423,6 +422,10 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
     // modify bitmap
     off = meta->SetFirstFreePos();
   }
+  if (batch != nullptr) {
+    batch->FinishBatch();
+    delete batch;
+  }
   allocingListWUnlock(al_index, slab_class);
 
   LOG_ASSERT(off != -1, "set bitmap failed.");
@@ -434,10 +437,6 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   if (!page->Dirty) page->Dirty = true;
   _buffer_pool->Release(page);
 
-  if (batch != nullptr) {
-    batch->FinishBatch();
-    delete batch;
-  }
   return true;
 }
 
