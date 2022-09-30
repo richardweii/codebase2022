@@ -19,6 +19,14 @@
 
 namespace kv {
 thread_local int cur_thread_id = -1;
+void bind_core(int cpu_id) {
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(cpu_id, &cpuset);
+
+  auto thread_id = pthread_self();
+  pthread_setaffinity_np(thread_id, sizeof(cpu_set_t), &cpuset);
+}
 /**
  * @description: start local engine service
  * @param {string} addr    the address string of RemoteEngine to connect
@@ -228,6 +236,7 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   if (UNLIKELY(-1 == cur_thread_id)) {
     cur_thread_id = count_++;
     cur_thread_id %= kThreadNum;
+    bind_core(cur_thread_id);
   }
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
@@ -268,6 +277,7 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
   if (UNLIKELY(-1 == cur_thread_id)) {
     cur_thread_id = count_++;
     cur_thread_id %= kThreadNum;
+    bind_core(cur_thread_id);
   }
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
@@ -294,6 +304,7 @@ bool LocalEngine::deleteK(const std::string &key) {
   if (UNLIKELY(-1 == cur_thread_id)) {
     cur_thread_id = count_++;
     cur_thread_id %= kThreadNum;
+    bind_core(cur_thread_id);
   }
 #ifdef STAT
   stat::delete_times.fetch_add(1, std::memory_order_relaxed);
