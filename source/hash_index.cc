@@ -2,13 +2,14 @@
 #include "util/memcmp.h"
 namespace kv {
 SlotMonitor::SlotMonitor() {
+  const int per_queue_num = kKeyNum / kPoolShardingNum / kThreadNum;
   for (int i = 0; i < kThreadNum; i++) {
-    _free_slots[i] = new Queue(0x40000);
+    _free_slots[i] = new Queue(kKeyNum / kPoolShardingNum / kThreadNum);
   }
 
-  for (size_t i = 0; i < kKeyNum / kPoolShardingNum; i += kThreadNum) {
-    for (int t = 0; t < kThreadNum; t++) {
-      _free_slots[t]->enqueue(i+t);
+  for (int t = 0; t < kThreadNum; t++) {
+    for (size_t i = 0; i < per_queue_num; i++) {
+      _free_slots[t]->enqueue(i + t*per_queue_num);
     }
   }
 }

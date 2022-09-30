@@ -139,7 +139,10 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
         _small_allocing_tail[al_index][meta->SlabClass()] = meta->Prev();
       }
       global_page_manager->Unmount(meta);
+      allocingListWUnlock(al_index, meta->SlabClass());
       global_page_manager->FreePage(page_id);
+    } else {
+      allocingListWUnlock(al_index, meta->SlabClass());
     }
   } else {
     global_page_manager->Mount(&_big_allocing_tail[meta->SlabClass()], meta);
@@ -148,10 +151,12 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
         _big_allocing_tail[meta->SlabClass()] = meta->Prev();
       }
       global_page_manager->Unmount(meta);
+      allocingListWUnlock(al_index, meta->SlabClass());
       global_page_manager->FreePage(page_id);
+    } else {
+      allocingListWUnlock(al_index, meta->SlabClass());
     }
   }
-  allocingListWUnlock(al_index, meta->SlabClass());
 
   _hash_index->GetSlotMonitor()->FreeSlot(slot);
   return true;
@@ -175,7 +180,10 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
         // LOG_DEBUG("[shard %d] set class %d tail page %d", _shard, meta->SlabClass(), meta->Prev()->PageId());
       }
       global_page_manager->Unmount(meta);
+      allocingListWUnlock(al_index, meta->SlabClass());
       global_page_manager->FreePage(page_id);
+    } else {
+      allocingListWUnlock(al_index, meta->SlabClass());
     }
   } else {
     global_page_manager->Mount(&_big_allocing_tail[meta->SlabClass()], meta);
@@ -185,10 +193,12 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
         // LOG_DEBUG("[shard %d] set class %d tail page %d", _shard, meta->SlabClass(), meta->Prev()->PageId());
       }
       global_page_manager->Unmount(meta);
+      allocingListWUnlock(al_index, meta->SlabClass());
       global_page_manager->FreePage(page_id);
+    } else {
+      allocingListWUnlock(al_index, meta->SlabClass());
     }
   }
-  allocingListWUnlock(al_index, meta->SlabClass());
 
   // rewrite to meta
   uint8_t slab_class = val.size() / kSlabSize;

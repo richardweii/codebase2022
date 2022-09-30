@@ -55,9 +55,9 @@ class Queue {
   Queue(int size) {
     head = 0;
     tail = 0;
-    this->size = size;
-    arr = new int[size];
-    mask = size - 1;
+    this->size = roundup_power_of_2(size);
+    arr = new int[this->size];
+    mask = this->size - 1;
   }
   bool isFull() { return (tail + 1) % size == head; }
   bool isEmpty() { return head == tail; }
@@ -69,6 +69,23 @@ class Queue {
     int val = arr[head];
     head = (head + 1) & mask;
     return val;
+  }
+  uint32_t roundup_power_of_2(uint32_t val) {
+    // 已经是2的幂了，可直接返回
+    if ((val & (val - 1)) == 0) {
+      return val;
+    }
+
+    // uint32类型中，2的次幂最大数
+    uint32_t andv = 0x80000000;
+
+    // 逐位右移，直到找到满足val第一个位为1的
+    while ((andv & val) == 0) {
+      andv = andv >> 1;
+    }
+
+    // 再左移一位，确保比val大
+    return andv << 1;
   }
 };
 
@@ -88,7 +105,7 @@ class SlotMonitor {
  private:
   // TODO: lock-free list
   SpinLock _lock;
-  Queue* _free_slots[kThreadNum];
+  Queue *_free_slots[kThreadNum];
   KeySlot _slots[kKeyNum / kPoolShardingNum];
 };
 
