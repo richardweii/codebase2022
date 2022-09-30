@@ -46,7 +46,7 @@ constexpr int kSlabSize = 16;
 #ifdef TEST_CONFIG
 constexpr int kPageSizeBit = 10;  // 1KB
 #else
-constexpr int kPageSizeBit = 16;  // 64KB
+constexpr int kPageSizeBit = 16;  // 16: 64KB
 #endif
 
 constexpr int kPageSize = 1 << kPageSizeBit;
@@ -83,11 +83,14 @@ constexpr int kParallelNewThread = 1;
 
 #else
 
-constexpr uint32_t PAGE_BIT = 19;
-constexpr uint32_t PAGE_MASK = 0x7ffff;
-constexpr uint32_t PAGE_OFF_MASK = 0x3fff;
-constexpr uint32_t OFF_BIT = 13;  // MAX 4096
-constexpr uint32_t OFF_MASK = 0x1fff;
+// 2^PGAE_BIT = 32GB / kPageSize
+// SHIFT = log(kMrBlockNum)  
+constexpr int kShift = 5;
+constexpr uint32_t PAGE_BIT = 35 - kPageSizeBit;
+constexpr uint32_t PAGE_MASK = (1 << PAGE_BIT) - 1;
+constexpr uint32_t PAGE_OFF_MASK = (1 << (PAGE_BIT - kShift)) - 1;
+constexpr uint32_t OFF_BIT = 32 - PAGE_BIT;  // MAX 4096
+constexpr uint32_t OFF_MASK = (1 << OFF_BIT) - 1;
 constexpr int kParallelNewThread = 16;
 
 #endif

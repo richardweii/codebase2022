@@ -4,11 +4,6 @@ namespace kv {
 
 PageManager *global_page_manager = nullptr;
 
-// TODO: 可以考虑将_free_list拆成16个，这样就可以分配的时候多线程同时分配了
-// 1. 需要为pagemeta增加一个字段free_list_id，代表这个_page是从哪个队列拿的，到时候free的时候物归原主
-// 2. 需要更改BusyBits，找到一个为0的bit位之后，需要CAS操作
-// 为了性能，最好自己实现一个并发的ffl
-// 或者说随机选一个位，感觉性能也许会更好
 PageManager::PageManager(size_t page_num) : _page_num(page_num) {
   _pages = new PageMeta[page_num];
   for (size_t i = 0; i < page_num - 1; i++) {
@@ -40,19 +35,6 @@ PageMeta *PageManager::AllocNewPage(uint8_t slab_class) {
   res->reset(NewBitmap(kPageSize / kSlabSize / slab_class));
   res->_slab_class = slab_class;
   return res;
-  // TODO: 下面的无锁实现线上出现Error: signal 11:
-  //   PageMeta *old_free_list;
-  //   PageMeta *next;
-
-  // RETRY:
-  //   old_free_list = _free_list;
-  //   next = _free_list->_next;
-  //   if (CAS(&_free_list, &old_free_list, next)) {
-  //     old_free_list->reset(NewBitmap(kPageSize / kSlabSize / slab_class));
-  //     old_free_list->_slab_class = slab_class;
-  //     return old_free_list;
-  //   }
-  //   goto RETRY;
 }
 
 void PageManager::FreePage(uint32_t page_id) {
