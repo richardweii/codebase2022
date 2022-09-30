@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <queue>
 #include <vector>
 #include "config.h"
 #include "util/defer.h"
@@ -42,6 +43,35 @@ class KeySlot {
   int _next = -1;  // next hashtable node or next free slot
 };
 
+class Queue {
+ private:
+  int size;
+  int *arr;
+  int head;
+  int tail;
+  int mask;
+
+ public:
+  Queue(int size) {
+    head = 0;
+    tail = 0;
+    this->size = size;
+    arr = new int[size];
+    mask = size - 1;
+  }
+  bool isFull() { return (tail + 1) % size == head; }
+  bool isEmpty() { return head == tail; }
+  void enqueue(int val) {
+    arr[tail] = val;
+    tail = (tail + 1) & mask;
+  }
+  int dequeue() {
+    int val = arr[head];
+    head = (head + 1) & mask;
+    return val;
+  }
+};
+
 class SlotMonitor {
  public:
   SlotMonitor();
@@ -53,11 +83,12 @@ class SlotMonitor {
   }
   int GetNewSlot(KeySlot **out);
   void FreeSlot(KeySlot *slot);
+  int GetSlotIdx(KeySlot *slot) { return static_cast<int>(slot - _slots); }
 
  private:
   // TODO: lock-free list
   SpinLock _lock;
-  std::atomic<int> _free_slot_head {-1};
+  Queue* _free_slots[kThreadNum];
   KeySlot _slots[kKeyNum / kPoolShardingNum];
 };
 
@@ -77,21 +108,13 @@ class HashTable {
 
   SlotMonitor *GetSlotMonitor() { return &_monitor; }
 
-  void RLock(uint32_t index) {
-    _seg_latch[index % kSegLatchMask].RLock();
-  }
+  void RLock(uint32_t index) { _seg_latch[index % kSegLatchMask].RLock(); }
 
-  void RUnlock(uint32_t index) {
-    _seg_latch[index % kSegLatchMask].RUnlock();
-  }
+  void RUnlock(uint32_t index) { _seg_latch[index % kSegLatchMask].RUnlock(); }
 
-  void WLock(uint32_t index) {
-    _seg_latch[index % kSegLatchMask].WLock();
-  }
+  void WLock(uint32_t index) { _seg_latch[index % kSegLatchMask].WLock(); }
 
-  void WUnlock(uint32_t index) {
-    _seg_latch[index % kSegLatchMask].WUnlock();
-  }
+  void WUnlock(uint32_t index) { _seg_latch[index % kSegLatchMask].WUnlock(); }
 
  private:
   SlotMonitor _monitor;

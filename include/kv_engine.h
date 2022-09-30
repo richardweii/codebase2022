@@ -71,6 +71,7 @@ class LocalEngine : public Engine {
   Pool *_pool[kPoolShardingNum];
   RDMAClient *_client;
   std::vector<MemoryAccess> _global_access_table;
+  std::atomic<int> count_;
 };
 
 /* Remote-side engine */

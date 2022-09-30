@@ -2,35 +2,32 @@
 #include "util/memcmp.h"
 namespace kv {
 SlotMonitor::SlotMonitor() {
-  _free_slot_head = 0;
-  for (size_t i = 0; i < (kKeyNum / kPoolShardingNum) - 1; i++) {
-    _slots[i].SetNext(i + 1);
+  for (int i = 0; i < kThreadNum; i++) {
+    _free_slots[i] = new Queue(0x40000);
+  }
+
+  for (size_t i = 0; i < kKeyNum / kPoolShardingNum; i += kThreadNum) {
+    for (int t = 0; t < kThreadNum; t++) {
+      _free_slots[t]->enqueue(i+t);
+    }
   }
 }
-
+const int a = kKeyNum / kPoolShardingNum / kThreadNum;
 int SlotMonitor::GetNewSlot(KeySlot **out) {
   LOG_ASSERT(out, "empty slot ptr");
-
-RETRY:
-  int old_free_slot_head = _free_slot_head;
-  KeySlot *slot = &_slots[old_free_slot_head];
-  int next = slot->Next();
-  if (_free_slot_head.compare_exchange_strong(old_free_slot_head, next)) {
-    slot->SetNext(-1);
-    *out = slot;
-    return old_free_slot_head;
-  }
-  goto RETRY;
+  // assert(!_free_slots[cur_thread_id].empty());
+  int insert_slot = _free_slots[cur_thread_id]->dequeue();
+  KeySlot *slot = &_slots[insert_slot];
+  *out = slot;
+  return insert_slot;
 }
 
 void SlotMonitor::FreeSlot(KeySlot *slot) {
   LOG_ASSERT(slot, "empty slot ptr");
-  int old_free_slot_head = _free_slot_head;
   int slot_idx = static_cast<int>(slot - _slots);
-  if (_free_slot_head.compare_exchange_strong(old_free_slot_head, slot_idx)) {
-    slot->SetAddr(INVALID_ADDR);
-    slot->SetNext(old_free_slot_head);
-  }
+  slot->SetAddr(INVALID_ADDR);
+  slot->SetNext(INVALID_ADDR);
+  _free_slots[cur_thread_id]->enqueue(slot_idx);
 }
 
 HashTable::HashTable(size_t size) {
@@ -62,12 +59,6 @@ KeySlot *HashTable::Find(const Slice &key, uint32_t hash) {
     if (!memcmp_128bit_eq_a(key.data(), slot->Key())) {
       return slot;
     }
-    // if (__int128(*(__int128 *)key.data()) == __int128(*(__int128 *)slot->Key())) {
-    //   return slot;
-    // }
-    // if ((memcmp(key.data(), slot->Key(), kKeyLength) == 0)) {
-    //   return slot;
-    // }
     slot_id = slot->Next();
   }
   return nullptr;

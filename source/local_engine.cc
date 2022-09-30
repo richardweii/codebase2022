@@ -18,7 +18,7 @@
 #include "util/slice.h"
 
 namespace kv {
-
+thread_local int cur_thread_id = -1;
 /**
  * @description: start local engine service
  * @param {string} addr    the address string of RemoteEngine to connect
@@ -29,7 +29,7 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   auto time_now = TIME_NOW;
   constexpr size_t buffer_pool_size = kBufferPoolSize / kPoolShardingNum;
   LOG_INFO("Create %d pool, each pool with %lu MB cache, %lu pages", kPoolShardingNum, buffer_pool_size / 1024 / 1024,
-           kPoolSize / kPageSize);
+           buffer_pool_size / kPageSize);
   _client = new RDMAClient();
   if (!_client->Init(addr, port)) return false;
   _client->Start();
@@ -38,7 +38,7 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
   global_page_manager = new PageManager(kPoolSize / kPageSize);
   LOG_INFO("global_page_manager created");
-  int thread_num = kParallelNewThread;
+  int thread_num = 16;
   std::vector<std::thread> threads;
   for (int t = 0; t < thread_num; t++) {
     threads.emplace_back(
@@ -225,6 +225,10 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
  * @return {bool} true for success
  */
 bool LocalEngine::write(const std::string &key, const std::string &value, bool use_aes) {
+  if (UNLIKELY(-1 == cur_thread_id)) {
+    cur_thread_id = count_++;
+    cur_thread_id %= kThreadNum;
+  }
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
@@ -261,6 +265,10 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
  * @return {bool}  true for success
  */
 bool LocalEngine::read(const std::string &key, std::string &value) {
+  if (UNLIKELY(-1 == cur_thread_id)) {
+    cur_thread_id = count_++;
+    cur_thread_id %= kThreadNum;
+  }
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
@@ -283,6 +291,10 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
 }
 
 bool LocalEngine::deleteK(const std::string &key) {
+  if (UNLIKELY(-1 == cur_thread_id)) {
+    cur_thread_id = count_++;
+    cur_thread_id %= kThreadNum;
+  }
 #ifdef STAT
   stat::delete_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::delete_times.load(std::memory_order_relaxed) % 1000000 == 0) {

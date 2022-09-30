@@ -79,7 +79,7 @@ constexpr uint32_t PAGE_MASK = 0x7fff;
 constexpr uint32_t PAGE_OFF_MASK = 0x3ff;
 constexpr uint32_t OFF_BIT = 17;  // MAX 4096
 constexpr uint32_t OFF_MASK = 0x1ffff;
-constexpr int kParallelNewThread = 1;
+constexpr int kThreadNum = 1;
 
 #else
 
@@ -91,7 +91,7 @@ constexpr uint32_t PAGE_MASK = (1 << PAGE_BIT) - 1;
 constexpr uint32_t PAGE_OFF_MASK = (1 << (PAGE_BIT - kShift)) - 1;
 constexpr uint32_t OFF_BIT = 32 - PAGE_BIT;  // MAX 4096
 constexpr uint32_t OFF_MASK = (1 << OFF_BIT) - 1;
-constexpr int kParallelNewThread = 16;
+constexpr int kThreadNum = 16;
 
 #endif
 constexpr int MAX_BLOCK_NUM = 32;
@@ -120,4 +120,5 @@ struct _Result {
   PageEntry *_result;
 };
 extern std::shared_ptr<_Result> _do[TOTAL_PAGE_NUM];
+extern thread_local int cur_thread_id;
 }  // namespace kv
