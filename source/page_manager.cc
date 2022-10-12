@@ -3,7 +3,6 @@
 namespace kv {
 
 PageManager *global_page_manager = nullptr;
-
 PageManager::PageManager(size_t page_num) : _page_num(page_num) {
   _pages = new PageMeta[page_num];
   for (size_t i = 0; i < page_num - 1; i++) {
@@ -24,13 +23,15 @@ PageManager::~PageManager() {
 #define CAS(_p, _u, _v) (__atomic_compare_exchange_n(_p, _u, _v, false, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE))
 PageMeta *PageManager::AllocNewPage(uint8_t slab_class) {
   _lock.Lock();
-  defer { _lock.Unlock(); };
+
   if (_free_list == nullptr) {
+    _lock.Unlock();
     LOG_ERROR("page used up.");
     return nullptr;
   }
   PageMeta *res = _free_list;
   _free_list = _free_list->_next;
+  _lock.Unlock();
   // LOG_DEBUG("alloc new page for class %d", slab_class);
   res->reset(NewBitmap(kPageSize / kSlabSize / slab_class));
   res->_slab_class = slab_class;
