@@ -46,7 +46,7 @@ constexpr int kSlabSize = 16;
 #ifdef TEST_CONFIG
 constexpr int kPageSizeBit = 10;  // 1KB
 #else
-constexpr int kPageSizeBit = 20;  // 16: 64KB
+constexpr int kPageSizeBit = 20;  // 20: 1MB
 #endif
 
 constexpr int kPageSize = 1 << kPageSizeBit;

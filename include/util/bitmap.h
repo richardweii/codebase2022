@@ -85,7 +85,8 @@
 //   unsigned long siz;
 //   siz = ALIGN_UP(cnt, 64);
 //   ConBitmap *bitmap =
-//       reinterpret_cast<ConBitmap *>(Arena::getInstance().Alloc(sizeof(ConBitmap) + (siz / 64) * sizeof(unsigned long)));
+//       reinterpret_cast<ConBitmap *>(Arena::getInstance().Alloc(sizeof(ConBitmap) + (siz / 64) * sizeof(unsigned
+//       long)));
 //   bitmap->cnt = cnt;
 //   bitmap->free_cnt = cnt;
 //   for (unsigned long i = cnt; i < siz; i++) bitmap->data[i >> 6] |= 1UL << (i & 63);
@@ -192,22 +193,29 @@ class Bitmap NOCOPYABLE {
   int FirstFreePos() const {
     for (uint32_t i = 0; i < _n; i++) {
       if (_data[i] == UINT64_MAX) continue;
-      int ffp = ffsl(_data[i] + 1) - 1;
-      return ffp;
+      int ffp = __builtin_ffsl(_data[i] + 1) - 1;
+      return (i << 6) + ffp;
     }
     return -1;
   }
 
   int SetFirstFreePos() {
-    int index = FirstFreePos();
-    if (index == -1) {
-      return -1;
+    for (uint32_t i = 0; i < _n; i++) {
+      if (_data[i] == UINT64_MAX) continue;
+      uint64_t ffp = __builtin_ffsl(_data[i] + 1) - 1;
+      _data[i] |= (1UL << ffp);
+      return (i << 6) + ffp;
     }
-    assert((uint32_t)index < _bits);
-    int n = index / 64;
-    int off = index % 64;
-    _data[n] |= (1ULL << off);
-    return index;
+    return -1;
+    // int index = FirstFreePos();
+    // if (index == -1) {
+    //   return -1;
+    // }
+    // assert((uint32_t)index < _bits);
+    // int n = index / 64;
+    // int off = index % 64;
+    // _data[n] |= (1ULL << off);
+    // return index;
   }
 
   bool Test(int index) const {

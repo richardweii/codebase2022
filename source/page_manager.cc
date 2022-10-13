@@ -27,7 +27,7 @@ PageMeta *PageManager::AllocNewPage(uint8_t slab_class) {
 
   if (_free_list == nullptr) {
     _lock.Unlock();
-    LOG_ERROR("page used up.");
+    LOG_ASSERT(false, "page used up.");
     return nullptr;
   }
   PageMeta *res = _free_list;
