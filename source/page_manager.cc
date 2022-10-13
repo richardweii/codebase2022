@@ -79,7 +79,7 @@ void PageManager::Mount(PageMeta **list_tail, PageMeta *meta) {
     (*list_tail) = meta;
     LOG_ASSERT(meta->_prev != nullptr, "allocating page should not be null");
     LOG_ASSERT(!meta->Full(), "meta is not full");
-    // LOG_ASSERT(!meta->IsPined(), "meta is pined");
+    LOG_ASSERT(!meta->IsPined(), "meta is pined");
   }
 }
 

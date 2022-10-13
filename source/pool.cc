@@ -1,5 +1,6 @@
 #include "pool.h"
 #include "config.h"
+#include "page_manager.h"
 #include "stat.h"
 #include "util/likely.h"
 #include "util/logging.h"
@@ -131,8 +132,8 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
   PageMeta *meta = global_page_manager->Page(page_id);
 
   int al_index = (hash >> 24) % kAllocingListShard;
-  meta->ClearPos(AddrParser::Off(addr));
   allocingListWLock(al_index, meta->SlabClass());
+  meta->ClearPos(AddrParser::Off(addr));
   if (isSmallSlabSize(meta->SlabClass())) {
     global_page_manager->Mount(&_small_allocing_tail[al_index][meta->SlabClass()], meta);
     if (!meta->IsPined() && meta->Empty()) {
@@ -173,8 +174,8 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   assert(meta->SlabClass() != val.size() / kSlabSize);
 
   int al_index = (hash >> 24) % kAllocingListShard;
-  meta->ClearPos(AddrParser::Off(addr));
   allocingListWLock(al_index, meta->SlabClass());
+  meta->ClearPos(AddrParser::Off(addr));
   if (LIKELY(isSmallSlabSize(meta->SlabClass()))) {
     global_page_manager->Mount(&_small_allocing_tail[al_index][meta->SlabClass()], meta);
     if (!meta->IsPined() && meta->Empty()) {
@@ -224,6 +225,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
     LOG_ASSERT(!meta->Full(), "meta should not full");
     // modify bitmap
     off = meta->SetFirstFreePos();
+    LOG_ASSERT(off != -1, "set bitmap failed.");
   } else {
     page = _big_allocing_pages[slab_class];
     meta = global_page_manager->Page(page->PageId());
@@ -234,6 +236,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
     LOG_ASSERT(!meta->Full(), "meta should not full");
     // modify bitmap
     off = meta->SetFirstFreePos();
+    LOG_ASSERT(off != -1, "set bitmap failed.");
   }
   if (batch != nullptr) {
     batch->FinishBatch();
@@ -253,7 +256,6 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   slot->SetAddr(addr);
 }
 
-// 这个函数if else是相同的逻辑，只是调用的成员对象不同，懒得复用代码，看的时候只看一个分支就行
 PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch **batch_ret, int tid) {
   int al_index;
   if (tid == -1) {
@@ -262,139 +264,115 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
     al_index = tid;
   }
 
-  if (LIKELY(isSmallSlabSize(slab_class))) {
-    PageEntry *old_entry = _small_allocing_pages[al_index][slab_class];
-    PageMeta *old_meta = global_page_manager->Page(old_entry->PageId());
+  bool isSmall = isSmallSlabSize(slab_class);
 
+  PageEntry *old_entry;
+  PageMeta *old_meta;
+
+  if (LIKELY(isSmall)) {
+    old_entry = _small_allocing_pages[al_index][slab_class];
     _small_allocing_pages[al_index][slab_class] = nullptr;
+  } else {
+    old_entry = _big_allocing_pages[slab_class];
+    _big_allocing_pages[slab_class] = nullptr;
+  }
+  old_meta = global_page_manager->Page(old_entry->PageId());
 
-    PageMeta *meta = old_meta->Next();
-    PageEntry *entry = nullptr;
-    if (meta == nullptr) {
-      assert(old_meta->Next() == nullptr);
-      assert(old_meta->Prev() == nullptr);
-      // allocing list is empty, need alloc new page
-      meta = global_page_manager->AllocNewPage(slab_class);
-      entry = _buffer_pool->FetchNew(meta->PageId(), slab_class);
-      LOG_ASSERT(meta != nullptr, "no more page.");
-      meta->Pin();
+  PageMeta *meta = old_meta->Next();
+  PageEntry *entry = nullptr;
+  if (meta == nullptr) {
+    assert(old_meta->Next() == nullptr);
+    assert(old_meta->Prev() == nullptr);
+    // allocing list is empty, need alloc new page
+    meta = global_page_manager->AllocNewPage(slab_class);
+    meta->Pin();
+    entry = _buffer_pool->FetchNew(meta->PageId(), slab_class);
+    LOG_ASSERT(meta != nullptr, "no more page.");
 
-      if (entry == nullptr) {
-        entry = _buffer_pool->Evict();
-        LOG_ASSERT(entry != nullptr, "evicting failed.");
-        // write dirty page back
-        if (entry->Dirty) {
-          auto batch = _client->BeginBatch();
+    if (entry == nullptr) {
+      entry = _buffer_pool->Evict();
+      LOG_ASSERT(entry != nullptr, "evicting failed.");
+      // write dirty page back
+      if (entry->Dirty) {
+        auto batch = _client->BeginBatch();
 #ifdef STAT
-          stat::dirty_write.fetch_add(1);
+        stat::dirty_write.fetch_add(1);
 #endif
-          auto ret = writeToRemote(entry, batch);
-          LOG_ASSERT(ret == 0, "rdma write failed.");
-          entry->Dirty = false;
-          _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
-          _buffer_pool->PinPage(entry);
+        auto ret = writeToRemote(entry, batch);
+        LOG_ASSERT(ret == 0, "rdma write failed.");
+        entry->Dirty = false;
+        _buffer_pool->PinPage(entry);
+        _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
+        if (LIKELY(isSmall)) {
           _small_allocing_pages[al_index][slab_class] = entry;
           _small_allocing_tail[al_index][slab_class] = meta;
           LOG_ASSERT(_small_allocing_tail[al_index][slab_class] != nullptr, "tail should not be null");
           LOG_ASSERT(_small_allocing_tail[al_index][slab_class]->Prev() == nullptr, "prev should null");
-          *batch_ret = batch;
-          _buffer_pool->UnpinPage(old_entry);
-          old_meta->UnPin();
-          // ret = batch->FinishBatch();
-          // LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
-          return entry;
+        } else {
+          _big_allocing_pages[slab_class] = entry;
+          _big_allocing_tail[slab_class] = meta;
+          LOG_ASSERT(_big_allocing_pages[slab_class] != nullptr, "tail should not be null");
+          LOG_ASSERT(_big_allocing_tail[slab_class]->Prev() == nullptr, "prev should null");
         }
-        _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
+
+        // defer finish batch
+        *batch_ret = batch;
+        _buffer_pool->UnpinPage(old_entry);
+        old_meta->UnPin();
+        return entry;
       }
+      _buffer_pool->PinPage(entry);
+      _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
       _buffer_pool->UnpinPage(old_entry);
       old_meta->UnPin();
-      _buffer_pool->PinPage(entry);
+      if (LIKELY(isSmall)) {
+        _small_allocing_pages[al_index][slab_class] = entry;
+        _small_allocing_tail[al_index][slab_class] = meta;
+        LOG_ASSERT(_small_allocing_tail[al_index][slab_class] != nullptr, "tail should not be null");
+      } else {
+        _big_allocing_pages[slab_class] = entry;
+        _big_allocing_tail[slab_class] = meta;
+        LOG_ASSERT(_big_allocing_tail[slab_class] != nullptr, "tail should not be null");
+      }
+      return entry;
+    }
+    _buffer_pool->PinPage(entry);
+    _buffer_pool->UnpinPage(old_entry);
+    old_meta->UnPin();
+    if (LIKELY(isSmall)) {
       _small_allocing_pages[al_index][slab_class] = entry;
       _small_allocing_tail[al_index][slab_class] = meta;
       LOG_ASSERT(_small_allocing_tail[al_index][slab_class] != nullptr, "tail should not be null");
-      return entry;
-    }
-    // replacement
-    LOG_ASSERT(!meta->Full(), "invalid allocing page.");
-    global_page_manager->Unmount(old_meta);
-    _buffer_pool->UnpinPage(old_entry);
-    old_meta->UnPin();
-    PageId page_id = meta->PageId();
-    entry = _buffer_pool->Lookup(page_id, true);
-    if (entry == nullptr) {
-      entry = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, slab_class, true);
-    }
-    meta->Pin();
-    _buffer_pool->PinPage(entry);
-    _small_allocing_pages[al_index][slab_class] = entry;
-    return entry;
-  } else {
-    PageEntry *old_entry = _big_allocing_pages[slab_class];
-    PageMeta *old_meta = global_page_manager->Page(old_entry->PageId());
-    _big_allocing_pages[slab_class] = nullptr;
-    PageMeta *meta = old_meta->Next();
-    PageEntry *entry = nullptr;
-    if (meta == nullptr) {
-      assert(old_meta->Next() == nullptr);
-      assert(old_meta->Prev() == nullptr);
-      // allocing list is empty, need alloc new page
-      meta = global_page_manager->AllocNewPage(slab_class);
-      entry = _buffer_pool->FetchNew(meta->PageId(), slab_class);
-      LOG_ASSERT(meta != nullptr, "no more page.");
-
-      if (entry == nullptr) {
-        entry = _buffer_pool->Evict();
-        LOG_ASSERT(entry != nullptr, "evicting failed.");
-        // write dirty page back
-        if (entry->Dirty) {
-          auto batch = _client->BeginBatch();
-#ifdef STAT
-          stat::dirty_write.fetch_add(1);
-#endif
-          auto ret = writeToRemote(entry, batch);
-          LOG_ASSERT(ret == 0, "rdma write failed.");
-          entry->Dirty = false;
-          _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
-          _buffer_pool->PinPage(entry);
-          meta->Pin();
-          _big_allocing_pages[slab_class] = entry;
-          _big_allocing_tail[slab_class] = meta;
-          _buffer_pool->UnpinPage(old_entry);
-          old_meta->UnPin();
-          *batch_ret = batch;
-          // ret = batch->FinishBatch();
-          // LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
-          return entry;
-        }
-        _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
-      }
-
-      _buffer_pool->PinPage(entry);
-      meta->Pin();
+    } else {
       _big_allocing_pages[slab_class] = entry;
       _big_allocing_tail[slab_class] = meta;
-      _buffer_pool->UnpinPage(old_entry);
-      old_meta->UnPin();
-      return entry;
+      LOG_ASSERT(_big_allocing_tail[slab_class] != nullptr, "tail should not be null");
     }
-    // replacement
-    LOG_ASSERT(!meta->Full(), "invalid allocing page.");
-    global_page_manager->Unmount(old_meta);
-    _buffer_pool->UnpinPage(old_entry);
-    old_meta->UnPin();
-    PageId page_id = meta->PageId();
-    entry = _buffer_pool->Lookup(page_id, true);
-    if (entry == nullptr) {
-      entry = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, slab_class, true);
-    }
-    _buffer_pool->PinPage(entry);
-    meta->Pin();
-    _big_allocing_pages[slab_class] = entry;
+
     return entry;
   }
+  // 说明后面有挂载的其他page，将其pin住
+  meta->Pin();
+  LOG_ASSERT(meta->IsMounted(), "meta should be mounted");
+  LOG_ASSERT(!meta->Full(), "invalid allocing page.");
+  global_page_manager->Unmount(old_meta);
+  _buffer_pool->UnpinPage(old_entry);
+  old_meta->UnPin();
+  PageId page_id = meta->PageId();
+  entry = _buffer_pool->Lookup(page_id, true);
+  if (entry == nullptr) {
+    // replacement
+    entry = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, slab_class, true);
+  }
+  _buffer_pool->PinPage(entry);
+  if (LIKELY(isSmall)) {
+    _small_allocing_pages[al_index][slab_class] = entry;
+  } else {
+    _big_allocing_pages[slab_class] = entry;
+  }
+  return entry;
 }
 
-// TODO: 目前一个page64KB，可以考虑对数据压缩一下，这样网络传输速度会快一些
 PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
   // miss
 #ifdef STAT

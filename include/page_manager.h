@@ -14,13 +14,19 @@ class PageMeta {
  public:
   friend class PageManager;
 
-  int SetFirstFreePos() { return _bitmap->get_free(); }
+  int SetFirstFreePos() {
+    _used++;
+    return _bitmap->SetFirstFreePos();
+  }
 
-  void ClearPos(int idx) { _bitmap->put_back(idx); }
+  void ClearPos(int idx) {
+    _used--;
+    _bitmap->Clear(idx);
+  }
 
-  bool Full() const { return _bitmap->Full(); }
+  bool Full() const { return (_used == _cap); }
 
-  bool Empty() const { return _bitmap->Empty(); }
+  bool Empty() const { return _used == 0; }
 
   bool IsMounted() const { return mounted; }
 
@@ -47,14 +53,17 @@ class PageMeta {
   void reset(Bitmap *bitmap) {
     DeleteBitmap(_bitmap);
     _bitmap = bitmap;
+    _used = 0;
+    _cap = bitmap->Cap();
     _next = nullptr;
     _prev = nullptr;
-    pin_ = false;
   }
   Bitmap *_bitmap = nullptr;
   PageMeta *_next = nullptr;
   PageMeta *_prev = nullptr;
   uint32_t _page_id;
+  uint16_t _cap = 0;
+  uint16_t _used = 0;
   uint8_t _slab_class;
   bool pin_;
   std::atomic<bool> mounted;

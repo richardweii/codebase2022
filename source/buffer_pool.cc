@@ -26,7 +26,7 @@ class ClockReplacer {
     *frame_id = this->pop();
     frames_[*frame_id]._victim = true;
     _lock.Unlock();
-    LOG_ASSERT(!frames_[*frame_id]._pin, "frame_id %d is pinned", *frame_id);  // TODO：这里发生了一次assert错误
+    LOG_ASSERT(!frames_[*frame_id]._pin, "frame_id %d is pinned", *frame_id);
     return *frame_id != INVALID_FRAME_ID;
   }
 
