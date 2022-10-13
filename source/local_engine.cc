@@ -91,7 +91,7 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   LOG_INFO("pool init");
 
   auto watcher = std::thread([&]() {
-    sleep(60 * 12);
+    sleep(60 * 6);
     fflush(stdout);
     abort();
   });

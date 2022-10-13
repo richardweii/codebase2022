@@ -5,6 +5,7 @@
 #include "config.h"
 #include "util/arena.h"
 #include "util/bitmap.h"
+#include "util/rwlock.h"
 
 namespace kv {
 
@@ -13,22 +14,16 @@ class PageMeta {
   friend class PageManager;
 
   int SetFirstFreePos() {
-    _used++;
-    return  _bitmap->SetFirstFreePos();
+    return _bitmap->get_free();
   }
 
   void ClearPos(int idx) {
-    _used--;
-    _bitmap->Clear(idx);
+    _bitmap->put_back(idx);
   }
 
-  bool Full() const {
-    return (_used == _cap);
-  }
+  bool Full() const { return _bitmap->Full(); }
 
-  bool Empty() const {
-    return _used == 0;
-  }
+  bool Empty() const { return _bitmap->Empty(); }
 
   kv::PageId PageId() const { return _page_id; }
 
@@ -37,22 +32,24 @@ class PageMeta {
   PageMeta *Next() const { return _next; }
   PageMeta *Prev() const { return _prev; }
 
+  bool IsPined() const { return pin_; }
+  void Pin() { pin_ = true; }
+  void UnPin() { pin_ = false; }
+
  private:
   void reset(Bitmap *bitmap) {
     DeleteBitmap(_bitmap);
     _bitmap = bitmap;
-    _used = 0;
-    _cap = bitmap->Cap();
     _next = nullptr;
     _prev = nullptr;
+    pin_ = false;
   }
   Bitmap *_bitmap = nullptr;
   PageMeta *_next = nullptr;
   PageMeta *_prev = nullptr;
   uint32_t _page_id;
-  uint16_t _cap = 0;
-  uint16_t _used = 0;
   uint8_t _slab_class;
+  bool pin_;
 };
 
 /**

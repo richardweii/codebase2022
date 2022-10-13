@@ -103,7 +103,6 @@ class SlotMonitor {
   int GetSlotIdx(KeySlot *slot) { return static_cast<int>(slot - _slots); }
 
  private:
-  // TODO: lock-free list
   SpinLock _lock;
   Queue *_free_slots[kThreadNum];
   KeySlot _slots[kKeyNum / kPoolShardingNum];

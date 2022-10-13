@@ -6,10 +6,18 @@
 #include <cstdlib>
 #include <cstring>
 #include "arena.h"
+#include "likely.h"
 #include "nocopy.h"
 
 namespace kv {
-
+#define ALIGN_UP(a, siz) (((a) + (siz)-1) & (~((siz)-1)))
+#define atomic_xadd(P, V) __sync_fetch_and_add((P), (V))
+#define cmpxchg(P, O, N) __sync_bool_compare_and_swap((P), (O), (N))
+#define atomic_inc(P) __sync_add_and_fetch((P), 1)
+#define atomic_dec(P) __sync_add_and_fetch((P), -1)
+#define atomic_add(P, V) __sync_add_and_fetch((P), (V))
+#define atomic_set_bit(P, V) __sync_or_and_fetch((P), 1 << (V))
+#define atomic_clear_bit(P, V) __sync_and_and_fetch((P), ~(1 << (V)))
 constexpr static uint64_t MASK[] = {
     0,
     0x1ULL,
@@ -81,83 +89,119 @@ class Bitmap NOCOPYABLE {
  public:
   Bitmap() = delete;
 
-  bool Full() const {
-    for (uint32_t i = 0; i < _n; i++) {
-      if (~_data[i]) {
-        return false;
-      }
-    }
-    return true;
-  }
+  bool Full() const { return free_cnt == 0; }
 
-  // return the first free position of bitmap, return -1 if full
-  int FirstFreePos() const {
-    for (uint32_t i = 0; i < _n; i++) {
-      int ffp = ffsl(~_data[i]) - 1;
-      if (ffp != -1) {
-        return i * 64 + ffp;
+  bool Empty() const { return free_cnt == cnt; }
+
+  // 这个不需要线程安全
+  int get_free() {
+    unsigned long tot, i, ii, j;
+    unsigned long old_free_cnt, old_val;
+    
+    // if (UNLIKELY(this->free_cnt == 0)) return -1;
+    // this->free_cnt -= 1;
+
+    // tot = this->siz / 64;
+    // for (i = 0; i < tot; i++) {
+    //   if (this->data[i] == (unsigned long)-1) continue;
+    //   j = __builtin_ffsl(this->data[i] + 1) - 1;
+    //   this->data[i] |= 1UL << j;
+    //   return (i << 6) | j;
+    // }
+    // return -1;
+
+    do {
+      old_free_cnt = this->free_cnt;
+      if (UNLIKELY(old_free_cnt == 0)) return -1;
+    } while (UNLIKELY(!cmpxchg(&this->free_cnt, old_free_cnt, old_free_cnt - 1)));
+
+    tot = this->siz / 64;
+    for (i = 0; i < tot; i++) {
+      for (;;) {
+        old_val = this->data[i];
+        if (old_val == (unsigned long)-1) break;
+        j = __builtin_ffsl(old_val + 1) - 1;
+        if (cmpxchg(&this->data[i], old_val, old_val | (1UL << j))) return (i << 6) | j;
       }
     }
+    // assert(false);
     return -1;
   }
 
-  int SetFirstFreePos() {
-    int index = FirstFreePos();
-    if (index == -1) {
-      return -1;
-    }
-    assert((uint32_t)index < _bits);
-    int n = index / 64;
-    int off = index % 64;
-    _data[n] |= (1ULL << off);
-    return index;
+  void put_back(int bk) {
+    unsigned long old_val;
+    // assert((this->data[bk >> 6] >> (bk & 63)) & 1);
+    do {
+      old_val = this->data[bk >> 6];
+    } while (UNLIKELY(!cmpxchg(&this->data[bk >> 6], old_val, old_val ^ (1UL << (bk & 63)))));
+    atomic_inc(&this->free_cnt);
   }
 
-  bool Test(int index) const {
-    assert((uint32_t)index < _bits);
-    int n = index / 64;
-    int off = index % 64;
-    return _data[n] & (1ULL << off);
-  }
+  // return the first free position of bitmap, return -1 if full
+  // int FirstFreePos() const {
+  //   for (uint32_t i = 0; i < _n; i++) {
+  //     int ffp = ffsl(~_data[i]) - 1;
+  //     if (ffp != -1) {
+  //       return i * 64 + ffp;
+  //     }
+  //   }
+  //   return -1;
+  // }
 
-  void Clear(int index) {
-    assert((uint32_t)index < _bits);
-    int n = index / 64;
-    int off = index % 64;
-    _data[n] &= ~(1ULL << off);
-  }
+  // int SetFirstFreePos() {
+  //   int index = FirstFreePos();
+  //   if (index == -1) {
+  //     return -1;
+  //   }
+  //   assert((uint32_t)index < _bits);
+  //   int n = index / 64;
+  //   int off = index % 64;
+  //   _data[n] |= (1ULL << off);
+  //   return index;
+  // }
 
-  bool Set(int index) {
-    assert((uint32_t)index < _bits);
-    int n = index / 64;
-    int off = index % 64;
-    if (_data[n] & (1ULL << off)) {
-      return false;
-    }
-    _data[n] |= (1ULL << off);
-    return true;
-  }
+  // bool Test(int index) const {
+  //   assert((uint32_t)index < _bits);
+  //   int n = index / 64;
+  //   int off = index % 64;
+  //   return _data[n] & (1ULL << off);
+  // }
 
-  uint32_t Cap() const { return _bits; }
+  // void Clear(int index) {
+  //   assert((uint32_t)index < _bits);
+  //   int n = index / 64;
+  //   int off = index % 64;
+  //   _data[n] &= ~(1ULL << off);
+  // }
+
+  // bool Set(int index) {
+  //   assert((uint32_t)index < _bits);
+  //   int n = index / 64;
+  //   int off = index % 64;
+  //   if (_data[n] & (1ULL << off)) {
+  //     return false;
+  //   }
+  //   _data[n] |= (1ULL << off);
+  //   return true;
+  // }
+
+  // uint32_t Cap() const { return _bits; }
 
  private:
   friend Bitmap *NewBitmap(uint32_t size);
-  uint32_t _bits;
-  uint32_t _n;
-  uint64_t _data[0];
+  unsigned long cnt, free_cnt, siz;
+  unsigned long data[0];
 };
 
-__always_inline Bitmap *NewBitmap(uint32_t bits) {
-  static_assert(sizeof(uint64_t) == 8, "sizeof(uint64_t) != 8!!!");
-  uint32_t n = (bits + 63) / 64;
-  int tmp = bits % 64;
-  Bitmap *bitmap = reinterpret_cast<Bitmap *>(Arena::getInstance().Alloc(sizeof(Bitmap) + n * sizeof(uint64_t)));
-  bitmap->_bits = bits;
-  bitmap->_n = n;
-  memset((char *)bitmap->_data, 0, n * sizeof(uint64_t));
-  if (tmp != 0) {
-    bitmap->_data[n - 1] |= (MASK[64 - tmp] << tmp);
-  }
+__always_inline Bitmap *NewBitmap(uint32_t cnt) {
+  unsigned long siz;
+  siz = ALIGN_UP(cnt, 64);
+  Bitmap *bitmap =
+      reinterpret_cast<Bitmap *>(Arena::getInstance().Alloc(sizeof(Bitmap) + (siz / 64) * sizeof(unsigned long)));
+  bitmap->cnt = cnt;
+  bitmap->free_cnt = cnt;
+  for (unsigned long i = cnt; i < siz; i++) bitmap->data[i >> 6] |= 1UL << (i & 63);
+  bitmap->siz = siz;
   return bitmap;
 }
 

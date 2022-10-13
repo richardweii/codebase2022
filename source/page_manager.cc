@@ -1,4 +1,5 @@
 #include "page_manager.h"
+#include "util/logging.h"
 
 namespace kv {
 
@@ -67,10 +68,12 @@ void PageManager::Unmount(PageMeta *meta) {
 void PageManager::Mount(PageMeta **list_tail, PageMeta *meta) {
   assert(list_tail != nullptr);
   assert(meta != nullptr);
-  if (meta != *list_tail && meta->_prev == nullptr && meta->_next == nullptr) {
+  if (!meta->IsPined() && meta != *list_tail && meta->_prev == nullptr && meta->_next == nullptr) {
     // LOG_DEBUG("mount page %d", meta->_page_id);
+    LOG_ASSERT(*list_tail != nullptr, "allocating page should not be null");
     (*list_tail)->_next = meta;
     meta->_prev = (*list_tail);
+    LOG_ASSERT(meta->_prev != nullptr, "allocating page should not be null");
     meta->_next = nullptr;
     (*list_tail) = meta;
   }
