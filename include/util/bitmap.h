@@ -19,9 +19,9 @@
 // #define atomic_set_bit(P, V) __sync_or_and_fetch((P), 1 << (V))
 // #define atomic_clear_bit(P, V) __sync_and_and_fetch((P), ~(1 << (V)))
 
-// class ConBitmap NOCOPYABLE {
+// class Bitmap NOCOPYABLE {
 //  public:
-//   ConBitmap() = delete;
+//   Bitmap() = delete;
 
 //   bool Full() const { return free_cnt == 0; }
 
@@ -42,6 +42,8 @@
 //     }
 //     assert(free_cnt >= 0);
 //     assert(false);
+
+//     return -1;
 //   }
 
 //   int con_get_free() {
@@ -75,17 +77,17 @@
 //   }
 
 //  private:
-//   friend ConBitmap *NewBitmap(uint32_t size);
+//   friend Bitmap *NewBitmap(uint32_t size);
 //   unsigned long cnt, siz;
 //   std::atomic<unsigned long> free_cnt;
 //   unsigned long data[0];
 // };
 
-// __always_inline ConBitmap *NewBitmap(uint32_t cnt) {
+// __always_inline Bitmap *NewBitmap(uint32_t cnt) {
 //   unsigned long siz;
 //   siz = ALIGN_UP(cnt, 64);
-//   ConBitmap *bitmap =
-//       reinterpret_cast<ConBitmap *>(Arena::getInstance().Alloc(sizeof(ConBitmap) + (siz / 64) * sizeof(unsigned
+//   Bitmap *bitmap =
+//       reinterpret_cast<Bitmap *>(Arena::getInstance().Alloc(sizeof(Bitmap) + (siz / 64) * sizeof(unsigned
 //       long)));
 //   bitmap->cnt = cnt;
 //   bitmap->free_cnt = cnt;
@@ -94,7 +96,7 @@
 //   return bitmap;
 // }
 
-// __always_inline void DeleteBitmap(ConBitmap *bitmap) { Arena::getInstance().Free(bitmap); }
+// __always_inline void DeleteBitmap(Bitmap *bitmap) { Arena::getInstance().Free(bitmap); }
 // }  // namespace kv
 
 #pragma once
