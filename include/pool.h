@@ -49,7 +49,7 @@ class Pool NOCOPYABLE {
   int readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch);
 
   bool isSmallSlabSize(int slab_size) {
-    return slab_size >= 5 && slab_size <= 16;
+    return slab_size >= 5 && slab_size <= kSmallMax;
   }
 
   void allocingListWLock(uint32_t al_index, int slab_size) {

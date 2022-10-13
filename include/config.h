@@ -54,6 +54,7 @@ constexpr int kPageSize = 1 << kPageSizeBit;
 constexpr int kSlabSizeMin = 5;   // 5 * 16 = 80 Bytes
 constexpr int kSlabSizeMax = 64;  // 64 * 16 = 1024 Bytes
 constexpr int kAllocingListShard = 16;
+constexpr int kSmallMax = 16;
 
 #ifdef TEST_CONFIG
 constexpr size_t kKeyNum = 12 * 16 * 1024;                 // 16 * 12K key

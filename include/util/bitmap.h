@@ -93,7 +93,8 @@ class Bitmap NOCOPYABLE {
 
   bool Empty() const { return free_cnt == cnt; }
 
-  // 这个不需要线程安全
+  bool MostEmpty() const { return free_cnt >= (cnt >> 1); }
+
   int get_free() {
     unsigned long tot, i, ii, j;
     unsigned long old_free_cnt, old_val;
@@ -105,7 +106,7 @@ class Bitmap NOCOPYABLE {
     // for (i = 0; i < tot; i++) {
     //   if (this->data[i] == (unsigned long)-1) continue;
     //   j = __builtin_ffsl(this->data[i] + 1) - 1;
-    //   this->data[i] |= 1UL << j;
+    //   this->data[i] |= (1UL << j);
     //   return (i << 6) | j;
     // }
     // return -1;

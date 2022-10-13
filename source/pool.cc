@@ -25,7 +25,7 @@ void Pool::Init() {
   auto succ = _buffer_pool->Init(_client->Pd());
   LOG_ASSERT(succ, "Init buffer pool failed.");
 
-  for (int i = kSlabSizeMin; i <= 16; i++) {
+  for (int i = kSlabSizeMin; i <= kSmallMax; i++) {
     for (int j = 0; j < kAllocingListShard; j++) {
       PageMeta *page = global_page_manager->AllocNewPage(i);
       _small_allocing_tail[j][i] = page;
@@ -35,7 +35,7 @@ void Pool::Init() {
     }
   }
 
-  for (int i = 17; i <= kSlabSizeMax; i++) {
+  for (int i = kSmallMax + 1; i <= kSlabSizeMax; i++) {
     PageMeta *page = global_page_manager->AllocNewPage(i);
     _big_allocing_tail[i] = page;
     _big_allocing_pages[i] = _buffer_pool->FetchNew(page->PageId(), i);
@@ -138,7 +138,7 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
   allocingListWLock(al_index, meta->SlabClass());
   if (isSmallSlabSize(meta->SlabClass())) {
     global_page_manager->Mount(&_small_allocing_tail[al_index][meta->SlabClass()], meta);
-    if (meta->Empty() && _small_allocing_pages[al_index][meta->SlabClass()]->PageId() != page_id) {
+    if (!meta->IsPined() && meta->Empty()) {
       if (_small_allocing_tail[al_index][meta->SlabClass()]->PageId() == page_id) {
         _small_allocing_tail[al_index][meta->SlabClass()] = meta->Prev();
         LOG_ASSERT(_small_allocing_tail[al_index][meta->SlabClass()] != nullptr, "tail should not be null");
@@ -151,9 +151,10 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
     }
   } else {
     global_page_manager->Mount(&_big_allocing_tail[meta->SlabClass()], meta);
-    if (meta->Empty() && _big_allocing_pages[meta->SlabClass()]->PageId() != page_id) {
+    if (!meta->IsPined() && meta->Empty()) {
       if (_big_allocing_tail[meta->SlabClass()]->PageId() == page_id) {
         _big_allocing_tail[meta->SlabClass()] = meta->Prev();
+        LOG_ASSERT(_big_allocing_tail[meta->SlabClass()] != nullptr, "tail should not be null");
       }
       global_page_manager->Unmount(meta);
       allocingListWUnlock(al_index, meta->SlabClass());
@@ -179,7 +180,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   allocingListWLock(al_index, meta->SlabClass());
   if (LIKELY(isSmallSlabSize(meta->SlabClass()))) {
     global_page_manager->Mount(&_small_allocing_tail[al_index][meta->SlabClass()], meta);
-    if (meta->Empty() && _small_allocing_pages[al_index][meta->SlabClass()]->PageId() != page_id) {
+    if (!meta->IsPined() && meta->Empty()) {
       if (_small_allocing_tail[al_index][meta->SlabClass()]->PageId() == page_id) {
         _small_allocing_tail[al_index][meta->SlabClass()] = meta->Prev();
         LOG_ASSERT(_small_allocing_tail[al_index][meta->SlabClass()] != nullptr, "tail should not be null");
@@ -193,7 +194,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
     }
   } else {
     global_page_manager->Mount(&_big_allocing_tail[meta->SlabClass()], meta);
-    if (meta->Empty() && _big_allocing_pages[meta->SlabClass()]->PageId() != page_id) {
+    if (!meta->IsPined() && meta->Empty()) {
       if (_big_allocing_tail[meta->SlabClass()]->PageId() == page_id) {
         _big_allocing_tail[meta->SlabClass()] = meta->Prev();
         // LOG_DEBUG("[shard %d] set class %d tail page %d", _shard, meta->SlabClass(), meta->Prev()->PageId());
@@ -267,8 +268,6 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
   if (LIKELY(isSmallSlabSize(slab_class))) {
     PageEntry *old_entry = _small_allocing_pages[al_index][slab_class];
     PageMeta *old_meta = global_page_manager->Page(old_entry->PageId());
-    _buffer_pool->UnpinPage(old_entry);
-    old_meta->UnPin();
 
     _small_allocing_pages[al_index][slab_class] = nullptr;
 
@@ -281,6 +280,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
       meta = global_page_manager->AllocNewPage(slab_class);
       entry = _buffer_pool->FetchNew(meta->PageId(), slab_class);
       LOG_ASSERT(meta != nullptr, "no more page.");
+      meta->Pin();
 
       if (entry == nullptr) {
         entry = _buffer_pool->Evict();
@@ -296,20 +296,22 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
           entry->Dirty = false;
           _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
           _buffer_pool->PinPage(entry);
-          meta->Pin();
           _small_allocing_pages[al_index][slab_class] = entry;
           _small_allocing_tail[al_index][slab_class] = meta;
           LOG_ASSERT(_small_allocing_tail[al_index][slab_class] != nullptr, "tail should not be null");
+          LOG_ASSERT(_small_allocing_tail[al_index][slab_class]->Prev() == nullptr, "prev should null");
           *batch_ret = batch;
+          _buffer_pool->UnpinPage(old_entry);
+          old_meta->UnPin();
           // ret = batch->FinishBatch();
           // LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
           return entry;
         }
         _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
       }
-
+      _buffer_pool->UnpinPage(old_entry);
+      old_meta->UnPin();
       _buffer_pool->PinPage(entry);
-      meta->Pin();
       _small_allocing_pages[al_index][slab_class] = entry;
       _small_allocing_tail[al_index][slab_class] = meta;
       LOG_ASSERT(_small_allocing_tail[al_index][slab_class] != nullptr, "tail should not be null");
@@ -318,23 +320,21 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
     // replacement
     LOG_ASSERT(!meta->Full(), "invalid allocing page.");
     global_page_manager->Unmount(old_meta);
+    _buffer_pool->UnpinPage(old_entry);
+    old_meta->UnPin();
     PageId page_id = meta->PageId();
     entry = _buffer_pool->Lookup(page_id, true);
     if (entry == nullptr) {
       entry = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, slab_class, true);
     }
-    _buffer_pool->PinPage(entry);
     meta->Pin();
+    _buffer_pool->PinPage(entry);
     _small_allocing_pages[al_index][slab_class] = entry;
     return entry;
   } else {
     PageEntry *old_entry = _big_allocing_pages[slab_class];
     PageMeta *old_meta = global_page_manager->Page(old_entry->PageId());
-    _buffer_pool->UnpinPage(old_entry);
-    old_meta->UnPin();
-
     _big_allocing_pages[slab_class] = nullptr;
-
     PageMeta *meta = old_meta->Next();
     PageEntry *entry = nullptr;
     if (meta == nullptr) {
@@ -362,6 +362,8 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
           meta->Pin();
           _big_allocing_pages[slab_class] = entry;
           _big_allocing_tail[slab_class] = meta;
+          _buffer_pool->UnpinPage(old_entry);
+          old_meta->UnPin();
           *batch_ret = batch;
           // ret = batch->FinishBatch();
           // LOG_ASSERT(ret == 0, "write page %d to remote failed.", entry->PageId());
@@ -374,11 +376,15 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
       meta->Pin();
       _big_allocing_pages[slab_class] = entry;
       _big_allocing_tail[slab_class] = meta;
+      _buffer_pool->UnpinPage(old_entry);
+      old_meta->UnPin();
       return entry;
     }
     // replacement
-    LOG_ASSERT(!meta->Full(), "invalid allocing page.");  // TODO: 这里也assert了
+    LOG_ASSERT(!meta->Full(), "invalid allocing page.");
     global_page_manager->Unmount(old_meta);
+    _buffer_pool->UnpinPage(old_entry);
+    old_meta->UnPin();
     PageId page_id = meta->PageId();
     entry = _buffer_pool->Lookup(page_id, true);
     if (entry == nullptr) {
@@ -442,15 +448,15 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   int off;
   PageMeta *meta;
   RDMAManager::Batch *batch = nullptr;
-  if (!isSmallSlabSize(slab_class)) {
-    _big_allocing_list_latch[slab_class].WLock();
-  }
-  // allocingListWLock(al_index, slab_class);
+  // if (!isSmallSlabSize(slab_class)) {
+  //   _big_allocing_list_latch[slab_class].WLock();
+  // }
+  allocingListWLock(al_index, slab_class);
   if (LIKELY(isSmallSlabSize(slab_class))) {
-    page = _small_allocing_pages[cur_thread_id][slab_class];
+    page = _small_allocing_pages[al_index][slab_class];
     meta = global_page_manager->Page(page->PageId());
     if (UNLIKELY(meta->Full())) {
-      page = mountNewPage(slab_class, hash, &batch, cur_thread_id);
+      page = mountNewPage(slab_class, hash, &batch, -1);
       meta = global_page_manager->Page(page->PageId());
     }
     // modify bitmap
@@ -469,10 +475,10 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
     batch->FinishBatch();
     delete batch;
   }
-  if (!isSmallSlabSize(slab_class)) {
-    _big_allocing_list_latch[slab_class].WUnlock();
-  }
-  // allocingListWUnlock(al_index, slab_class);
+  // if (!isSmallSlabSize(slab_class)) {
+  //   _big_allocing_list_latch[slab_class].WUnlock();
+  // }
+  allocingListWUnlock(al_index, slab_class);
 
   LOG_ASSERT(off != -1, "set bitmap failed.");
   Addr addr = AddrParser::GenAddrFrom(meta->PageId(), off);

@@ -63,19 +63,23 @@ void PageManager::Unmount(PageMeta *meta) {
   }
   meta->_prev = nullptr;
   meta->_next = nullptr;
+  meta->mounted = false;
 }
 
 void PageManager::Mount(PageMeta **list_tail, PageMeta *meta) {
   assert(list_tail != nullptr);
   assert(meta != nullptr);
-  if (!meta->IsPined() && meta != *list_tail && meta->_prev == nullptr && meta->_next == nullptr) {
+  if (!meta->IsMounted() && !meta->IsPined() && !meta->Full() && !meta->Empty() && meta != *list_tail && meta->_prev == nullptr && meta->_next == nullptr) {
+    meta->mounted = true;
     // LOG_DEBUG("mount page %d", meta->_page_id);
     LOG_ASSERT(*list_tail != nullptr, "allocating page should not be null");
-    (*list_tail)->_next = meta;
     meta->_prev = (*list_tail);
-    LOG_ASSERT(meta->_prev != nullptr, "allocating page should not be null");
     meta->_next = nullptr;
+    (*list_tail)->_next = meta;
     (*list_tail) = meta;
+    LOG_ASSERT(meta->_prev != nullptr, "allocating page should not be null");
+    LOG_ASSERT(!meta->Full(), "meta is not full");
+    // LOG_ASSERT(!meta->IsPined(), "meta is pined");
   }
 }
 
