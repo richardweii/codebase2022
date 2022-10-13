@@ -118,8 +118,6 @@ class FrameHashTable {
     uint32_t index = page_id % _size;
 
     Slot *slot = &_slots[index];
-    _slot_latch[index].RLock();
-    defer { _slot_latch[index].RUnlock(); };
 
     if (slot->_page_id == INVALID_PAGE_ID) {
       return INVALID_FRAME_ID;

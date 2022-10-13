@@ -50,9 +50,6 @@ KeySlot *HashTable::Find(const Slice &key, uint32_t hash) {
   hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
-  // RLock(index);
-  // defer { RUnlock(index); };
-
   int slot_id = _bucket[index];
   KeySlot *slot = nullptr;
   while (slot_id != KeySlot::INVALID_SLOT_ID) {
@@ -73,8 +70,6 @@ KeySlot *HashTable::Insert(const Slice &key, uint32_t hash) {
 
   hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
-  // WLock(index);
-  // defer { WUnlock(index); };
 
   int slot_id = _bucket[index];
   if (slot_id == KeySlot::INVALID_SLOT_ID) {
@@ -107,9 +102,6 @@ KeySlot *HashTable::Remove(const Slice &key, uint32_t hash) {
   hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
-  // WLock(index);
-  // defer { WUnlock(index); };
-
   int slot_id = _bucket[index];
   if (slot_id == KeySlot::INVALID_SLOT_ID) {
     return nullptr;
@@ -121,14 +113,6 @@ KeySlot *HashTable::Remove(const Slice &key, uint32_t hash) {
     _bucket[index] = slot->Next();
     return slot;
   }
-  // if (__int128(*(__int128 *)key.data()) == __int128(*(__int128 *)slot->Key())) {
-  //   _bucket[index] = slot->Next();
-  //   return slot;
-  // }
-  // if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
-  //   _bucket[index] = slot->Next();
-  //   return slot;
-  // }
 
   // find
   int front_slot_id = slot_id;
@@ -139,14 +123,7 @@ KeySlot *HashTable::Remove(const Slice &key, uint32_t hash) {
       _monitor[front_slot_id]->SetNext(slot->Next());
       return slot;
     }
-    // if (__int128(*(__int128 *)key.data()) == __int128(*(__int128 *)slot->Key())) {
-    //   _monitor[front_slot_id]->SetNext(slot->Next());
-    //   return slot;
-    // }
-    // if (memcmp(slot->Key(), key.data(), kKeyLength) == 0) {
-    //   _monitor[front_slot_id]->SetNext(slot->Next());
-    //   return slot;
-    // }
+
     front_slot_id = cur_slot_id;
     cur_slot_id = slot->Next();
   }
