@@ -93,8 +93,6 @@ class Bitmap NOCOPYABLE {
 
   bool Empty() const { return free_cnt == cnt; }
 
-  bool MostEmpty() const { return free_cnt >= (cnt >> 1); }
-
   int get_free() {
     unsigned long tot, i, ii, j;
     unsigned long old_free_cnt, old_val;

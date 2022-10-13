@@ -124,19 +124,10 @@ class HashTable {
 
   SlotMonitor *GetSlotMonitor() { return &_monitor; }
 
-  void RLock(uint32_t index) { _seg_latch[index % kSegLatchMask].RLock(); }
-
-  void RUnlock(uint32_t index) { _seg_latch[index % kSegLatchMask].RUnlock(); }
-
-  void WLock(uint32_t index) { _seg_latch[index % kSegLatchMask].WLock(); }
-
-  void WUnlock(uint32_t index) { _seg_latch[index % kSegLatchMask].WUnlock(); }
-
  private:
   SlotMonitor _monitor;
   int *_bucket = nullptr;
   size_t _size = 0;
-  SpinLatch _seg_latch[(kKeyNum / kPoolShardingNum) >> kSegLatchOff];
 };
 
 }  // namespace kv
