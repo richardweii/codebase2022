@@ -442,15 +442,15 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   int off;
   PageMeta *meta;
   RDMAManager::Batch *batch = nullptr;
-  // if (!isSmallSlabSize(slab_class)) {
-  //   _big_allocing_list_latch[slab_class].WLock();
-  // }
-  allocingListWLock(al_index, slab_class);
+  if (!isSmallSlabSize(slab_class)) {
+    _big_allocing_list_latch[slab_class].WLock();
+  }
+  // allocingListWLock(al_index, slab_class);
   if (LIKELY(isSmallSlabSize(slab_class))) {
-    page = _small_allocing_pages[al_index][slab_class];
+    page = _small_allocing_pages[cur_thread_id][slab_class];
     meta = global_page_manager->Page(page->PageId());
     if (UNLIKELY(meta->Full())) {
-      page = mountNewPage(slab_class, hash, &batch, -1);
+      page = mountNewPage(slab_class, hash, &batch, cur_thread_id);
       meta = global_page_manager->Page(page->PageId());
     }
     // modify bitmap
@@ -469,10 +469,10 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
     batch->FinishBatch();
     delete batch;
   }
-  // if (!isSmallSlabSize(slab_class)) {
-  //   _big_allocing_list_latch[slab_class].WUnlock();
-  // }
-  allocingListWUnlock(al_index, slab_class);
+  if (!isSmallSlabSize(slab_class)) {
+    _big_allocing_list_latch[slab_class].WUnlock();
+  }
+  // allocingListWUnlock(al_index, slab_class);
 
   LOG_ASSERT(off != -1, "set bitmap failed.");
   Addr addr = AddrParser::GenAddrFrom(meta->PageId(), off);

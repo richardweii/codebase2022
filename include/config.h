@@ -35,7 +35,7 @@ constexpr int kPoolHashSeed = 0x89ea7d2f;
 constexpr int kPoolShardingBits = 1;  // for test
 
 #else
-constexpr int kPoolShardingBits = 4;
+constexpr int kPoolShardingBits = 6;
 constexpr int kPoolShardingMask = (1 << kPoolShardingBits) - 1;
 #endif
 constexpr int kPoolShardingNum = 1 << kPoolShardingBits;  // sharding num
