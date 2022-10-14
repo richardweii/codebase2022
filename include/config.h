@@ -46,16 +46,16 @@ constexpr int kSlabSize = 16;
 #ifdef TEST_CONFIG
 constexpr int kPageSizeBit = 10;  // 1KB
 #else
-constexpr int kPageSizeBit = 19;  // 20: 1MB
+constexpr int kPageSizeBit = 18;  // 20: 1MB
 #endif
 
 constexpr int kPageSize = 1 << kPageSizeBit;
 
 constexpr int kSlabSizeMin = 5;   // 5 * 16 = 80 Bytes
 constexpr int kSlabSizeMax = 64;  // 64 * 16 = 1024 Bytes
-constexpr int kAllocingListShard = 128;
+constexpr int kAllocingListShard = 256;
 constexpr int kAllocingListShardMask = kAllocingListShard-1;
-constexpr int kBigAllocingListShard = 32;
+constexpr int kBigAllocingListShard = 64;
 constexpr int kBigAllocingListShardMask = kBigAllocingListShard-1;
 constexpr int kSmallMax = 16;
 

@@ -226,9 +226,9 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
   return (char *)ciph;
 }
 
-std::atomic<int> count1 = 0;
-std::atomic<int> count2 = 0;
-std::atomic<int> count3 = 0;
+std::atomic<int> count1 = 1000;
+std::atomic<int> count2 = 1000;
+std::atomic<int> count3 = 1000;
 /**
  * @description: put a key-value pair to engine
  * @param {string} key

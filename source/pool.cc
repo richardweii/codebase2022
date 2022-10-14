@@ -135,9 +135,9 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
 
   int al_index;
   if (LIKELY(isSmallSlabSize(meta->SlabClass()))) {
-    al_index = (hash >> 21) & kAllocingListShardMask;
+    al_index = (hash >> 20) & kAllocingListShardMask;
   } else {
-    al_index = (hash >> 24) & kBigAllocingListShardMask;
+    al_index = (hash >> 23) & kBigAllocingListShardMask;
   }
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -182,9 +182,9 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
 
   int al_index;
   if (LIKELY(isSmallSlabSize(meta->SlabClass()))) {
-    al_index = (hash >> 21) & kAllocingListShardMask;
+    al_index = (hash >> 20) & kAllocingListShardMask;
   } else {
-    al_index = (hash >> 24) & kBigAllocingListShardMask;
+    al_index = (hash >> 23) & kBigAllocingListShardMask;
   }
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -219,9 +219,9 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   RDMAManager::Batch *batch = nullptr;
   int off;
   if (LIKELY(isSmallSlabSize(slab_class))) {
-    al_index = (hash >> 21) & kAllocingListShardMask;
+    al_index = (hash >> 20) & kAllocingListShardMask;
   } else {
-    al_index = (hash >> 24) & kBigAllocingListShardMask;
+    al_index = (hash >> 23) & kBigAllocingListShardMask;
   }
   allocingListWLock(al_index, slab_class);
   if (LIKELY(isSmallSlabSize(slab_class))) {
@@ -265,9 +265,9 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
 PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch **batch_ret, int tid) {
   int al_index;
   if (LIKELY(isSmallSlabSize(slab_class))) {
-    al_index = (hash >> 21) & kAllocingListShardMask;
+    al_index = (hash >> 20) & kAllocingListShardMask;
   } else {
-    al_index = (hash >> 24) & kBigAllocingListShardMask;
+    al_index = (hash >> 23) & kBigAllocingListShardMask;
   }
 
   bool isSmall = isSmallSlabSize(slab_class);
@@ -426,9 +426,9 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
 
   int al_index;
   if (LIKELY(isSmallSlabSize(slab_class))) {
-    al_index = (hash >> 21) & kAllocingListShardMask;
+    al_index = (hash >> 20) & kAllocingListShardMask;
   } else {
-    al_index = (hash >> 24) & kBigAllocingListShardMask;
+    al_index = (hash >> 23) & kBigAllocingListShardMask;
   }
   PageEntry *page;
   int off;
