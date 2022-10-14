@@ -37,15 +37,16 @@ inline TestKey *genKey(int num) {
   TestKey *keys = new TestKey[num];
 
   int a[4];
-  for (int i = 0; i < num; i++) {
-    if (i % 10000000 == 0) {
-      LOG_INFO("finish i %d", i);
+  int start = 0x01010101;
+  for (int i = start; i < start + num; i++) {
+    if ((i-start) % 10000000 == 0) {
+      LOG_INFO("finish i %d", i-start);
     }
-    a[0] = 0x12341234;
+    a[0] = 0x01010101;
     a[1] = i;
-    a[2] = 0x45674567;
+    a[2] = 0;
     a[3] = 0;
-    memcpy(keys[i].key, a, 16);
+    memcpy(keys[i-start].key, a, 16);
   }
   return keys;
 }
