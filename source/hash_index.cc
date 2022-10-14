@@ -39,7 +39,7 @@ HashTable::HashTable(size_t size) {
     logn++;
   }
   _size = PrimeList[logn];
-  LOG_INFO("hash index size is %lu", _size);
+  // LOG_INFO("hash index size is %lu", _size);
   _bucket = new int[_size];
 
   // init bucket

@@ -196,7 +196,7 @@ bool LocalEngine::encrypt(const std::string value, std::string &encrypt_value) {
   /* 6. Remove secret and release resources */
   ippsAESInit(0, _aes.key_len, m_pAES, m_ctxsize);
 
-  if (m_pAES) delete[](Ipp8u *) m_pAES;
+  if (m_pAES) delete[] (Ipp8u *)m_pAES;
   m_pAES = nullptr;
   std::string tmp(reinterpret_cast<const char *>(m_encrypt_val), value.size());
   encrypt_value = tmp;
@@ -226,6 +226,7 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
   return (char *)ciph;
 }
 
+std::atomic<int> count = 0;
 /**
  * @description: put a key-value pair to engine
  * @param {string} key
@@ -238,6 +239,12 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
     cur_thread_id %= kThreadNum;
     bind_core(cur_thread_id);
   }
+  if (count < 1000) {
+    LOG_INFO("[%d] encryption %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())), *((uint32_t *)(key.data() + 4)),
+             *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
+    count++;
+  }
+
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
