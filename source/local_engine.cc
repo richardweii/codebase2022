@@ -241,11 +241,11 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
     cur_thread_id %= kThreadNum;
     bind_core(cur_thread_id);
   }
-  if (count1 < 1000) {
-    LOG_INFO("write [%d] encryption %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
-             *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
-    count1++;
-  }
+  // if (count1 < 1000) {
+  //   LOG_INFO("write [%d] encryption %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
+  //            *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
+  //   count1++;
+  // }
 
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
@@ -288,11 +288,11 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
     cur_thread_id %= kThreadNum;
     bind_core(cur_thread_id);
   }
-  if (count2 < 1000) {
-    LOG_INFO("read [%d] encryption %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
-             *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
-    count2++;
-  }
+  // if (count2 < 1000) {
+  //   LOG_INFO("read [%d] encryption %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
+  //            *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
+  //   count2++;
+  // }
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
@@ -320,11 +320,11 @@ bool LocalEngine::deleteK(const std::string &key) {
     cur_thread_id %= kThreadNum;
     bind_core(cur_thread_id);
   }
-  if (count3 < 1000) {
-    LOG_INFO("delete [%d] encryption %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
-             *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
-    count3++;
-  }
+  // if (count3 < 1000) {
+  //   LOG_INFO("delete [%d] encryption %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
+  //            *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
+  //   count3++;
+  // }
 #ifdef STAT
   stat::delete_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::delete_times.load(std::memory_order_relaxed) % 1000000 == 0) {
