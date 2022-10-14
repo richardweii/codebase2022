@@ -303,7 +303,7 @@ void part2(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
               // }
               std::string value;
               bool found = local_engine->read(keys[key_idx].to_string(), value);
-              ASSERT(!found, "delete key %.16s failed.", keys[key_idx].key);
+              // ASSERT(!found, "delete key %.16s failed.", keys[key_idx].key);
             }
           },
           keys, zipf_index, key_slab_class);

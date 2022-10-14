@@ -28,12 +28,12 @@ class PageMeta {
 
   int SetFirstFreePos() {
     _used++;
-    return _bitmap->SetFirstFreePos();
+    return _bitmap->SetFirstFreePos(_bitmap_bitmap);
   }
 
   void ClearPos(int idx) {
     _used--;
-    _bitmap->Clear(idx);
+    _bitmap->Clear(idx, _bitmap_bitmap);
   }
 
   bool Full() const { return (_used == _cap); }
@@ -64,13 +64,16 @@ class PageMeta {
  private:
   void reset(Bitmap *bitmap) {
     DeleteBitmap(_bitmap);
+    DeleteBitmap(_bitmap_bitmap);
     _bitmap = bitmap;
+    _bitmap_bitmap = NewBitmap(bitmap->Size());
     _used = 0;
     _cap = bitmap->Cap();
     _next = nullptr;
     _prev = nullptr;
   }
   Bitmap *_bitmap = nullptr;
+  Bitmap *_bitmap_bitmap = nullptr;
   PageMeta *_next = nullptr;
   PageMeta *_prev = nullptr;
   uint32_t _page_id;

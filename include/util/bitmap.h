@@ -201,14 +201,21 @@ class Bitmap NOCOPYABLE {
     return -1;
   }
 
-  int SetFirstFreePos() {
-    for (uint32_t i = 0; i < _n; i++) {
-      if (_data[i] == UINT64_MAX) continue;
-      uint64_t ffp = __builtin_ffsl(_data[i] + 1) - 1;
-      _data[i] |= (1UL << ffp);
-      return (i << 6) + ffp;
-    }
-    return -1;
+  int SetFirstFreePos(Bitmap *index_bitmap) {
+    int idx = index_bitmap->FirstFreePos();
+    if (idx == -1) return -1;
+    uint64_t ffp = __builtin_ffsl(_data[idx] + 1) - 1;
+    _data[idx] |= (1UL << ffp);
+    if (_data[idx] == UINT64_MAX) index_bitmap->Set(idx);
+    return (idx << 6) + ffp;
+
+    // for (uint32_t i = 0; i < _n; i++) {
+    //   if (_data[i] == UINT64_MAX) continue;
+    //   uint64_t ffp = __builtin_ffsl(_data[i] + 1) - 1;
+    //   _data[i] |= (1UL << ffp);
+    //   return (i << 6) + ffp;
+    // }
+    // return -1;
     // int index = FirstFreePos();
     // if (index == -1) {
     //   return -1;
@@ -227,7 +234,15 @@ class Bitmap NOCOPYABLE {
     return _data[n] & (1ULL << off);
   }
 
-  void Clear(int index) {
+  void Clear(int index, Bitmap *index_bitmap) {
+    assert((uint32_t)index < _bits);
+    int n = index / 64;
+    int off = index % 64;
+    _data[n] &= ~(1ULL << off);
+    index_bitmap->IndexClear(n);
+  }
+
+  void IndexClear(int index) {
     assert((uint32_t)index < _bits);
     int n = index / 64;
     int off = index % 64;
@@ -246,6 +261,10 @@ class Bitmap NOCOPYABLE {
   }
 
   uint32_t Cap() const { return _bits; }
+
+  uint32_t Size() const { return _n; }
+
+  uint64_t DataAt(int idx) const { return _data[idx]; }
 
  private:
   friend Bitmap *NewBitmap(uint32_t size);
