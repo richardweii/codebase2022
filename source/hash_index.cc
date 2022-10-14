@@ -1,4 +1,5 @@
 #include "hash_index.h"
+#include "util/logging.h"
 #include "util/memcmp.h"
 namespace kv {
 SlotMonitor::SlotMonitor() {
@@ -38,6 +39,7 @@ HashTable::HashTable(size_t size) {
     logn++;
   }
   _size = PrimeList[logn];
+  LOG_INFO("hash index size is %lu", _size);
   _bucket = new int[_size];
 
   // init bucket
@@ -47,7 +49,7 @@ HashTable::HashTable(size_t size) {
 };
 
 KeySlot *HashTable::Find(const Slice &key, uint32_t hash) {
-  hash >>= kPoolShardingBits;
+  // hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
   int slot_id = _bucket[index];
@@ -68,7 +70,7 @@ KeySlot *HashTable::Insert(const Slice &key, uint32_t hash) {
   int new_slot_id = _monitor.GetNewSlot(&new_slot);
   assert(new_slot);
 
-  hash >>= kPoolShardingBits;
+  // hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
   int slot_id = _bucket[index];
@@ -99,7 +101,7 @@ KeySlot *HashTable::Insert(const Slice &key, uint32_t hash) {
 }
 
 KeySlot *HashTable::Remove(const Slice &key, uint32_t hash) {
-  hash >>= kPoolShardingBits;
+  // hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
   int slot_id = _bucket[index];

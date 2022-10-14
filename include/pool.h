@@ -56,7 +56,7 @@ class Pool NOCOPYABLE {
     if (isSmallSlabSize(slab_size)) {
       _small_allocing_list_latch[al_index][slab_size].WLock();
     } else {
-      _big_allocing_list_latch[slab_size].WLock();
+      _big_allocing_list_latch[al_index][slab_size].WLock();
     }
   }
 
@@ -64,7 +64,7 @@ class Pool NOCOPYABLE {
     if (isSmallSlabSize(slab_size)) {
       _small_allocing_list_latch[al_index][slab_size].WUnlock();
     } else {
-      _big_allocing_list_latch[slab_size].WUnlock();
+      _big_allocing_list_latch[al_index][slab_size].WUnlock();
     }
   }
 
@@ -77,11 +77,11 @@ class Pool NOCOPYABLE {
   PageEntry *_small_allocing_pages[kAllocingListShard][kSlabSizeMax + 1];
   PageMeta *_small_allocing_tail[kAllocingListShard][kSlabSizeMax + 1];
   // big page存储 slab size 为16 ~ 64 的
-  PageEntry *_big_allocing_pages[kSlabSizeMax + 1];
-  PageMeta *_big_allocing_tail[kSlabSizeMax + 1];
+  PageEntry *_big_allocing_pages[kBigAllocingListShard][kSlabSizeMax + 1];
+  PageMeta *_big_allocing_tail[kBigAllocingListShard][kSlabSizeMax + 1];
   // allocing list latch
   SpinLatch _small_allocing_list_latch[kAllocingListShard][kSlabSizeMax + 1];
-  SpinLatch _big_allocing_list_latch[kSlabSizeMax + 1];
+  SpinLatch _big_allocing_list_latch[kBigAllocingListShard][kSlabSizeMax + 1];
 
   std::vector<MemoryAccess> *_access_table = nullptr;
 

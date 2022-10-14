@@ -244,10 +244,10 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   //   LOG_INFO("write %lu", stat::write_times.load(std::memory_order_relaxed));
   // }
 #endif
-  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
+  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
 
-  if (use_aes) {
+  if (UNLIKELY(use_aes)) {
 // LOG_INFO("encryption %08lx, %08lx ", *((uint64_t*)(key.data())), *((uint64_t*)(key.data() + 8)));
 #ifdef STAT
 // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 1)
@@ -285,7 +285,7 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
   //   LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
   // }
 #endif
-  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
+  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   bool succ = _pool[index]->Read(Slice(key), hash, value);
   // #ifdef STAT
@@ -312,7 +312,7 @@ bool LocalEngine::deleteK(const std::string &key) {
   //   LOG_INFO("delete %lu", stat::delete_times.load(std::memory_order_relaxed));
   // }
 #endif
-  uint32_t hash = fuck_hash(key.c_str(), key.size(), kPoolHashSeed);
+  uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   return _pool[index]->Delete(Slice(key), hash);
 }

@@ -35,7 +35,7 @@ constexpr int kPoolHashSeed = 0x89ea7d2f;
 constexpr int kPoolShardingBits = 1;  // for test
 
 #else
-constexpr int kPoolShardingBits = 2;
+constexpr int kPoolShardingBits = 0;
 constexpr int kPoolShardingMask = (1 << kPoolShardingBits) - 1;
 #endif
 constexpr int kPoolShardingNum = 1 << kPoolShardingBits;  // sharding num
@@ -46,14 +46,17 @@ constexpr int kSlabSize = 16;
 #ifdef TEST_CONFIG
 constexpr int kPageSizeBit = 10;  // 1KB
 #else
-constexpr int kPageSizeBit = 20;  // 20: 1MB
+constexpr int kPageSizeBit = 21;  // 20: 1MB
 #endif
 
 constexpr int kPageSize = 1 << kPageSizeBit;
 
 constexpr int kSlabSizeMin = 5;   // 5 * 16 = 80 Bytes
 constexpr int kSlabSizeMax = 64;  // 64 * 16 = 1024 Bytes
-constexpr int kAllocingListShard = 16;
+constexpr int kAllocingListShard = 32;
+constexpr int kAllocingListShardMask = kAllocingListShard-1;
+constexpr int kBigAllocingListShard = 16;
+constexpr int kBigAllocingListShardMask = kBigAllocingListShard-1;
 constexpr int kSmallMax = 16;
 
 #ifdef TEST_CONFIG

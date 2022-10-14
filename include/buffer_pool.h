@@ -2,6 +2,7 @@
 
 #include <infiniband/verbs.h>
 #include <cstddef>
+#include <cstdint>
 #include <list>
 #include <vector>
 #include "config.h"
@@ -23,6 +24,7 @@ class PageEntry {
  public:
   bool Dirty = false;
   kv::PageId PageId() const { return _page_id; }
+  uint8_t MRID() const { return mr_id; }
   char *Data() { return _data->data; }
   uint8_t SlabClass() const { return _slab_class; }
 
@@ -52,6 +54,7 @@ class PageEntry {
   uint8_t _slab_class = 0;
   FrameId _frame_id = INVALID_FRAME_ID;
   bool _writer = false;
+  uint8_t mr_id;
   SpinLatch _latch;
   // TODO: maybe need a latch
 };
@@ -79,14 +82,15 @@ class BufferPool {
   void PinPage(PageEntry *entry);
   void UnpinPage(PageEntry *entry);
 
-  ibv_mr *MR() const { return _mr; }
+  // ibv_mr *MR() const { return _mr; }
+  ibv_mr *MR(int id) const { return _mr[id]; }
 
  private:
   std::atomic_int pin{0};
   PageData *_pages;
   PageEntry *_entries;
 
-  ibv_mr *_mr = nullptr;
+  ibv_mr *_mr[4];
   ClockReplacer *_replacer;
   FrameHashTable *_hash_table;
   size_t _buffer_pool_size;
