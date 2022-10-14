@@ -28,24 +28,12 @@ class PageEntry {
   char *Data() { return _data->data; }
   uint8_t SlabClass() const { return _slab_class; }
 
-  bool TryRLock() { return _latch.TryRLock(); }
-  void RLock() { _latch.RLock(); }
-  void RUnlock() { _latch.RUnlock(); }
+  void SetComSize(size_t sz) {
+    com_sz = sz;
+  }
 
-  bool TryWLock() {
-    if (_latch.TryWLock()) {
-      _writer = true;
-      return true;
-    }
-    return false;
-  }
-  void WLock() {
-    _latch.WLock();
-    _writer = true;
-  }
-  void WUnlock() {
-    _writer = false;
-    _latch.WUnlock();
+  size_t GetComSize() const {
+    return com_sz;
   }
 
  private:
@@ -55,8 +43,7 @@ class PageEntry {
   FrameId _frame_id = INVALID_FRAME_ID;
   bool _writer = false;
   uint8_t mr_id;
-  SpinLatch _latch;
-  // TODO: maybe need a latch
+  size_t com_sz;
 };
 
 class BufferPool {
@@ -83,18 +70,23 @@ class BufferPool {
   void UnpinPage(PageEntry *entry);
 
   // ibv_mr *MR() const { return _mr; }
-  ibv_mr *MR(int id) const { return _mr[id]; }
+  // ibv_mr *MR(int id) const { return _mr[id]; }
+
+  ibv_mr *CompressMR() const { return compress_page_buff_mr; }
+  PageData compress_page_buff[kThreadNum];
 
  private:
   std::atomic_int pin{0};
   PageData *_pages;
   PageEntry *_entries;
 
-  ibv_mr *_mr[4];
+  // ibv_mr *_mr[4];
   ClockReplacer *_replacer;
   FrameHashTable *_hash_table;
   size_t _buffer_pool_size;
   uint8_t _shard;
   SpinLatch _latch;
+  // for compress
+  ibv_mr *compress_page_buff_mr;
 };
 }  // namespace kv

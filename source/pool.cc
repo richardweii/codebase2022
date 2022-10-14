@@ -4,6 +4,7 @@
 #include "stat.h"
 #include "util/likely.h"
 #include "util/logging.h"
+#include "util/lz4.h"
 #include "util/memcpy.h"
 
 namespace kv {
@@ -135,9 +136,9 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
 
   int al_index;
   if (LIKELY(isSmallSlabSize(meta->SlabClass()))) {
-    al_index = (hash >> 20) & kAllocingListShardMask;
+    al_index = (hash >> kAllocingListSmallShift) & kAllocingListShardMask;
   } else {
-    al_index = (hash >> 23) & kBigAllocingListShardMask;
+    al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
   }
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -182,9 +183,9 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
 
   int al_index;
   if (LIKELY(isSmallSlabSize(meta->SlabClass()))) {
-    al_index = (hash >> 20) & kAllocingListShardMask;
+    al_index = (hash >> kAllocingListSmallShift) & kAllocingListShardMask;
   } else {
-    al_index = (hash >> 23) & kBigAllocingListShardMask;
+    al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
   }
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -219,9 +220,9 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   RDMAManager::Batch *batch = nullptr;
   int off;
   if (LIKELY(isSmallSlabSize(slab_class))) {
-    al_index = (hash >> 20) & kAllocingListShardMask;
+    al_index = (hash >> kAllocingListSmallShift) & kAllocingListShardMask;
   } else {
-    al_index = (hash >> 23) & kBigAllocingListShardMask;
+    al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
   }
   allocingListWLock(al_index, slab_class);
   if (LIKELY(isSmallSlabSize(slab_class))) {
@@ -265,9 +266,9 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
 PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch **batch_ret, int tid) {
   int al_index;
   if (LIKELY(isSmallSlabSize(slab_class))) {
-    al_index = (hash >> 20) & kAllocingListShardMask;
+    al_index = (hash >> kAllocingListSmallShift) & kAllocingListShardMask;
   } else {
-    al_index = (hash >> 23) & kBigAllocingListShardMask;
+    al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
   }
 
   bool isSmall = isSmallSlabSize(slab_class);
@@ -426,9 +427,9 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
 
   int al_index;
   if (LIKELY(isSmallSlabSize(slab_class))) {
-    al_index = (hash >> 20) & kAllocingListShardMask;
+    al_index = (hash >> kAllocingListSmallShift) & kAllocingListShardMask;
   } else {
-    al_index = (hash >> 23) & kBigAllocingListShardMask;
+    al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
   }
   PageEntry *page;
   int off;
@@ -477,16 +478,27 @@ int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
   LOG_DEBUG("write to block %d off %d", block, block_off);
   const MemoryAccess &access = _access_table->at(block);
-  return batch->RemoteWrite(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize, access.addr + kPageSize * block_off,
-                            access.rkey);
+  // 先压缩
+  size_t com_size =
+      LZ4_compress_fast(entry->Data(), _buffer_pool->compress_page_buff[cur_thread_id].data, kPageSize, kPageSize, 3000);
+  entry->SetComSize(com_size);
+  // static bool f = false;
+  // if (!f) LOG_INFO("ratio %f", (kPageSize*1.0)/com_size);
+  // f = true;
+  return batch->RemoteWrite(_buffer_pool->compress_page_buff[cur_thread_id].data, _buffer_pool->CompressMR()->lkey,
+                            kPageSize, access.addr + kPageSize * block_off, access.rkey);
 }
 
 int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch) {
   uint32_t block = AddrParser::GetBlockFromPageId(page_id);
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(page_id);
   const MemoryAccess &access = _access_table->at(block);
-  return batch->RemoteRead(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize, access.addr + kPageSize * block_off,
-                           access.rkey);
+  // 读取到的是压缩后的数据
+  batch->RemoteRead(_buffer_pool->compress_page_buff[cur_thread_id].data, _buffer_pool->CompressMR()->lkey, kPageSize,
+                           access.addr + kPageSize * block_off, access.rkey);
+  // 解压缩
+  LZ4_decompress_safe(_buffer_pool->compress_page_buff[cur_thread_id].data, entry->Data(), entry->GetComSize(), kPageSize);
+  return 0;
 }
 
 }  // namespace kv
