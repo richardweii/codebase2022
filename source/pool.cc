@@ -488,11 +488,11 @@ int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {
   if (LIKELY(open_compress)) {
     // 先压缩
     size_t com_size = LZ4_compress_fast(entry->Data(), _buffer_pool->compress_page_buff[cur_thread_id].data, kPageSize,
-                                        kPageSize, 6);
+                                        kPageSize, 1);
     _buffer_pool->pg_com_szs[entry->PageId()] = com_size;
 
     if (count7 < 100) {
-      LOG_INFO("compress ratio %f", (kPageSize * 1.0) / com_size);
+      LOG_INFO("compress ratio %f, com_size %zu", (kPageSize * 1.0) / com_size, com_size);
       count7++;
     }
 
