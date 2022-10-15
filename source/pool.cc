@@ -135,17 +135,10 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = global_page_manager->Page(page_id);
 
-  int al_index;
-  if (LIKELY(isSmallSlabSize(meta->SlabClass()))) {
-    al_index = (hash >> kAllocingListSmallShift) & kAllocingListShardMask;
-  } else {
-    al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
-  }
-  al_index = meta->al_index;
-  if (al_index == -1) {
-    al_index = cur_thread_id;
+  if (meta->al_index == -1) {
     meta->al_index = cur_thread_id;
   }
+  int al_index = meta->al_index;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -157,10 +150,7 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
         LOG_ASSERT(_small_allocing_tail[al_index][meta->SlabClass()] != nullptr, "tail should not be null");
       }
       global_page_manager->Unmount(meta);
-      allocingListWUnlock(al_index, meta->SlabClass());
       global_page_manager->FreePage(page_id);
-    } else {
-      allocingListWUnlock(al_index, meta->SlabClass());
     }
   } else {
     global_page_manager->Mount(&_big_allocing_tail[al_index][meta->SlabClass()], meta);
@@ -170,12 +160,10 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
         LOG_ASSERT(_big_allocing_tail[al_index][meta->SlabClass()] != nullptr, "tail should not be null");
       }
       global_page_manager->Unmount(meta);
-      allocingListWUnlock(al_index, meta->SlabClass());
       global_page_manager->FreePage(page_id);
-    } else {
-      allocingListWUnlock(al_index, meta->SlabClass());
     }
   }
+  allocingListWUnlock(al_index, meta->SlabClass());
 
   _hash_index->GetSlotMonitor()->FreeSlot(slot);
   return true;
@@ -188,13 +176,10 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   PageMeta *meta = global_page_manager->Page(page_id);
   assert(meta->SlabClass() != val.size() / kSlabSize);
 
-  int al_index;
-  if (LIKELY(isSmallSlabSize(meta->SlabClass()))) {
-    al_index = (hash >> kAllocingListSmallShift) & kAllocingListShardMask;
-  } else {
-    al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
+  if (meta->al_index == -1) {
+    meta->al_index = cur_thread_id;
   }
-  al_index = meta->al_index;
+  int al_index = meta->al_index;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -228,11 +213,6 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   PageEntry *page;
   RDMAManager::Batch *batch = nullptr;
   int off;
-  if (LIKELY(isSmallSlabSize(slab_class))) {
-    al_index = (hash >> kAllocingListSmallShift) & kAllocingListShardMask;
-  } else {
-    al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
-  }
   al_index = meta->al_index;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
 
@@ -443,13 +423,7 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   // write value
   uint8_t slab_class = val.size() / kSlabSize;
 
-  int al_index;
-  if (LIKELY(isSmallSlabSize(slab_class))) {
-    al_index = (hash >> kAllocingListSmallShift) & kAllocingListShardMask;
-  } else {
-    al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
-  }
-  al_index = cur_thread_id;
+  int al_index = cur_thread_id;
   PageEntry *page;
   int off;
   PageMeta *meta;

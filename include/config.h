@@ -73,7 +73,7 @@ constexpr size_t kMaxBlockSize = (size_t)1 * 1024 * 1024;  // 1MB mr
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                   // 16 * 12M key
 constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remote pool
 constexpr size_t kBufferPoolSize = (size_t)4 * 1024 * 1024 * 1024;  // 2GB cache
-constexpr size_t kMaxBlockSize = (size_t)1 * 1024 * 1024 * 1024;    // 1GB mr
+constexpr size_t kMaxBlockSize = (size_t)1 * 128 * 1024 * 1024;    // 1GB mr
 #endif
 
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
@@ -93,7 +93,7 @@ constexpr int kThreadNum = 1;
 
 // 2^PGAE_BIT = 32GB / kPageSize
 // SHIFT = log(kMrBlockNum)
-constexpr int kShift = 5;
+constexpr int kShift = 8;
 constexpr uint32_t PAGE_BIT = 35 - kPageSizeBit;
 constexpr uint32_t PAGE_MASK = (1 << PAGE_BIT) - 1;
 constexpr uint32_t PAGE_OFF_MASK = (1 << (PAGE_BIT - kShift)) - 1;
@@ -102,11 +102,9 @@ constexpr uint32_t OFF_MASK = (1 << OFF_BIT) - 1;
 constexpr int kThreadNum = 16;
 
 #endif
-constexpr int MAX_BLOCK_NUM = 32;
-constexpr int MAX_SLOT_NUM = 1 * 1024 * 1024;
-constexpr int kCoreNum = 16;
 
 class AddrParser {
+  static_assert(kPageSizeBit - 6 < OFF_BIT);
  public:
   static kv::PageId PageId(Addr addr) { return (addr >> OFF_BIT) & PAGE_MASK; }
   static uint32_t Off(Addr addr) { return addr & OFF_MASK; }
@@ -115,7 +113,7 @@ class AddrParser {
     assert(off < OFF_MASK);
     return (id << OFF_BIT) | off;
   }
-  static uint32_t GetBlockFromPageId(kv::PageId page_id) { return page_id >> (PAGE_BIT - 5); }
+  static uint32_t GetBlockFromPageId(kv::PageId page_id) { return page_id >> (PAGE_BIT - kShift); }
   static uint32_t GetBlockOffFromPageId(kv::PageId page_id) { return page_id & PAGE_OFF_MASK; }
 };
 
