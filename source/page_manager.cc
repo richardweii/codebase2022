@@ -47,6 +47,8 @@ void PageManager::FreePage(uint32_t page_id) {
   PageMeta *meta = &_pages[page_id];
   meta->_prev = nullptr;
   meta->_next = _free_list;
+  meta->mounted = false;
+  meta->pin_ = false;
   _free_list = meta;
 }
 
@@ -69,7 +71,7 @@ void PageManager::Unmount(PageMeta *meta) {
 void PageManager::Mount(PageMeta **list_tail, PageMeta *meta) {
   assert(list_tail != nullptr);
   assert(meta != nullptr);
-  if (!meta->IsMounted() && !meta->IsPined() && !meta->Full() && !meta->Empty() && meta != *list_tail && meta->_prev == nullptr && meta->_next == nullptr) {
+  if (!meta->IsMounted() && !meta->IsPined() && !meta->Full() && meta != *list_tail && meta->_prev == nullptr && meta->_next == nullptr) {
     meta->mounted = true;
     // LOG_DEBUG("mount page %d", meta->_page_id);
     LOG_ASSERT(*list_tail != nullptr, "allocating page should not be null");

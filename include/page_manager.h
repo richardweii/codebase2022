@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <list>
 #include "config.h"
 #include "util/arena.h"
@@ -60,6 +61,7 @@ class PageMeta {
     pin_ = false;
     mounted = false;
   }
+  int8_t al_index = -1;
 
  private:
   void reset(Bitmap *bitmap) {
@@ -72,16 +74,16 @@ class PageMeta {
     _next = nullptr;
     _prev = nullptr;
   }
+  std::atomic<bool> mounted;
+  bool pin_;
+  uint8_t _slab_class;
+  uint16_t _cap = 0;
+  uint16_t _used = 0;
+  uint32_t _page_id;
   Bitmap *_bitmap = nullptr;
   Bitmap *_bitmap_bitmap = nullptr;
   PageMeta *_next = nullptr;
   PageMeta *_prev = nullptr;
-  uint32_t _page_id;
-  uint16_t _cap = 0;
-  uint16_t _used = 0;
-  uint8_t _slab_class;
-  bool pin_;
-  std::atomic<bool> mounted;
 };
 
 /**

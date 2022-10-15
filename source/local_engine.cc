@@ -20,7 +20,7 @@
 
 namespace kv {
 thread_local int cur_thread_id = -1;
-bool open_compress = true;
+bool open_compress = false;
 void bind_core(int cpu_id) {
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
@@ -234,9 +234,6 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
   return (char *)ciph;
 }
 
-std::atomic<int> count1 = 0;
-std::atomic<int> count2 = 0;
-std::atomic<int> count3 = 0;
 /**
  * @description: put a key-value pair to engine
  * @param {string} key
@@ -249,16 +246,6 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
     cur_thread_id %= kThreadNum;
     bind_core(cur_thread_id);
   }
-  if (count1 < 200) {
-    // LOG_INFO("write [%d] encryption %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
-    //          *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
-    LOG_INFO("write [%d] value %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx", cur_thread_id,
-             *((uint64_t *)(value.data())), *((uint64_t *)(value.data() + 8)), *((uint64_t *)(value.data() + 16)),
-             *((uint64_t *)(value.data() + 24)), *((uint64_t *)(value.data() + 32)), *((uint64_t *)(value.data() + 40)),
-             *((uint64_t *)(value.data() + 48)), *((uint64_t *)(value.data() + 56)));
-    count1++;
-  }
-
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
@@ -301,11 +288,6 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
     cur_thread_id %= kThreadNum;
     bind_core(cur_thread_id);
   }
-  // if (count2 < 1000) {
-  //   LOG_INFO("read [%d] encryption %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
-  //            *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
-  //   count2++;
-  // }
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
@@ -315,15 +297,6 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   bool succ = _pool[index]->Read(Slice(key), hash, value);
-  if (count2 < 200) {
-    // LOG_INFO("write [%d] encryption %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
-    //          *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
-    LOG_INFO("read [%d] value %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx", cur_thread_id,
-             *((uint64_t *)(value.data())), *((uint64_t *)(value.data() + 8)), *((uint64_t *)(value.data() + 16)),
-             *((uint64_t *)(value.data() + 24)), *((uint64_t *)(value.data() + 32)), *((uint64_t *)(value.data() + 40)),
-             *((uint64_t *)(value.data() + 48)), *((uint64_t *)(value.data() + 56)));
-    count2++;
-  }
   // #ifdef STAT
   //   if (stat::read_times.load(std::memory_order_relaxed) % 10000000 == 1) {
   //     char *value_str = decrypt(value.c_str(), value.size());
@@ -342,11 +315,6 @@ bool LocalEngine::deleteK(const std::string &key) {
     cur_thread_id %= kThreadNum;
     bind_core(cur_thread_id);
   }
-  // if (count3 < 1000) {
-  //   LOG_INFO("delete [%d] encryption %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
-  //            *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
-  //   count3++;
-  // }
 #ifdef STAT
   stat::delete_times.fetch_add(1, std::memory_order_relaxed);
   // if (stat::delete_times.load(std::memory_order_relaxed) % 1000000 == 0) {

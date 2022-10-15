@@ -53,7 +53,7 @@ constexpr int kPageSize = 1 << kPageSizeBit;
 
 constexpr int kSlabSizeMin = 5;   // 5 * 16 = 80 Bytes
 constexpr int kSlabSizeMax = 64;  // 64 * 16 = 1024 Bytes
-constexpr int kAllocingListShardBit = 6;
+constexpr int kAllocingListShardBit = 4;
 constexpr int kAllocingListSmallShift = 28 - kAllocingListShardBit;
 constexpr int kAllocingListShard = 1 << kAllocingListShardBit;
 constexpr int kAllocingListShardMask = kAllocingListShard - 1;

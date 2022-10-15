@@ -141,6 +141,12 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
   } else {
     al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
   }
+  al_index = meta->al_index;
+  if (al_index == -1) {
+    al_index = cur_thread_id;
+    meta->al_index = cur_thread_id;
+  }
+  LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
   if (isSmallSlabSize(meta->SlabClass())) {
@@ -188,6 +194,8 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   } else {
     al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
   }
+  al_index = meta->al_index;
+  LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
   if (LIKELY(isSmallSlabSize(meta->SlabClass()))) {
@@ -225,12 +233,15 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   } else {
     al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
   }
+  al_index = meta->al_index;
+  LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
+
   allocingListWLock(al_index, slab_class);
   if (LIKELY(isSmallSlabSize(slab_class))) {
     page = _small_allocing_pages[al_index][slab_class];
     meta = global_page_manager->Page(page->PageId());
     if (UNLIKELY(meta->Full())) {
-      page = mountNewPage(slab_class, hash, &batch, -1);
+      page = mountNewPage(slab_class, hash, &batch, al_index);
       meta = global_page_manager->Page(page->PageId());
     }
     LOG_ASSERT(!meta->Full(), "meta should not full");
@@ -241,7 +252,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
     page = _big_allocing_pages[al_index][slab_class];
     meta = global_page_manager->Page(page->PageId());
     if (UNLIKELY(meta->Full())) {
-      page = mountNewPage(slab_class, hash, &batch, -1);
+      page = mountNewPage(slab_class, hash, &batch, al_index);
       meta = global_page_manager->Page(page->PageId());
     }
     LOG_ASSERT(!meta->Full(), "meta should not full");
@@ -271,6 +282,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
   } else {
     al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
   }
+  if (tid != -1) al_index = tid;
 
   bool isSmall = isSmallSlabSize(slab_class);
 
@@ -437,6 +449,7 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   } else {
     al_index = (hash >> kAllocingListBigShift) & kBigAllocingListShardMask;
   }
+  al_index = cur_thread_id;
   PageEntry *page;
   int off;
   PageMeta *meta;
@@ -446,18 +459,20 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
     page = _small_allocing_pages[al_index][slab_class];
     meta = global_page_manager->Page(page->PageId());
     if (UNLIKELY(meta->Full())) {
-      page = mountNewPage(slab_class, hash, &batch, -1);
+      page = mountNewPage(slab_class, hash, &batch, al_index);
       meta = global_page_manager->Page(page->PageId());
     }
+    meta->al_index = cur_thread_id;
     // modify bitmap
     off = meta->SetFirstFreePos();
   } else {
     page = _big_allocing_pages[al_index][slab_class];
     meta = global_page_manager->Page(page->PageId());
     if (UNLIKELY(meta->Full())) {
-      page = mountNewPage(slab_class, hash, &batch, -1);
+      page = mountNewPage(slab_class, hash, &batch, al_index);
       meta = global_page_manager->Page(page->PageId());
     }
+    meta->al_index = cur_thread_id;
     // modify bitmap
     off = meta->SetFirstFreePos();
   }
@@ -466,7 +481,6 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
     delete batch;
   }
   allocingListWUnlock(al_index, slab_class);
-
   LOG_ASSERT(off != -1, "set bitmap failed.");
   Addr addr = AddrParser::GenAddrFrom(meta->PageId(), off);
   slot->SetAddr(addr);
@@ -479,21 +493,21 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   return true;
 }
 
-std::atomic<int> count7 = 0;
 int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
   LOG_DEBUG("write to block %d off %d", block, block_off);
   const MemoryAccess &access = _access_table->at(block);
-  if (LIKELY(open_compress)) {
+RETRY:
+  if (open_compress) {
     // 先压缩
-    size_t com_size = LZ4_compress_fast(entry->Data(), _buffer_pool->compress_page_buff[cur_thread_id].data, kPageSize,
-                                        kPageSize, 1);
+    size_t com_size =
+        LZ4_compress_fast(entry->Data(), _buffer_pool->compress_page_buff[cur_thread_id].data, kPageSize, kPageSize, 1);
     _buffer_pool->pg_com_szs[entry->PageId()] = com_size;
-
-    if (count7 < 100) {
-      LOG_INFO("compress ratio %f, com_size %zu", (kPageSize * 1.0) / com_size, com_size);
-      count7++;
+    if (com_size == 0 || ((kPageSize * 1.0) / com_size) < 1.1) {
+      open_compress = false;
+      LOG_INFO("close compress");
+      goto RETRY;
     }
 
     return batch->RemoteWrite(_buffer_pool->compress_page_buff[cur_thread_id].data, _buffer_pool->CompressMR()->lkey,
@@ -508,7 +522,7 @@ int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *b
   uint32_t block = AddrParser::GetBlockFromPageId(page_id);
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(page_id);
   const MemoryAccess &access = _access_table->at(block);
-  if (LIKELY(open_compress)) {
+  if (open_compress) {
     // 读取到的是压缩后的数据
     return batch->RemoteRead(_buffer_pool->compress_page_buff[cur_thread_id + kThreadNum].data,
                              _buffer_pool->CompressMR()->lkey, _buffer_pool->pg_com_szs[page_id],
