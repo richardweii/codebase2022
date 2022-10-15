@@ -61,7 +61,7 @@ class BufferPool {
   void UnpinPage(PageEntry *entry);
 
   // ibv_mr *MR() const { return _mr; }
-  // ibv_mr *MR(int id) const { return _mr[id]; }
+  ibv_mr *MR(int id) const { return _mr[id]; }
 
   ibv_mr *CompressMR() const { return compress_page_buff_mr; }
   PageData compress_page_buff[kThreadNum<<1];
@@ -72,7 +72,7 @@ class BufferPool {
   PageData *_pages;
   PageEntry *_entries;
 
-  // ibv_mr *_mr[4];
+  ibv_mr *_mr[4];
   ClockReplacer *_replacer;
   FrameHashTable *_hash_table;
   size_t _buffer_pool_size;

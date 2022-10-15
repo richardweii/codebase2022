@@ -19,6 +19,7 @@
 
 namespace kv {
 thread_local int cur_thread_id = -1;
+bool open_compress = true;
 void bind_core(int cpu_id) {
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
@@ -237,6 +238,7 @@ std::atomic<int> count3 = 1000;
  */
 bool LocalEngine::write(const std::string &key, const std::string &value, bool use_aes) {
   if (UNLIKELY(-1 == cur_thread_id)) {
+    open_compress = !use_aes;
     cur_thread_id = count_++;
     cur_thread_id %= kThreadNum;
     bind_core(cur_thread_id);

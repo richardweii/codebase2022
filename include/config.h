@@ -129,4 +129,5 @@ struct _Result {
 };
 extern std::shared_ptr<_Result> _do[TOTAL_PAGE_NUM];
 extern thread_local int cur_thread_id;
+extern bool open_compress;
 }  // namespace kv
