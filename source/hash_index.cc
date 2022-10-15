@@ -17,7 +17,6 @@ SlotMonitor::SlotMonitor() {
 const int a = kKeyNum / kPoolShardingNum / kThreadNum;
 int SlotMonitor::GetNewSlot(KeySlot **out) {
   LOG_ASSERT(out, "empty slot ptr");
-  // assert(!_free_slots[cur_thread_id].empty());
   int insert_slot = _free_slots[cur_thread_id]->dequeue();
   KeySlot *slot = &_slots[insert_slot];
   *out = slot;
@@ -39,7 +38,6 @@ HashTable::HashTable(size_t size) {
     logn++;
   }
   _size = PrimeList[logn];
-  // LOG_INFO("hash index size is %lu", _size);
   _bucket = new int[_size];
 
   // init bucket
@@ -49,7 +47,6 @@ HashTable::HashTable(size_t size) {
 };
 
 KeySlot *HashTable::Find(const Slice &key, uint32_t hash) {
-  // hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
   int slot_id = _bucket[index];
@@ -70,7 +67,6 @@ KeySlot *HashTable::Insert(const Slice &key, uint32_t hash) {
   int new_slot_id = _monitor.GetNewSlot(&new_slot);
   assert(new_slot);
 
-  // hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
   int slot_id = _bucket[index];
@@ -89,7 +85,6 @@ KeySlot *HashTable::Insert(const Slice &key, uint32_t hash) {
 }
 
 KeySlot *HashTable::Remove(const Slice &key, uint32_t hash) {
-  // hash >>= kPoolShardingBits;
   uint32_t index = hash % _size;
 
   int slot_id = _bucket[index];

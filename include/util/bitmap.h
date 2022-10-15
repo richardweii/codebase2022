@@ -1,104 +1,3 @@
-// #pragma once
-
-// #include <cassert>
-// #include <cstddef>
-// #include <cstdint>
-// #include <cstdlib>
-// #include <cstring>
-// #include "arena.h"
-// #include "likely.h"
-// #include "nocopy.h"
-
-// namespace kv {
-// #define ALIGN_UP(a, siz) (((a) + (siz)-1) & (~((siz)-1)))
-// #define atomic_xadd(P, V) __sync_fetch_and_add((P), (V))
-// #define cmpxchg(P, O, N) __sync_bool_compare_and_swap((P), (O), (N))
-// #define atomic_inc(P) __sync_add_and_fetch((P), 1)
-// #define atomic_dec(P) __sync_add_and_fetch((P), -1)
-// #define atomic_add(P, V) __sync_add_and_fetch((P), (V))
-// #define atomic_set_bit(P, V) __sync_or_and_fetch((P), 1 << (V))
-// #define atomic_clear_bit(P, V) __sync_and_and_fetch((P), ~(1 << (V)))
-
-// class Bitmap NOCOPYABLE {
-//  public:
-//   Bitmap() = delete;
-
-//   bool Full() const { return free_cnt == 0; }
-
-//   bool Empty() const { return free_cnt == cnt; }
-
-//   int get_free() {
-//     volatile unsigned long tot, i, j;
-
-//     if (UNLIKELY(this->free_cnt == 0)) assert(false);
-//     this->free_cnt -= 1;
-
-//     tot = this->siz / 64;
-//     for (i = 0; i < tot; i++) {
-//       if (!(data[i]+1)) continue;
-//       j = __builtin_ffsl(data[i] + 1) - 1;
-//       data[i] |= (1UL << j);
-//       return (i << 6) | j;
-//     }
-//     assert(free_cnt >= 0);
-//     assert(false);
-
-//     return -1;
-//   }
-
-//   int con_get_free() {
-//     unsigned long tot, i, ii, j;
-//     unsigned long old_free_cnt, old_val;
-//     do {
-//       old_free_cnt = this->free_cnt;
-//       if (UNLIKELY(old_free_cnt == 0)) return -1;
-//     } while (UNLIKELY(!free_cnt.compare_exchange_strong(old_free_cnt, old_free_cnt - 1)));
-
-//     tot = this->siz / 64;
-//     for (i = 0; i < tot; i++) {
-//       for (;;) {
-//         old_val = this->data[i];
-//         if (old_val == (unsigned long)-1) break;
-//         j = __builtin_ffsl(old_val + 1) - 1;
-//         if (cmpxchg(&this->data[i], old_val, old_val | (1UL << j))) return (i << 6) | j;
-//       }
-//     }
-//     return -1;
-//   }
-
-//   void put_back(int bk) {
-//     unsigned long old_val;
-//     // assert((this->data[bk >> 6] >> (bk & 63)) & 1);
-//     do {
-//       old_val = this->data[bk >> 6];
-//     } while (UNLIKELY(!cmpxchg(&this->data[bk >> 6], old_val, old_val ^ (1UL << (bk & 63)))));
-//     // atomic_inc(&this->free_cnt);
-//     free_cnt++;
-//   }
-
-//  private:
-//   friend Bitmap *NewBitmap(uint32_t size);
-//   unsigned long cnt, siz;
-//   std::atomic<unsigned long> free_cnt;
-//   unsigned long data[0];
-// };
-
-// __always_inline Bitmap *NewBitmap(uint32_t cnt) {
-//   unsigned long siz;
-//   siz = ALIGN_UP(cnt, 64);
-//   Bitmap *bitmap =
-//       reinterpret_cast<Bitmap *>(Arena::getInstance().Alloc(sizeof(Bitmap) + (siz / 64) * sizeof(unsigned
-//       long)));
-//   bitmap->cnt = cnt;
-//   bitmap->free_cnt = cnt;
-//   for (unsigned long i = cnt; i < siz; i++) bitmap->data[i >> 6] |= 1UL << (i & 63);
-//   bitmap->siz = siz;
-//   return bitmap;
-// }
-
-// __always_inline void DeleteBitmap(Bitmap *bitmap) { Arena::getInstance().Free(bitmap); }
-// }  // namespace kv
-
 #pragma once
 
 #include <cassert>
@@ -108,6 +7,7 @@
 #include <cstring>
 #include "arena.h"
 #include "nocopy.h"
+#include "util/likely.h"
 
 namespace kv {
 
@@ -189,14 +89,6 @@ class Bitmap NOCOPYABLE {
     _data[idx] |= (1UL << ffp);
     if (_data[idx] == UINT64_MAX) index_bitmap->Set(idx);
     return (idx << 6) + ffp;
-
-    // for (uint32_t i = 0; i < _n; i++) {
-    //   if (_data[i] == UINT64_MAX) continue;
-    //   uint64_t ffp = __builtin_ffsl(_data[i] + 1) - 1;
-    //   _data[i] |= (1UL << ffp);
-    //   return (i << 6) + ffp;
-    // }
-    // return -1;
   }
 
   bool Test(int index) const {
@@ -271,4 +163,79 @@ __always_inline Bitmap *NewBitmap(uint32_t bits) {
 }
 
 __always_inline void DeleteBitmap(Bitmap *bitmap) { Arena::getInstance().Free(bitmap); }
+
+
+/** 并发安全的bitmap 的实现 **/
+#define ALIGN_UP(a, siz) (((a) + (siz)-1) & (~((siz)-1)))
+#define atomic_xadd(P, V) __sync_fetch_and_add((P), (V))
+#define cmpxchg(P, O, N) __sync_bool_compare_and_swap((P), (O), (N))
+#define atomic_inc(P) __sync_add_and_fetch((P), 1)
+#define atomic_dec(P) __sync_add_and_fetch((P), -1)
+#define atomic_add(P, V) __sync_add_and_fetch((P), (V))
+#define atomic_set_bit(P, V) __sync_or_and_fetch((P), 1 << (V))
+#define atomic_clear_bit(P, V) __sync_and_and_fetch((P), ~(1 << (V)))
+
+class ConBitmap {
+ public:
+  ConBitmap() = delete;
+
+  bool Full() const { return free_cnt == 0; }
+
+  bool Empty() const { return free_cnt == cnt; }
+
+  int get_free() {
+    volatile unsigned long tot, i, j;
+
+    if (UNLIKELY(this->free_cnt == 0)) assert(false);
+    this->free_cnt -= 1;
+
+    tot = this->siz / 64;
+    for (i = 0; i < tot; i++) {
+      if (!(data[i]+1)) continue;
+      j = __builtin_ffsl(data[i] + 1) - 1;
+      data[i] |= (1UL << j);
+      return (i << 6) | j;
+    }
+    assert(free_cnt >= 0);
+    assert(false);
+
+    return -1;
+  }
+
+  int con_get_free() {
+    unsigned long tot, i, ii, j;
+    unsigned long old_free_cnt, old_val;
+    do {
+      old_free_cnt = this->free_cnt;
+      if (UNLIKELY(old_free_cnt == 0)) return -1;
+    } while (UNLIKELY(!free_cnt.compare_exchange_strong(old_free_cnt, old_free_cnt - 1)));
+
+    tot = this->siz / 64;
+    for (i = 0; i < tot; i++) {
+      for (;;) {
+        old_val = this->data[i];
+        if (old_val == (unsigned long)-1) break;
+        j = __builtin_ffsl(old_val + 1) - 1;
+        if (cmpxchg(&this->data[i], old_val, old_val | (1UL << j))) return (i << 6) | j;
+      }
+    }
+    return -1;
+  }
+
+  void put_back(int bk) {
+    unsigned long old_val;
+    // assert((this->data[bk >> 6] >> (bk & 63)) & 1);
+    do {
+      old_val = this->data[bk >> 6];
+    } while (UNLIKELY(!cmpxchg(&this->data[bk >> 6], old_val, old_val ^ (1UL << (bk & 63)))));
+    // atomic_inc(&this->free_cnt);
+    free_cnt++;
+  }
+
+ private:
+  friend Bitmap *NewBitmap(uint32_t size);
+  unsigned long cnt, siz;
+  std::atomic<unsigned long> free_cnt;
+  unsigned long data[0];
+};
 }  // namespace kv

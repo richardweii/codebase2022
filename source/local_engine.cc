@@ -249,28 +249,16 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   }
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
-  // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 0) {
-  //   LOG_INFO("write %lu", stat::write_times.load(std::memory_order_relaxed));
-  // }
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
 
   if (UNLIKELY(use_aes)) {
     open_compress = false;
-// LOG_INFO("encryption %08lx, %08lx ", *((uint64_t*)(key.data())), *((uint64_t*)(key.data() + 8)));
-#ifdef STAT
-// if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 1)
-// {
-//   LOG_INFO("write key: %s, value: %s, length: %ld", key.c_str(), value.c_str(), value.length());
-// }
-#endif
     std::string encrypt_value;
     encrypt(value, encrypt_value);
     assert(value.size() == encrypt_value.size());
-    // char *value_str = encrypt(value.data(), value.length());
     auto succ = _pool[index]->Write(Slice(key), hash, Slice(encrypt_value));
-    // auto succ = _pool[index]->Write(Slice(key), hash, Slice(value_str, value.length()));
     return succ;
   }
 
@@ -291,21 +279,10 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
   }
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
-  // if (stat::read_times.load(std::memory_order_relaxed) % 1000000 == 0) {
-  //   LOG_INFO("read %lu", stat::read_times.load(std::memory_order_relaxed));
-  // }
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
   bool succ = _pool[index]->Read(Slice(key), hash, value);
-  // #ifdef STAT
-  //   if (stat::read_times.load(std::memory_order_relaxed) % 10000000 == 1) {
-  //     char *value_str = decrypt(value.c_str(), value.size());
-  //     LOG_INFO("char: %c", value_str[0]);
-  //     LOG_INFO("value_str: %s, len: %ld", value_str, value.size());
-  //     free(value_str);
-  //   }
-  // #endif
 
   return succ;
 }
@@ -318,9 +295,6 @@ bool LocalEngine::deleteK(const std::string &key) {
   }
 #ifdef STAT
   stat::delete_times.fetch_add(1, std::memory_order_relaxed);
-  // if (stat::delete_times.load(std::memory_order_relaxed) % 1000000 == 0) {
-  //   LOG_INFO("delete %lu", stat::delete_times.load(std::memory_order_relaxed));
-  // }
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
   int index = Shard(hash);
@@ -331,5 +305,4 @@ bool LocalEngine::deleteK(const std::string &key) {
 SpinLock page_locks_[TOTAL_PAGE_NUM];
 class PageEntry;
 std::shared_ptr<_Result> _do[TOTAL_PAGE_NUM];
-SpinLatch bp_locks_[TOTAL_PAGE_NUM];
 }  // namespace kv

@@ -12,7 +12,6 @@
 #include "hash_index.h"
 #include "page_manager.h"
 #include "rdma_client.h"
-#include "util/lockfree_queue.h"
 #include "util/logging.h"
 #include "util/nocopy.h"
 #include "util/rwlock.h"
@@ -37,7 +36,7 @@ class Pool NOCOPYABLE {
   using WriteNewFunc = std::function<bool(const Slice &, uint32_t, const Slice &)>;
   WriteNewFunc _writeNew;
 
-  PageEntry *mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch** batch_ret, int tid);
+  PageEntry *mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch **batch_ret, int tid);
 
   PageEntry *replacement(PageId page_id, uint8_t slab_class, bool writer = false);
   using ReplacementFunc = std::function<PageEntry *(PageId, uint8_t, bool)>;
@@ -49,24 +48,12 @@ class Pool NOCOPYABLE {
 
   int readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch);
 
-  bool isSmallSlabSize(int slab_size) {
-    return slab_size >= 5 && slab_size <= kSmallMax;
-  }
-
   void allocingListWLock(uint32_t al_index, int slab_size) {
-    if (isSmallSlabSize(slab_size)) {
-      _small_allocing_list_latch[al_index][slab_size].WLock();
-    } else {
-      _big_allocing_list_latch[al_index][slab_size].WLock();
-    }
+    _allocing_list_latch[al_index][slab_size].WLock();
   }
 
   void allocingListWUnlock(uint32_t al_index, int slab_size) {
-    if (isSmallSlabSize(slab_size)) {
-      _small_allocing_list_latch[al_index][slab_size].WUnlock();
-    } else {
-      _big_allocing_list_latch[al_index][slab_size].WUnlock();
-    }
+    _allocing_list_latch[al_index][slab_size].WUnlock();
   }
 
   HashTable *_hash_index = nullptr;
@@ -74,15 +61,10 @@ class Pool NOCOPYABLE {
   SingleFlight<PageId, PageEntry *> _replacement_sgfl;
   SingleFlight<std::string, bool> _write_new_sgfl;
 
-  // small page只存储 slab size为 5 ~ 16 的
-  PageEntry *_small_allocing_pages[kAllocingListShard][kSlabSizeMax + 1];
-  PageMeta *_small_allocing_tail[kAllocingListShard][kSlabSizeMax + 1];
-  // big page存储 slab size 为16 ~ 64 的
-  PageEntry *_big_allocing_pages[kBigAllocingListShard][kSlabSizeMax + 1];
-  PageMeta *_big_allocing_tail[kBigAllocingListShard][kSlabSizeMax + 1];
+  PageEntry *_allocing_pages[kAllocingListShard][kSlabSizeMax + 1];
+  PageMeta *_allocing_tail[kAllocingListShard][kSlabSizeMax + 1];
   // allocing list latch
-  SpinLatch _small_allocing_list_latch[kAllocingListShard][kSlabSizeMax + 1];
-  SpinLatch _big_allocing_list_latch[kBigAllocingListShard][kSlabSizeMax + 1];
+  SpinLatch _allocing_list_latch[kAllocingListShard][kSlabSizeMax + 1];
 
   MemoryAccess *_access_table = nullptr;
 
@@ -106,8 +88,10 @@ class RemotePool NOCOPYABLE {
     ValueBlock *block = &_blocks[cur];
     auto succ = block->Init(_pd);
     LOG_ASSERT(succ, "Failed to init memblock  %d.", cur);
-    if (succ) LOG_INFO("Alloc block %d successfully, prepare response.", cur);
-    else LOG_ERROR("Alloc block %d Failed", cur);
+    if (succ)
+      LOG_INFO("Alloc block %d successfully, prepare response.", cur);
+    else
+      LOG_ERROR("Alloc block %d Failed", cur);
     return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey()};
   }
 
