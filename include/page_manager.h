@@ -61,6 +61,8 @@ class PageMeta {
     pin_ = false;
     mounted = false;
   }
+  void Lock() { lock_.Lock(); }
+  void Unlock() { lock_.Unlock(); }
   int8_t al_index = -1;
 
  private:
@@ -84,6 +86,7 @@ class PageMeta {
   Bitmap *_bitmap_bitmap = nullptr;
   PageMeta *_next = nullptr;
   PageMeta *_prev = nullptr;
+  SpinLock lock_;
 };
 
 /**

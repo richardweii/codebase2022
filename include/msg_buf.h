@@ -12,7 +12,7 @@
 
 namespace kv {
 
-#define RDMA_MSG_CAP 256
+#define RDMA_MSG_CAP 128
 
 class MsgBuffer {
  public:

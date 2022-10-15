@@ -176,12 +176,10 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   PageMeta *meta = global_page_manager->Page(page_id);
   assert(meta->SlabClass() != val.size() / kSlabSize);
 
-  if (meta->al_index == -1) {
-    meta->al_index = cur_thread_id;
-  }
+  meta->al_index = cur_thread_id;
   int al_index = meta->al_index;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
-  allocingListWLock(al_index, meta->SlabClass());
+  meta->Lock();
   meta->ClearPos(AddrParser::Off(addr));
   if (LIKELY(isSmallSlabSize(meta->SlabClass()))) {
     global_page_manager->Mount(&_small_allocing_tail[al_index][meta->SlabClass()], meta);
@@ -205,7 +203,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
       global_page_manager->FreePage(page_id);
     }
   }
-  allocingListWUnlock(al_index, meta->SlabClass());
+  meta->Unlock();
 
   // rewrite to meta
   uint8_t slab_class = val.size() / kSlabSize;
@@ -216,7 +214,6 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   al_index = meta->al_index;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
 
-  allocingListWLock(al_index, slab_class);
   if (LIKELY(isSmallSlabSize(slab_class))) {
     page = _small_allocing_pages[al_index][slab_class];
     meta = global_page_manager->Page(page->PageId());
@@ -244,7 +241,6 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
     batch->FinishBatch();
     delete batch;
   }
-  allocingListWUnlock(al_index, slab_class);
 
   my_memcpy((char *)(page->Data() + val.size() * off), val.data(), val.size());
   if (!page->Dirty) page->Dirty = true;
@@ -428,7 +424,6 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   int off;
   PageMeta *meta;
   RDMAManager::Batch *batch = nullptr;
-  allocingListWLock(al_index, slab_class);
   if (LIKELY(isSmallSlabSize(slab_class))) {
     page = _small_allocing_pages[al_index][slab_class];
     meta = global_page_manager->Page(page->PageId());
@@ -454,7 +449,6 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
     batch->FinishBatch();
     delete batch;
   }
-  allocingListWUnlock(al_index, slab_class);
   LOG_ASSERT(off != -1, "set bitmap failed.");
   Addr addr = AddrParser::GenAddrFrom(meta->PageId(), off);
   slot->SetAddr(addr);
