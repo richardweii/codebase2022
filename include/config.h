@@ -57,11 +57,11 @@ constexpr int kAllocingListShardMask = kAllocingListShard - 1;
 // key的数目
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;  // 16 * 12M key
 // remote pool的大小
-constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;  // 32GB remote pool
+constexpr size_t kPoolSize = (size_t)30 * 1024 * 1024 * 1024;  // 30GB remote pool
 // cache的大小
 constexpr size_t kBufferPoolSize = (size_t)4 * 1024 * 1024 * 1024;  // 4GB cache
 // remote pool一个mr的大小
-constexpr size_t kMaxBlockSize = (size_t)1 * 256 * 1024 * 1024;      // 256MB mr
+constexpr size_t kMaxBlockSize = (size_t)1 * 128 * 1024 * 1024;      // 256MB mr
 constexpr size_t kMaxPoolBlockSize = (size_t)1 * 128 * 1024 * 1024;  // 128MB mr
 // remote pool mrblock的个数
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
@@ -74,7 +74,7 @@ constexpr Addr INVALID_ADDR = (-1);
 // 编址相关的常量
 // 2^PGAE_BIT = 32GB / kPageSize
 // SHIFT = log(kMrBlockNum)
-constexpr int kShift = 7;
+constexpr int kShift = 8;
 constexpr uint32_t PAGE_BIT = 35 - kPageSizeBit;
 constexpr uint32_t PAGE_MASK = (1 << PAGE_BIT) - 1;
 constexpr uint32_t PAGE_OFF_MASK = (1 << (PAGE_BIT - kShift)) - 1;

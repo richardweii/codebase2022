@@ -165,6 +165,7 @@ RPCTask *RDMAServer::pollTask() {
   return nullptr;
 }
 
+// 远端的工作任务
 void RDMAServer::worker() {
   while (!stop_) {
     RPCTask *task = pollTask();
