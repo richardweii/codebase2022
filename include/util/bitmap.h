@@ -182,25 +182,6 @@ class Bitmap NOCOPYABLE {
  public:
   Bitmap() = delete;
 
-  bool Full() const {
-    for (uint32_t i = 0; i < _n; i++) {
-      if (~_data[i]) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  // return the first free position of bitmap, return -1 if full
-  int FirstFreePos() const {
-    for (uint32_t i = 0; i < _n; i++) {
-      if (_data[i] == UINT64_MAX) continue;
-      int ffp = __builtin_ffsl(_data[i] + 1) - 1;
-      return (i << 6) + ffp;
-    }
-    return -1;
-  }
-
   int SetFirstFreePos(Bitmap *index_bitmap) {
     int idx = index_bitmap->FirstFreePos();
     if (idx == -1) return -1;
@@ -216,15 +197,6 @@ class Bitmap NOCOPYABLE {
     //   return (i << 6) + ffp;
     // }
     // return -1;
-    // int index = FirstFreePos();
-    // if (index == -1) {
-    //   return -1;
-    // }
-    // assert((uint32_t)index < _bits);
-    // int n = index / 64;
-    // int off = index % 64;
-    // _data[n] |= (1ULL << off);
-    // return index;
   }
 
   bool Test(int index) const {
@@ -240,13 +212,6 @@ class Bitmap NOCOPYABLE {
     int off = index % 64;
     _data[n] &= ~(1ULL << off);
     index_bitmap->IndexClear(n);
-  }
-
-  void IndexClear(int index) {
-    assert((uint32_t)index < _bits);
-    int n = index / 64;
-    int off = index % 64;
-    _data[n] &= ~(1ULL << off);
   }
 
   bool Set(int index) {
@@ -265,6 +230,24 @@ class Bitmap NOCOPYABLE {
   uint32_t Size() const { return _n; }
 
   uint64_t DataAt(int idx) const { return _data[idx]; }
+
+  /*--- for Index Bitmap ---*/
+  // return the first free position of bitmap, return -1 if full
+  int FirstFreePos() const {
+    for (uint32_t i = 0; i < _n; i++) {
+      if (_data[i] == UINT64_MAX) continue;
+      int ffp = __builtin_ffsl(_data[i] + 1) - 1;
+      return (i << 6) + ffp;
+    }
+    return -1;
+  }
+
+  void IndexClear(int index) {
+    assert((uint32_t)index < _bits);
+    int n = index / 64;
+    int off = index % 64;
+    _data[n] &= ~(1ULL << off);
+  }
 
  private:
   friend Bitmap *NewBitmap(uint32_t size);

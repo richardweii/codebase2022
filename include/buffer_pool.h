@@ -28,14 +28,6 @@ class PageEntry {
   char *Data() { return _data->data; }
   uint8_t SlabClass() const { return _slab_class; }
 
-  void SetComSize(size_t sz) {
-    com_sz = sz;
-  }
-
-  size_t GetComSize() const {
-    return com_sz;
-  }
-
  private:
   kv::PageId _page_id = INVALID_PAGE_ID;
   PageData *_data;
@@ -43,7 +35,6 @@ class PageEntry {
   FrameId _frame_id = INVALID_FRAME_ID;
   bool _writer = false;
   uint8_t mr_id;
-  size_t com_sz;
 };
 
 class BufferPool {
@@ -73,7 +64,8 @@ class BufferPool {
   // ibv_mr *MR(int id) const { return _mr[id]; }
 
   ibv_mr *CompressMR() const { return compress_page_buff_mr; }
-  PageData compress_page_buff[kThreadNum];
+  PageData compress_page_buff[kThreadNum<<1];
+  size_t pg_com_szs[TOTAL_PAGE_NUM];
 
  private:
   std::atomic_int pin{0};

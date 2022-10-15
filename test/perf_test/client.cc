@@ -112,7 +112,7 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
               ASSERT(value.size() == (size_t)slab_class[key_idx] * kSlabSize, "got val length %lu, expected %d",
                      value.size(), slab_class[key_idx] * kSlabSize)
               auto cmp = memcmp(value.c_str(), k[key_idx].key, 16);
-              // ASSERT(cmp == 0, "expect %.16s, got %.16s", k[key_idx].key, value.c_str());
+              ASSERT(cmp == 0, "expect %08x, got %08x", *((uint32_t *)(k[key_idx].key+4)), *((uint32_t *)(value.c_str()+4)));
             }
             LOG_INFO("End read thread %d", i);
           },
