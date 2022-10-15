@@ -56,11 +56,11 @@ constexpr int kSlabSizeMax = 64;  // 64 * 16 = 1024 Bytes
 constexpr int kAllocingListShardBit = 6;
 constexpr int kAllocingListSmallShift = 28 - kAllocingListShardBit;
 constexpr int kAllocingListShard = 1 << kAllocingListShardBit;
-constexpr int kAllocingListShardMask = kAllocingListShard-1;
+constexpr int kAllocingListShardMask = kAllocingListShard - 1;
 constexpr int kBigAllocingListShardBit = 4;
 constexpr int kAllocingListBigShift = 28 - kBigAllocingListShardBit;
 constexpr int kBigAllocingListShard = 1 << kBigAllocingListShardBit;
-constexpr int kBigAllocingListShardMask = kBigAllocingListShard-1;
+constexpr int kBigAllocingListShardMask = kBigAllocingListShard - 1;
 constexpr int kSmallMax = 16;
 
 #ifdef TEST_CONFIG
@@ -92,7 +92,7 @@ constexpr int kThreadNum = 1;
 #else
 
 // 2^PGAE_BIT = 32GB / kPageSize
-// SHIFT = log(kMrBlockNum)  
+// SHIFT = log(kMrBlockNum)
 constexpr int kShift = 5;
 constexpr uint32_t PAGE_BIT = 35 - kPageSizeBit;
 constexpr uint32_t PAGE_MASK = (1 << PAGE_BIT) - 1;
@@ -122,6 +122,7 @@ class AddrParser {
 // 全局变量
 constexpr size_t TOTAL_PAGE_NUM = kPoolSize / kPageSize;
 extern SpinLock page_locks_[TOTAL_PAGE_NUM];
+extern SpinLatch bp_locks_[TOTAL_PAGE_NUM];
 class PageEntry;
 struct _Result {
   volatile bool _done;
