@@ -21,7 +21,6 @@ PageManager::~PageManager() {
   delete[] _pages;
 }
 
-#define CAS(_p, _u, _v) (__atomic_compare_exchange_n(_p, _u, _v, false, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE))
 PageMeta *PageManager::AllocNewPage(uint8_t slab_class) {
   _lock.Lock();
 

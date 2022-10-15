@@ -14,7 +14,7 @@ SlotMonitor::SlotMonitor() {
     }
   }
 }
-const int a = kKeyNum / kPoolShardingNum / kThreadNum;
+
 int SlotMonitor::GetNewSlot(KeySlot **out) {
   LOG_ASSERT(out, "empty slot ptr");
   int insert_slot = _free_slots[cur_thread_id]->dequeue();

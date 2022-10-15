@@ -48,13 +48,9 @@ class Pool NOCOPYABLE {
 
   int readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch);
 
-  void allocingListWLock(uint32_t al_index, int slab_size) {
-    _allocing_list_latch[al_index][slab_size].WLock();
-  }
+  void allocingListWLock(uint32_t al_index, int slab_size) { _allocing_list_latch[al_index][slab_size].WLock(); }
 
-  void allocingListWUnlock(uint32_t al_index, int slab_size) {
-    _allocing_list_latch[al_index][slab_size].WUnlock();
-  }
+  void allocingListWUnlock(uint32_t al_index, int slab_size) { _allocing_list_latch[al_index][slab_size].WUnlock(); }
 
   HashTable *_hash_index = nullptr;
 
@@ -88,10 +84,11 @@ class RemotePool NOCOPYABLE {
     ValueBlock *block = &_blocks[cur];
     auto succ = block->Init(_pd);
     LOG_ASSERT(succ, "Failed to init memblock  %d.", cur);
-    if (succ)
+    if (succ) {
       LOG_INFO("Alloc block %d successfully, prepare response.", cur);
-    else
+    } else {
       LOG_ERROR("Alloc block %d Failed", cur);
+    }
     return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey()};
   }
 

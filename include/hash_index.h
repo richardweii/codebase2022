@@ -20,10 +20,6 @@ constexpr static const unsigned long PrimeList[] = {
     393241ul,    786433ul,    1572869ul,   3145739ul,    6291469ul,    12582917ul,  25165843ul, 50331653ul, 100663319ul,
     201326611ul, 402653189ul, 805306457ul, 1610612741ul, 3221225473ul, 4294967291ul};
 
-constexpr int kSegLatchOff = 5;
-constexpr int kSegLatchMask = (kKeyNum / kPoolShardingNum) >> kSegLatchOff;
-// constexpr int kSegLatchMask = (1UL << kSegLatchOff) - 1;
-
 class KeySlot {
  public:
   constexpr static int INVALID_SLOT_ID = -1;
@@ -44,13 +40,6 @@ class KeySlot {
 };
 
 class Queue {
- private:
-  int size;
-  int *arr;
-  int head;
-  int tail;
-  int mask;
-
  public:
   Queue(int size) {
     head = 0;
@@ -71,22 +60,18 @@ class Queue {
     return val;
   }
   uint32_t roundup_power_of_2(uint32_t val) {
-    // 已经是2的幂了，可直接返回
-    if ((val & (val - 1)) == 0) {
-      return val;
-    }
-
-    // uint32类型中，2的次幂最大数
+    if ((val & (val - 1)) == 0) return val;
     uint32_t andv = 0x80000000;
-
-    // 逐位右移，直到找到满足val第一个位为1的
-    while ((andv & val) == 0) {
-      andv = andv >> 1;
-    }
-
-    // 再左移一位，确保比val大
+    while ((andv & val) == 0) andv = andv >> 1;
     return andv << 1;
   }
+
+ private:
+  int size;
+  int *arr;
+  int head;
+  int tail;
+  int mask;
 };
 
 class SlotMonitor {

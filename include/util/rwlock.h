@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdint>
 namespace kv {
+#define CAS(_p, _u, _v) (__atomic_compare_exchange_n(_p, _u, _v, false, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE))
 
 /**
  * Reader-Writer latch backed by pthread.h
@@ -53,36 +54,6 @@ static inline void AsmVolatilePause() {
 #endif
   // it's okay for other platforms to be no-ops
 }
-
-// class SpinLatch {
-//  public:
-//   void WLock() {
-//     int8_t lock = 0;
-//     while (!lock_.compare_exchange_weak(lock, -1, std::memory_order_acquire)) {
-//       lock = 0;
-//       // AsmVolatilePause();
-//     }
-//   }
-
-//   void WUnlock() { lock_.store(0, std::memory_order_release); }
-
-//   void RLock() {
-//     while (true) {
-//       int8_t lock = lock_.load(std::memory_order_relaxed);
-//       if (lock + 1 > 0) {
-//         if (lock_.compare_exchange_weak(lock, lock + 1, std::memory_order_acquire)) {
-//           return;
-//         }
-//       }
-//       // retry
-//     }
-//   }
-
-//   void RUnlock() { lock_.fetch_add(-1, std::memory_order_release); }
-
-//  private:
-//   std::atomic_int8_t lock_{0};
-// };
 
 class alignas(64) SpinLatch {
  public:

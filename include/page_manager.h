@@ -15,18 +15,6 @@ class PageMeta {
  public:
   friend class PageManager;
 
-  // int SetFirstFreePos() {
-  //   return _bitmap->con_get_free();
-  // }
-
-  // void ClearPos(int idx) {
-  //   _bitmap->put_back(idx);
-  // }
-
-  // bool Full() const { return _bitmap->Full(); }
-
-  // bool Empty() const { return _bitmap->Empty(); }
-
   int SetFirstFreePos() {
     _used++;
     return _bitmap->SetFirstFreePos(_bitmap_bitmap);

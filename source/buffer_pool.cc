@@ -221,11 +221,12 @@ BufferPool::BufferPool(size_t buffer_pool_size, uint8_t shard) : _buffer_pool_si
 }
 
 BufferPool::~BufferPool() {
-  // if (ibv_dereg_mr(_mr)) {
-  //   perror("ibv_derge_mr failed.");
-  //   LOG_ERROR("ibv_derge_mr failed.");
-  // }
-  // LOG_ASSERT(pin == 60, "pin & unpin not matched. pin %d", pin.load());
+  for (int i = 0; i < 4; i++) {
+    if (ibv_dereg_mr(_mr[i])) {
+      perror("ibv_derge_mr failed.");
+      LOG_ERROR("ibv_derge_mr failed.");
+    }
+  }
 
   delete[] _pages;
   delete[] _entries;
@@ -250,12 +251,6 @@ bool BufferPool::Init(ibv_pd *pd) {
   }
 
   return true;
-  // _mr = ibv_reg_mr(pd, _pages, _buffer_pool_size, RDMA_MR_FLAG);
-  // if (_mr == nullptr) {
-  //   LOG_ERROR("Register %lu memory failed.", _buffer_pool_size);
-  //   return false;
-  // }
-  // return true;
 }
 
 PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {

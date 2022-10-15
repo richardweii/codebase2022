@@ -251,18 +251,17 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
-  int index = Shard(hash);
 
   if (UNLIKELY(use_aes)) {
     open_compress = false;
     std::string encrypt_value;
     encrypt(value, encrypt_value);
     assert(value.size() == encrypt_value.size());
-    auto succ = _pool[index]->Write(Slice(key), hash, Slice(encrypt_value));
+    auto succ = _pool[0]->Write(Slice(key), hash, Slice(encrypt_value));
     return succ;
   }
 
-  return _pool[index]->Write(Slice(key), hash, Slice(value));
+  return _pool[0]->Write(Slice(key), hash, Slice(value));
 }
 
 /**
@@ -281,8 +280,8 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
-  int index = Shard(hash);
-  bool succ = _pool[index]->Read(Slice(key), hash, value);
+
+  bool succ = _pool[0]->Read(Slice(key), hash, value);
 
   return succ;
 }
@@ -297,8 +296,8 @@ bool LocalEngine::deleteK(const std::string &key) {
   stat::delete_times.fetch_add(1, std::memory_order_relaxed);
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
-  int index = Shard(hash);
-  return _pool[index]->Delete(Slice(key), hash);
+
+  return _pool[0]->Delete(Slice(key), hash);
 }
 
 // 全局变量，通过config.h extern出去

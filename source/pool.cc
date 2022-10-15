@@ -37,16 +37,6 @@ void Pool::Init() {
       _allocing_tail[j][i]->Pin();
     }
   }
-
-  // for (int i = kSmallMax + 1; i <= kSlabSizeMax; i++) {
-  //   for (int j = 0; j < kBigAllocingListShard; j++) {
-  //     PageMeta *page = global_page_manager->AllocNewPage(i);
-  //     _big_allocing_tail[j][i] = page;
-  //     _big_allocing_pages[j][i] = _buffer_pool->FetchNew(page->PageId(), i);
-  //     _buffer_pool->PinPage(_big_allocing_pages[j][i]);
-  //     _big_allocing_tail[j][i]->Pin();
-  //   }
-  // }
 }
 
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
@@ -306,9 +296,6 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
   // miss
 #ifdef STAT
   stat::replacement.fetch_add(1);
-  if (stat::replacement.load(std::memory_order_relaxed) % 10000 == 0) {
-    LOG_INFO("Replacement %ld", stat::replacement.load(std::memory_order_relaxed));
-  }
 #endif
   // recheck
   // 这里必须要recheck，因为在调用replacement之前的check中，虽然这个page_id不在本地，但是由于没有锁的保证，所以可能在你check完之后它又在了
@@ -357,6 +344,7 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   int off;
   PageMeta *meta;
   RDMAManager::Batch *batch = nullptr;
+  allocingListWLock(al_index, slab_class);
   page = _allocing_pages[al_index][slab_class];
   meta = global_page_manager->Page(page->PageId());
   if (UNLIKELY(meta->Full())) {
@@ -370,6 +358,8 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
     batch->FinishBatch();
     delete batch;
   }
+  allocingListWUnlock(al_index, slab_class);
+
   LOG_ASSERT(off != -1, "set bitmap failed.");
   Addr addr = AddrParser::GenAddrFrom(meta->PageId(), off);
   slot->SetAddr(addr);

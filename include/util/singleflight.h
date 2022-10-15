@@ -57,12 +57,6 @@ class SingleFlight<PageId, PageEntry *> {
       while (!pRes->_done)
         ;
       // return result
-      // if (writer) {
-      //   pRes->_result->WLock();
-      // } else {
-      //   pRes->_result->RLock();
-      // }
-      // return result
       return pRes->_result;
     }
 

@@ -29,41 +29,46 @@ constexpr FrameId INVALID_FRAME_ID = -1;
 constexpr int kRPCWorkerNum = 4;
 constexpr int kOneSideWorkerNum = 16;
 
+// 哈希种子
 constexpr int kPoolHashSeed = 0x89ea7d2f;
 
-#ifdef TEST_CONFIG
-constexpr int kPoolShardingBits = 1;  // for test
-
-#else
+// Pool的数量，对应的bit数目以及掩码
 constexpr int kPoolShardingBits = 0;
 constexpr int kPoolShardingMask = (1 << kPoolShardingBits) - 1;
-#endif
 constexpr int kPoolShardingNum = 1 << kPoolShardingBits;  // sharding num
 
+// key的长度16字节
 constexpr int kKeyLength = 16;
+// 一个slab的大小为16字节，这是内存管理的最小单位
 constexpr int kSlabSize = 16;
-
+// 配置PageSize的大小
 constexpr int kPageSizeBit = 20;  // 20: 1MB
-
 constexpr int kPageSize = 1 << kPageSizeBit;
 
+// page管理的一个slot的大小最小为5个slab，也就是80字节
 constexpr int kSlabSizeMin = 5;   // 5 * 16 = 80 Bytes
+// page管理的一个slot的大小最大为64个slab，也就是1024字节
 constexpr int kSlabSizeMax = 64;  // 64 * 16 = 1024 Bytes
+// 正在分配的页的分片数量，目前每个线程管理一个，因此配置为2^4=16个分片
 constexpr int kAllocingListShardBit = 4;
-constexpr int kAllocingListSmallShift = 28 - kAllocingListShardBit;
 constexpr int kAllocingListShard = 1 << kAllocingListShardBit;
 constexpr int kAllocingListShardMask = kAllocingListShard - 1;
 
+// key的数目
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                   // 16 * 12M key
+// remote pool的大小
 constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remote pool
-constexpr size_t kBufferPoolSize = (size_t)4 * 1024 * 1024 * 1024;  // 2GB cache
+// cache的大小
+constexpr size_t kBufferPoolSize = (size_t)4 * 1024 * 1024 * 1024;  // 4GB cache
+// remote pool一个mr的大小
 constexpr size_t kMaxBlockSize = (size_t)1 * 256 * 1024 * 1024;    // 256MB mr
-
+// remote pool mrblock的个数
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
 
 using Addr = int32_t;
 constexpr Addr INVALID_ADDR = (-1);
 
+// 编址相关的常量
 // 2^PGAE_BIT = 32GB / kPageSize
 // SHIFT = log(kMrBlockNum)
 constexpr int kShift = 7;
