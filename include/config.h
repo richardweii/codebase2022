@@ -9,9 +9,6 @@
 #include "util/logging.h"
 #include "util/rwlock.h"
 
-// #define TEST_CONFIG  // test configuration marco switch
-// #define STAT  // statistic
-
 namespace kv {
 #define RDMA_MR_FLAG (IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE)
 #define TIME_NOW (std::chrono::high_resolution_clock::now())
@@ -61,11 +58,10 @@ constexpr size_t kPoolSize = (size_t)30 * 1024 * 1024 * 1024;  // 30GB remote po
 // cache的大小
 constexpr size_t kBufferPoolSize = (size_t)4 * 1024 * 1024 * 1024;  // 4GB cache
 // remote pool一个mr的大小
-constexpr size_t kMaxBlockSize = (size_t)1 * 64 * 1024 * 1024;      // 64MB mr
-constexpr size_t kMaxPoolBlockSize = (size_t)1 * 64 * 1024 * 1024;  // 64MB mr
+constexpr size_t kMaxBlockSize = (size_t)1 * 512 * 1024 * 1024;      // 1GB mr
+constexpr size_t kMaxPoolBlockSize = (size_t)1 * 512 * 1024 * 1024;  // 1GB mr
 // remote pool mrblock的个数
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
-constexpr int kPoolMrBlockBit = 5;
 constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 
 using Addr = int32_t;
@@ -74,7 +70,7 @@ constexpr Addr INVALID_ADDR = (-1);
 // 编址相关的常量
 // 2^PGAE_BIT = 32GB / kPageSize
 // SHIFT = log(kMrBlockNum)
-constexpr int kShift = 9;
+constexpr int kShift = 6;
 constexpr uint32_t PAGE_BIT = 35 - kPageSizeBit;
 constexpr uint32_t PAGE_MASK = (1 << PAGE_BIT) - 1;
 constexpr uint32_t PAGE_OFF_MASK = (1 << (PAGE_BIT - kShift)) - 1;

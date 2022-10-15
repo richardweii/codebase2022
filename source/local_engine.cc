@@ -20,7 +20,7 @@
 
 namespace kv {
 thread_local int cur_thread_id = -1;
-bool open_compress = false;
+bool open_compress = true;
 void bind_core(int cpu_id) {
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);

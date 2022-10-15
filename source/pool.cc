@@ -383,7 +383,7 @@ RETRY:
     size_t com_size =
         LZ4_compress_fast(entry->Data(), _buffer_pool->compress_page_buff[cur_thread_id].data, kPageSize, kPageSize, 1);
     _buffer_pool->pg_com_szs[entry->PageId()] = com_size;
-    if (com_size == 0 || ((kPageSize * 1.0) / com_size) < 1.1) {
+    if (com_size == 0 || ((kPageSize * 1.0) / com_size) < 1.5) {
       open_compress = false;
       LOG_INFO("close compress");
       goto RETRY;
