@@ -14,7 +14,7 @@
 using namespace kv;
 using namespace std;
 
-constexpr int key_num = kKeyNum * 0.9;
+constexpr int key_num = kKeyNum;
 constexpr int thread_num = 16;
 constexpr int write_op_num = key_num / thread_num;
 constexpr int delete_op_num = write_op_num * 0.8;
