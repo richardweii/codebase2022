@@ -46,7 +46,7 @@ constexpr int kPageSizeBit = 20;  // 20: 1MB
 constexpr int kPageSize = 1 << kPageSizeBit;
 
 // page管理的一个slot的大小最小为5个slab，也就是80字节
-constexpr int kSlabSizeMin = 5;   // 5 * 16 = 80 Bytes
+constexpr int kSlabSizeMin = 5;  // 5 * 16 = 80 Bytes
 // page管理的一个slot的大小最大为64个slab，也就是1024字节
 constexpr int kSlabSizeMax = 64;  // 64 * 16 = 1024 Bytes
 // 正在分配的页的分片数量，目前每个线程管理一个，因此配置为2^4=16个分片
@@ -55,15 +55,18 @@ constexpr int kAllocingListShard = 1 << kAllocingListShardBit;
 constexpr int kAllocingListShardMask = kAllocingListShard - 1;
 
 // key的数目
-constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                   // 16 * 12M key
+constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;  // 16 * 12M key
 // remote pool的大小
-constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remote pool
+constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;  // 32GB remote pool
 // cache的大小
 constexpr size_t kBufferPoolSize = (size_t)4 * 1024 * 1024 * 1024;  // 4GB cache
 // remote pool一个mr的大小
-constexpr size_t kMaxBlockSize = (size_t)1 * 256 * 1024 * 1024;    // 256MB mr
+constexpr size_t kMaxBlockSize = (size_t)1 * 256 * 1024 * 1024;      // 256MB mr
+constexpr size_t kMaxPoolBlockSize = (size_t)1 * 128 * 1024 * 1024;  // 128MB mr
 // remote pool mrblock的个数
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
+constexpr int kPoolMrBlockBit = 5;
+constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 
 using Addr = int32_t;
 constexpr Addr INVALID_ADDR = (-1);
@@ -81,6 +84,7 @@ constexpr int kThreadNum = 16;
 
 class AddrParser {
   static_assert(kPageSizeBit - 6 < OFF_BIT);
+
  public:
   static kv::PageId PageId(Addr addr) { return (addr >> OFF_BIT) & PAGE_MASK; }
   static uint32_t Off(Addr addr) { return addr & OFF_MASK; }

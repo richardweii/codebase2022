@@ -212,7 +212,7 @@ BufferPool::BufferPool(size_t buffer_pool_size, uint8_t shard) : _buffer_pool_si
   _hash_table = new FrameHashTable(page_num);
   _replacer = new ClockReplacer(page_num);
   _entries = new PageEntry[page_num];
-  int per_wr_page_num = page_num >> 2;
+  int per_wr_page_num = page_num / kPoolMrBlockNum;
   for (size_t i = 0; i < page_num; i++) {
     _entries[i].mr_id = i / per_wr_page_num;
     _entries[i]._frame_id = i;
@@ -221,7 +221,7 @@ BufferPool::BufferPool(size_t buffer_pool_size, uint8_t shard) : _buffer_pool_si
 }
 
 BufferPool::~BufferPool() {
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < kPoolMrBlockNum; i++) {
     if (ibv_dereg_mr(_mr[i])) {
       perror("ibv_derge_mr failed.");
       LOG_ERROR("ibv_derge_mr failed.");
@@ -235,8 +235,8 @@ BufferPool::~BufferPool() {
 }
 
 bool BufferPool::Init(ibv_pd *pd) {
-  size_t per_mr_bp_sz = _buffer_pool_size >> 2;
-  for (int i = 0; i < 4; i++) {
+  size_t per_mr_bp_sz = _buffer_pool_size / kPoolMrBlockNum;
+  for (int i = 0; i < kPoolMrBlockNum; i++) {
     _mr[i] = ibv_reg_mr(pd, (char *)_pages + per_mr_bp_sz * i, per_mr_bp_sz, RDMA_MR_FLAG);
     if (_mr[i] == nullptr) {
       LOG_ERROR("Register %lu memory failed.", per_mr_bp_sz);

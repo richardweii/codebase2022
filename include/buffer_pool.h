@@ -72,7 +72,7 @@ class BufferPool {
   PageData *_pages;
   PageEntry *_entries;
 
-  ibv_mr *_mr[4];
+  ibv_mr *_mr[kPoolMrBlockNum];
   ClockReplacer *_replacer;
   FrameHashTable *_hash_table;
   size_t _buffer_pool_size;
