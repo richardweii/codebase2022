@@ -10,7 +10,7 @@
 
 namespace kv {
 
-Pool::Pool(uint8_t shard, RDMAClient *client, std::vector<MemoryAccess> *global_rdma_access)
+Pool::Pool(uint8_t shard, RDMAClient *client, MemoryAccess *global_rdma_access)
     : _access_table(global_rdma_access), _client(client), _shard(shard) {
   _buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum, shard);
   _hash_index = new HashTable(kKeyNum / kPoolShardingNum);
@@ -471,7 +471,7 @@ int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
   LOG_DEBUG("write to block %d off %d", block, block_off);
-  const MemoryAccess &access = _access_table->at(block);
+  const MemoryAccess &access = _access_table[block];
 RETRY:
   if (open_compress) {
     // 先压缩
@@ -495,7 +495,7 @@ RETRY:
 int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch) {
   uint32_t block = AddrParser::GetBlockFromPageId(page_id);
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(page_id);
-  const MemoryAccess &access = _access_table->at(block);
+  const MemoryAccess &access = _access_table[block];
   if (open_compress) {
     // 读取到的是压缩后的数据
     return batch->RemoteRead(_buffer_pool->compress_page_buff[cur_thread_id + kThreadNum].data,

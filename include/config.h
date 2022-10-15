@@ -73,7 +73,7 @@ constexpr size_t kMaxBlockSize = (size_t)1 * 1024 * 1024;  // 1MB mr
 constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;                   // 16 * 12M key
 constexpr size_t kPoolSize = (size_t)32 * 1024 * 1024 * 1024;       // 32GB remote pool
 constexpr size_t kBufferPoolSize = (size_t)4 * 1024 * 1024 * 1024;  // 2GB cache
-constexpr size_t kMaxBlockSize = (size_t)1 * 128 * 1024 * 1024;    // 1GB mr
+constexpr size_t kMaxBlockSize = (size_t)1 * 256 * 1024 * 1024;    // 256MB mr
 #endif
 
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
@@ -93,7 +93,7 @@ constexpr int kThreadNum = 1;
 
 // 2^PGAE_BIT = 32GB / kPageSize
 // SHIFT = log(kMrBlockNum)
-constexpr int kShift = 8;
+constexpr int kShift = 7;
 constexpr uint32_t PAGE_BIT = 35 - kPageSizeBit;
 constexpr uint32_t PAGE_MASK = (1 << PAGE_BIT) - 1;
 constexpr uint32_t PAGE_OFF_MASK = (1 << (PAGE_BIT - kShift)) - 1;

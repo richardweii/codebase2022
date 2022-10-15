@@ -13,6 +13,7 @@
 #include "page_manager.h"
 #include "rdma_client.h"
 #include "util/lockfree_queue.h"
+#include "util/logging.h"
 #include "util/nocopy.h"
 #include "util/rwlock.h"
 #include "util/singleflight.h"
@@ -22,7 +23,7 @@ namespace kv {
 
 class Pool NOCOPYABLE {
  public:
-  Pool(uint8_t shard, RDMAClient *client, std::vector<MemoryAccess> *global_rdma_access);
+  Pool(uint8_t shard, RDMAClient *client, MemoryAccess *global_rdma_access);
   ~Pool();
 
   void Init();
@@ -83,7 +84,7 @@ class Pool NOCOPYABLE {
   SpinLatch _small_allocing_list_latch[kAllocingListShard][kSlabSizeMax + 1];
   SpinLatch _big_allocing_list_latch[kBigAllocingListShard][kSlabSizeMax + 1];
 
-  std::vector<MemoryAccess> *_access_table = nullptr;
+  MemoryAccess *_access_table = nullptr;
 
   BufferPool *_buffer_pool = nullptr;
 
@@ -105,7 +106,8 @@ class RemotePool NOCOPYABLE {
     ValueBlock *block = &_blocks[cur];
     auto succ = block->Init(_pd);
     LOG_ASSERT(succ, "Failed to init memblock  %d.", cur);
-    LOG_INFO("Alloc block %d successfully, prepare response.", cur);
+    if (succ) LOG_INFO("Alloc block %d successfully, prepare response.", cur);
+    else LOG_ERROR("Alloc block %d Failed", cur);
     return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey()};
   }
 

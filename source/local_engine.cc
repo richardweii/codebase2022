@@ -48,19 +48,8 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
   global_page_manager = new PageManager(kPoolSize / kPageSize);
   LOG_INFO("global_page_manager created");
-  int thread_num = kPoolShardingNum;
+  int thread_num = kThreadNum;
   std::vector<std::thread> threads;
-  for (int t = 0; t < thread_num; t++) {
-    threads.emplace_back(
-        [&](int tid) {
-          for (int i = 0; i < kPoolShardingNum / thread_num; i++) {
-            _pool[tid + i * thread_num] = new Pool(tid + i * thread_num, _client, &_global_access_table);
-            _pool[tid + i * thread_num]->Init();
-          }
-        },
-        t);
-  }
-
   // RDMA access global table
   std::vector<MessageBlock *> msgs;
   for (int i = 0; i < kMrBlockNum; i++) {
@@ -74,23 +63,35 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
     msgs.emplace_back(msg);
   }
 
-  for (int i = 0; i < kMrBlockNum; i++) {
-    AllocResponse resp;
-    _client->RPCRecv(resp, msgs[i]);
-    if (resp.status != RES_OK) {
-      LOG_FATAL("Failed to alloc new block.");
-    }
+  int per_thread_num = kMrBlockNum / thread_num;
+  for (int t = 0; t < thread_num; t++) {
+    threads.emplace_back(
+        [&](int tid) {
+          for (int i = 0; i < per_thread_num; i++) {
+            AllocResponse resp;
+            _client->RPCRecv(resp, msgs[i + tid*per_thread_num]);
+            if (resp.status != RES_OK) {
+              LOG_FATAL("Failed to alloc new block.");
+            }
 
-    MemoryAccess access{.addr = resp.addr, .rkey = resp.rkey};
-    _global_access_table.push_back(access);
+            MemoryAccess access{.addr = resp.addr, .rkey = resp.rkey};
+            _global_access_table[i + tid*per_thread_num] = access;
+          }
+        },
+        t);
   }
-  LOG_INFO("remote Value block allocated");
 
-  for (auto &th : threads) {
+  for (int i = 0; i < kPoolShardingNum; i++) {
+    _pool[i] = new Pool(i, _client, _global_access_table);
+    _pool[i]->Init();
+  }
+  LOG_INFO("pool init");
+
+  for (auto& th : threads) {
     th.join();
   }
 
-  LOG_INFO("pool init");
+  LOG_INFO("remote Value block allocated");
 
   auto watcher = std::thread([&]() {
     sleep(60 * 6);

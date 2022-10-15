@@ -70,7 +70,7 @@ class LocalEngine : public Engine {
   crypto_message_t _aes;
   Pool *_pool[kPoolShardingNum];
   RDMAClient *_client;
-  std::vector<MemoryAccess> _global_access_table;
+  MemoryAccess _global_access_table[kMrBlockNum];
   std::atomic<int> count_;
 };
 
