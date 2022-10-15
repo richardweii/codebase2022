@@ -140,6 +140,7 @@ bool LocalEngine::alive() { return _client->Alive(); }
  * @return false
  */
 bool LocalEngine::set_aes() {
+  open_compress = false;
   _aes.algo = CTR;
 
   // key
@@ -164,9 +165,13 @@ bool LocalEngine::set_aes() {
   return true;
 }
 
-crypto_message_t *LocalEngine::get_aes() { return &_aes; }
+crypto_message_t *LocalEngine::get_aes() {
+  open_compress = false;
+  return &_aes;
+}
 
 bool LocalEngine::encrypt(const std::string value, std::string &encrypt_value) {
+  open_compress = false;
   assert(value.size() % 16 == 0);
   /*! Size for AES context structure */
   int m_ctxsize = 0;
@@ -208,6 +213,7 @@ bool LocalEngine::encrypt(const std::string value, std::string &encrypt_value) {
 }
 
 char *LocalEngine::decrypt(const char *value, size_t len) {
+  open_compress = false;
   crypto_message_t *aes_get = get_aes();
   Ipp8u *ciph = (Ipp8u *)malloc(sizeof(Ipp8u) * len);
   memset(ciph, 0, len);
@@ -238,7 +244,6 @@ std::atomic<int> count3 = 1000;
  */
 bool LocalEngine::write(const std::string &key, const std::string &value, bool use_aes) {
   if (UNLIKELY(-1 == cur_thread_id)) {
-    open_compress = !use_aes;
     cur_thread_id = count_++;
     cur_thread_id %= kThreadNum;
     bind_core(cur_thread_id);
@@ -259,6 +264,7 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   int index = Shard(hash);
 
   if (UNLIKELY(use_aes)) {
+    open_compress = false;
 // LOG_INFO("encryption %08lx, %08lx ", *((uint64_t*)(key.data())), *((uint64_t*)(key.data() + 8)));
 #ifdef STAT
 // if (stat::write_times.load(std::memory_order_relaxed) % 1000000 == 1)
