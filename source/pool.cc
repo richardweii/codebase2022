@@ -479,6 +479,7 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   return true;
 }
 
+std::atomic<int> count7 = 0;
 int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
@@ -487,11 +488,14 @@ int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {
   if (LIKELY(open_compress)) {
     // 先压缩
     size_t com_size = LZ4_compress_fast(entry->Data(), _buffer_pool->compress_page_buff[cur_thread_id].data, kPageSize,
-                                        kPageSize, 3000);
+                                        kPageSize, 6);
     _buffer_pool->pg_com_szs[entry->PageId()] = com_size;
-    // static bool f = false;
-    // if (!f) LOG_INFO("ratio %f", (kPageSize*1.0)/com_size);
-    // f = true;
+
+    if (count7 < 100) {
+      LOG_INFO("compress ratio %f", (kPageSize * 1.0) / com_size);
+      count7++;
+    }
+
     return batch->RemoteWrite(_buffer_pool->compress_page_buff[cur_thread_id].data, _buffer_pool->CompressMR()->lkey,
                               com_size, access.addr + kPageSize * block_off, access.rkey);
   } else {

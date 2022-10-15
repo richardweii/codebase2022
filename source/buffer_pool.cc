@@ -275,16 +275,16 @@ PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
 
 PageEntry *BufferPool::Lookup(PageId page_id, bool writer) {
   FrameId fid;
-  bp_locks_[page_id].RLock();
-  defer { bp_locks_[page_id].RUnlock(); };
-  // while (true) {
-  fid = _hash_table->Find(page_id);
-  if (fid == INVALID_FRAME_ID) {
-    return nullptr;
-  }
+  // bp_locks_[page_id].RLock();
+  // defer { bp_locks_[page_id].RUnlock(); };
+  while (true) {
+    fid = _hash_table->Find(page_id);
+    if (fid == INVALID_FRAME_ID) {
+      return nullptr;
+    }
 
-  // if (_entries[fid]._page_id == page_id) break;
-  // }
+    if (_entries[fid]._page_id == page_id) break;
+  }
   LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
   _replacer->Ref(fid);
   // LOG_DEBUG("[shard %d] lookup page %d", _shard, page_id);
@@ -296,8 +296,8 @@ void BufferPool::Release(PageEntry *entry) { _replacer->Ref(entry->_frame_id); }
 void BufferPool::InsertPage(PageEntry *page, PageId page_id, uint8_t slab_class) {
   page->_page_id = page_id;
   page->_slab_class = slab_class;
-  bp_locks_[page_id].WLock();
-  defer { bp_locks_[page_id].WUnlock(); };
+  // bp_locks_[page_id].WLock();
+  // defer { bp_locks_[page_id].WUnlock(); };
   _hash_table->Insert(page_id, page->_frame_id);
   _replacer->Ref(page->_frame_id);
 }
@@ -309,8 +309,8 @@ PageEntry *BufferPool::Evict() {
   PageEntry *victim = &_entries[fid];
 
   // remove from old hash table
-  bp_locks_[victim->_page_id].WLock();
-  defer { bp_locks_[victim->_page_id].WUnlock(); };
+  // bp_locks_[victim->_page_id].WLock();
+  // defer { bp_locks_[victim->_page_id].WUnlock(); };
   _hash_table->Remove(victim->_page_id, victim->_frame_id);
   return victim;
 }
