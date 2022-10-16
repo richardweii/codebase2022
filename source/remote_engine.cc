@@ -59,6 +59,16 @@ void RemoteEngine::handler(RPCTask *task) {
       LOG_INFO("Response Alloc msg...");
       break;
     }
+    case MSG_NET_BUFFER : {
+      NetBufferInitReq *req = task->GetRequest<NetBufferInitReq>();
+      LOG_INFO("NetBuffer Init.");
+      _net_buffer_rkey = req->rkey;
+      _net_buffer_addr = req->addr;
+
+      NetBufferInitResponse resp;
+      task->SetResponse(resp);
+      break;
+    }
     default:
       LOG_ERROR("Invalid message.");
       break;

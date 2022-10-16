@@ -90,6 +90,9 @@ class RemoteEngine : public Engine {
   kv::RDMAServer *_server;
   volatile bool _stop;
   RemotePool *_pool;
+  
+  uintptr_t _net_buffer_addr;
+  uint32_t _net_buffer_rkey;
 };
 
 }  // namespace kv

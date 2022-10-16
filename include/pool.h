@@ -3,6 +3,7 @@
 #include <infiniband/verbs.h>
 #include <atomic>
 #include <cassert>
+#include <cstdint>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -19,6 +20,23 @@
 #include "util/slice.h"
 
 namespace kv {
+
+// writeToRemote的时候,如果NetBuffer有空间,那么可以直接将要置换到远端的Page存到NetBuffer当中,然后直接返回即可,不用自己写到远端,
+// 远端机器轮询这块区域,主动读到对应的page的位置
+class NetBuffer NOCOPYABLE {
+ public:
+  struct Meta {
+    uint64_t ready;
+    uint64_t remote_addr;
+    std::atomic<uint64_t> head;
+    std::atomic<uint64_t> tail;
+  };
+  struct Entry {
+    PageData data;
+  };
+  Meta buff_meta[kNetBufferPageNum];
+  Entry buff_data[kNetBufferPageNum];
+};
 
 class Pool NOCOPYABLE {
  public:
@@ -72,6 +90,8 @@ class Pool NOCOPYABLE {
 
   SpinLock _lock;
   SpinLatch _latch;
+  NetBuffer _net_buffer[kThreadNum];
+  ibv_mr *_net_buffer_mr;
 };
 
 class RemotePool NOCOPYABLE {

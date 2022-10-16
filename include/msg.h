@@ -21,7 +21,7 @@ struct PData {
   uint32_t size;
 };
 
-enum MsgType { CMD_PING, CMD_STOP, CMD_TEST, MSG_ALLOC, MSG_LOOKUP, MSG_FETCH, MSG_CREATE };
+enum MsgType { CMD_PING, CMD_STOP, CMD_TEST, MSG_ALLOC, MSG_NET_BUFFER};
 
 enum ResStatus { RES_OK, RES_FAIL };
 
@@ -79,6 +79,14 @@ struct AllocResponse : public ResponseMsg {
 };
 CHECK_RDMA_MSG_SIZE(AllocResponse);
 
+struct NetBufferInitReq : public RequestsMsg {
+  uint64_t addr;
+  uint32_t rkey;
+};
+CHECK_RDMA_MSG_SIZE(NetBufferInitReq);
+
+struct NetBufferInitResponse : public ResponseMsg {};
+CHECK_RDMA_MSG_SIZE(NetBufferInitResponse);
 
 // for test
 struct DummyRequest : public RequestsMsg {

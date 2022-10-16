@@ -64,6 +64,8 @@ constexpr size_t kMaxPoolBlockSize = (size_t)1 * 512 * 1024 * 1024;  // 1GB mr
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
 constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 
+constexpr int kNetBufferPageNum = 32;
+
 using Addr = int32_t;
 constexpr Addr INVALID_ADDR = (-1);
 

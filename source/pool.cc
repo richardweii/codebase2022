@@ -1,6 +1,10 @@
 #include "pool.h"
+#include <infiniband/verbs.h>
+#include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include "config.h"
+#include "msg.h"
 #include "page_manager.h"
 #include "stat.h"
 #include "util/likely.h"
@@ -37,6 +41,25 @@ void Pool::Init() {
       _allocing_tail[j][i]->Pin();
     }
   }
+
+  // mr net buffer
+  _net_buffer_mr = ibv_reg_mr(_client->Pd(), _net_buffer, sizeof(NetBuffer) * kThreadNum, RDMA_MR_FLAG);
+  if (_net_buffer_mr == nullptr) {
+    LOG_FATAL("Register Net Buffer Failed.");
+  }
+
+  // send net buffer meta to remote
+  MessageBlock *block;
+
+  NetBufferInitReq req;
+  req.type = MSG_NET_BUFFER;
+  req.addr = (uintptr_t)_net_buffer_mr->addr;
+  req.rkey = _net_buffer_mr->rkey;
+  _client->RPCSend(req, block);
+
+  NetBufferInitResponse resp;
+  auto rc = _client->RPCRecv(resp, block);
+  assert(rc == 0);
 }
 
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
