@@ -65,6 +65,7 @@ constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
 constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 
 constexpr int kNetBufferPageNum = 32;
+constexpr int kRemoteThreadWorkNum = 4;
 
 using Addr = int32_t;
 constexpr Addr INVALID_ADDR = (-1);

@@ -1,12 +1,19 @@
 #pragma once
 #include <atomic>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
+#include "config.h"
 #include "msg.h"
+#include "pool.h"
+#include "rdma_conn.h"
 #include "rdma_manager.h"
+#include "util/logging.h"
 
 namespace kv {
+extern thread_local RDMAConnection *conn_;
+
 class RPCTask;
 class RDMAServer : public RDMAManager {
  public:
@@ -16,7 +23,9 @@ class RDMAServer : public RDMAManager {
   using Handler = std::function<void(RPCTask *task)>;
   RDMAServer(Handler &&handler) : handler_(std::move(handler)){};
 
-  void Start() override { handleConnection(); }
+  void Start() override {
+    handleConnection();
+  }
 
   void Stop() override {
     for (size_t i = 0; i < workers_.size(); i++) {
@@ -25,13 +34,16 @@ class RDMAServer : public RDMAManager {
   }
 
   bool Init(std::string ip, std::string port) override;
+  uintptr_t _net_buffer_addr;
+  uint32_t _net_buffer_rkey;
+  volatile bool _start_polling = false;
 
  private:
   void handleConnection();
 
-  void worker();
+  void worker(int thread_id);
 
-  RPCTask *pollTask();
+  RPCTask *pollTask(int thread_id);
 
   int createConnection(rdma_cm_id *cm_id);
 
@@ -40,6 +52,9 @@ class RDMAServer : public RDMAManager {
 
   int worker_num_ = 0;
   rdma_cm_id *listen_id_ = nullptr;
+  ibv_mr *_remote_net_buffer_mr;
+  uint32_t lkey;
+  NetBuffer remote_net_buffer[kThreadNum];
 };
 
 class RPCTask {

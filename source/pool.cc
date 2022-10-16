@@ -44,6 +44,7 @@ void Pool::Init() {
 
   // mr net buffer
   _net_buffer_mr = ibv_reg_mr(_client->Pd(), _net_buffer, sizeof(NetBuffer) * kThreadNum, RDMA_MR_FLAG);
+  LOG_INFO("addr %p %p", _net_buffer, _net_buffer_mr->addr);
   if (_net_buffer_mr == nullptr) {
     LOG_FATAL("Register Net Buffer Failed.");
   }
@@ -263,8 +264,16 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
 #ifdef STAT
         stat::dirty_write.fetch_add(1);
 #endif
-        auto ret = writeToRemote(entry, batch);
-        LOG_ASSERT(ret == 0, "rdma write failed.");
+        auto ret = writeToRemote(entry, batch, true);
+        // LOG_ASSERT(ret == 0, "rdma write failed.");
+        if (ret == 1) {
+          delete batch;
+          // defer finish batch
+          *batch_ret = nullptr;
+        } else {
+          // defer finish batch
+          *batch_ret = batch;
+        }
         entry->Dirty = false;
         _buffer_pool->PinPage(entry);
         _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
@@ -273,8 +282,6 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
         LOG_ASSERT(_allocing_tail[al_index][slab_class] != nullptr, "tail should not be null");
         LOG_ASSERT(_allocing_tail[al_index][slab_class]->Prev() == nullptr, "prev should null");
 
-        // defer finish batch
-        *batch_ret = batch;
         _buffer_pool->UnpinPage(old_entry);
         old_meta->UnPin();
         return entry;
@@ -334,8 +341,8 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
 #ifdef STAT
     stat::dirty_write.fetch_add(1);
 #endif
-    auto ret = writeToRemote(victim, batch);
-    LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
+    auto ret = writeToRemote(victim, batch, false);
+    // LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
     victim->Dirty = false;
   }
   auto ret = readFromRemote(victim, page_id, batch);
@@ -395,11 +402,16 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   return true;
 }
 
-int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch) {
+int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch, bool use_net_buffer) {
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
   LOG_DEBUG("write to block %d off %d", block, block_off);
   const MemoryAccess &access = _access_table[block];
+  if (use_net_buffer && _net_buffer[cur_thread_id].produce(entry->Data(), access.addr + kPageSize * block_off)) {
+    // net buff有空间
+    LOG_INFO("pageid %d 命中net buff", entry->PageId());
+    return 1;
+  }
 RETRY:
   if (open_compress) {
     // 先压缩
@@ -412,11 +424,13 @@ RETRY:
       goto RETRY;
     }
 
-    return batch->RemoteWrite(_buffer_pool->compress_page_buff[cur_thread_id].data, _buffer_pool->CompressMR()->lkey,
-                              com_size, access.addr + kPageSize * block_off, access.rkey);
+    batch->RemoteWrite(_buffer_pool->compress_page_buff[cur_thread_id].data, _buffer_pool->CompressMR()->lkey, com_size,
+                       access.addr + kPageSize * block_off, access.rkey);
+    return 0;
   } else {
-    return batch->RemoteWrite(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
-                              access.addr + kPageSize * block_off, access.rkey);
+    batch->RemoteWrite(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
+                       access.addr + kPageSize * block_off, access.rkey);
+    return 0;
   }
 }
 

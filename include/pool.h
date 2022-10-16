@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -23,19 +24,29 @@ namespace kv {
 
 // writeToRemote的时候,如果NetBuffer有空间,那么可以直接将要置换到远端的Page存到NetBuffer当中,然后直接返回即可,不用自己写到远端,
 // 远端机器轮询这块区域,主动读到对应的page的位置
-class NetBuffer NOCOPYABLE {
+class alignas(8) NetBuffer NOCOPYABLE {
  public:
   struct Meta {
-    uint64_t ready;
-    uint64_t remote_addr;
-    std::atomic<uint64_t> head;
-    std::atomic<uint64_t> tail;
+    uint64_t tail = 0;
+    uint64_t head = 0;
+    uint64_t remote_addr[kNetBufferPageNum];
+    bool Empty() { return head == tail; }
+    bool Full() { return ((head + 1) % kNetBufferPageNum) == tail; }
+    // local端生产
+    bool produce(NetBuffer *buffer, char *data, uint64_t raddr) {
+      if (!Full()) {
+        memcpy(buffer->buff_data[head].data, data, kPageSize);
+        remote_addr[head] = raddr;
+        head = (head + 1) % kNetBufferPageNum;
+        return true;
+      }
+      return false;
+    }
+    // remote端消费,tail通过远端rdma write来更改
   };
-  struct Entry {
-    PageData data;
-  };
-  Meta buff_meta[kNetBufferPageNum];
-  Entry buff_data[kNetBufferPageNum];
+  bool produce(char *data, uint64_t raddr) { return buff_meta.produce(this, data, raddr); }
+  Meta buff_meta;
+  PageData buff_data[kNetBufferPageNum];
 };
 
 class Pool NOCOPYABLE {
@@ -62,7 +73,7 @@ class Pool NOCOPYABLE {
 
   void modifyLength(KeySlot *slot, const Slice &val, uint32_t hash);
 
-  int writeToRemote(PageEntry *entry, RDMAManager::Batch *batch);
+  int writeToRemote(PageEntry *entry, RDMAManager::Batch *batch, bool use);
 
   int readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch);
 

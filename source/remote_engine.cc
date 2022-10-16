@@ -64,9 +64,12 @@ void RemoteEngine::handler(RPCTask *task) {
       LOG_INFO("NetBuffer Init.");
       _net_buffer_rkey = req->rkey;
       _net_buffer_addr = req->addr;
+      _server->_net_buffer_rkey = _net_buffer_rkey;
+      _server->_net_buffer_addr = _net_buffer_addr;
 
       NetBufferInitResponse resp;
       task->SetResponse(resp);
+      _server->_start_polling = true;
       break;
     }
     default:

@@ -163,6 +163,7 @@ int RDMAConnection::pollCq(int num) {
   while (num > 0) {
     if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
       LOG_ERROR("rdma_one_side timeout\n");
+      abort();
       return -1;
     }
     int rc = ibv_poll_cq(cq_, num, wc);
@@ -170,6 +171,7 @@ int RDMAConnection::pollCq(int num) {
       for (int i = 0; i < rc; i++) {
         if (IBV_WC_SUCCESS != wc[i].status) {
           LOG_ERROR("poll cq %d/%d failed. Status %d : %s", i, num, wc[i].status, ibv_wc_status_str(wc[i].status));
+          abort();
           perror("cmd_send ibv_poll_cq status error");
           ret = -1;
           break;

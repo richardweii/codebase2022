@@ -64,6 +64,11 @@ class ConnQue {
     return true;
   }
 
+  RDMAConnection* At(int idx) {
+    LOG_ASSERT(idx >= 0 && idx < (int)size_, "bound error");
+    return connections_[idx]; 
+  }
+
   void Enqueue(RDMAConnection *conn) {
     int idx = conn->ConnId();
     LOG_ASSERT((size_t)idx < size_, "idx %d", idx);

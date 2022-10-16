@@ -1,5 +1,6 @@
 #include "rdma_server.h"
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -7,11 +8,12 @@
 #include "config.h"
 #include "msg.h"
 #include "msg_buf.h"
+#include "pool.h"
 #include "rdma_manager.h"
 #include "util/logging.h"
 
 namespace kv {
-
+thread_local RDMAConnection *conn_;
 bool RDMAServer::Init(std::string ip, std::string port) {
   stop_ = false;
 
@@ -63,10 +65,16 @@ bool RDMAServer::Init(std::string ip, std::string port) {
     return succ;
   }
 
-  for (int i = 0; i < kRPCWorkerNum; i++) {
-    workers_.emplace_back(&RDMAServer::worker, this);
-  }
   rdma_one_side_ = new ConnQue(kRPCWorkerNum);
+  _remote_net_buffer_mr = ibv_reg_mr(pd_, remote_net_buffer, sizeof(NetBuffer) * kThreadNum, RDMA_MR_FLAG);
+  if (_remote_net_buffer_mr == nullptr) {
+    LOG_ERROR("_remote_net_buffer_mr register memory failed");
+    abort();
+  }
+  lkey = _remote_net_buffer_mr->lkey;
+  for (int i = 0; i < kRPCWorkerNum; i++) {
+    workers_.emplace_back(&RDMAServer::worker, this, i);
+  }
   return true;
 }
 
@@ -151,7 +159,7 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
   return 0;
 }
 
-RPCTask *RDMAServer::pollTask() {
+RPCTask *RDMAServer::pollTask(int thread_id) {
   MessageBlock *blocks_ = msg_buffer_->Data();
   while (!stop_) {
     for (size_t i = 0; i < msg_buffer_->Size(); i++) {
@@ -160,15 +168,53 @@ RPCTask *RDMAServer::pollTask() {
         return new RPCTask(&blocks_[i], this);
       }
     }
-    std::this_thread::yield();
+    if (_start_polling) {
+      // conn_ = rdma_one_side_->At(thread_id);
+      // LOG_ASSERT(conn_ != nullptr, "conn == nullptr, thread_id %d", thread_id);
+      // 轮询 local端 netbuffer
+      for (int i = thread_id * kRemoteThreadWorkNum; i < (thread_id + 1) * kRemoteThreadWorkNum; i++) {
+        // 轮询local端的第i个线程对应的NetBuffer区域
+        // 1. 首先读取buff meta数据到本地
+        LOG_INFO("run here");
+        uint64_t buff_meta_start_off = sizeof(NetBuffer) * i;
+        uint64_t buff_data_start_off = buff_meta_start_off + sizeof(NetBuffer::Meta);
+        
+        auto batch = this->BeginBatch();
+        // batch->RemoteRead(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey)
+        // conn_->BeginBatch();
+        batch->RemoteRead(&remote_net_buffer[i].buff_meta, lkey, sizeof(NetBuffer::Meta),
+                          _net_buffer_addr + buff_meta_start_off, _net_buffer_rkey);
+        batch->FinishBatch();
+        delete batch;
+        // 2. 判断buff_meta是否有任务需要消费
+        auto *buff_meta = &remote_net_buffer[i].buff_meta;
+        if (!buff_meta->Empty()) {
+          LOG_INFO("head %ld tail %ld", buff_meta->head, buff_meta->tail);
+          // 3. 有任务需要消费, 开始消费任务,将对应的数据读取到remote端
+          uint64_t tail = buff_meta->tail;
+          uint64_t head = buff_meta->head;
+          auto batch = this->BeginBatch();
+          for (; tail != head; tail = ((tail + 1) % kNetBufferPageNum)) {
+            batch->RemoteRead(buff_meta[tail].remote_addr, lkey, kPageSize, _net_buffer_addr + buff_data_start_off,
+                              _net_buffer_rkey);
+          }
+          // 4. 任务完成,更新tail
+          batch->RemoteWrite(&remote_net_buffer[i].buff_meta, lkey, sizeof(uint64_t),
+                             _net_buffer_addr + buff_meta_start_off, _net_buffer_rkey);
+          batch->FinishBatch();
+          delete batch;
+          LOG_INFO("remote消费线程%d成功, 更新tail为 %ld", i, remote_net_buffer[i].buff_meta.tail);
+        }
+      }
+    }
   }
   return nullptr;
 }
 
 // 远端的工作任务
-void RDMAServer::worker() {
+void RDMAServer::worker(int thread_id) {
   while (!stop_) {
-    RPCTask *task = pollTask();
+    RPCTask *task = pollTask(thread_id);
     if (task == nullptr) {
       break;
     }
