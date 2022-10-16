@@ -48,7 +48,7 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
   global_page_manager = new PageManager(kPoolSize / kPageSize);
   LOG_INFO("global_page_manager created");
-  int thread_num = kThreadNum;
+  int thread_num = 10;
   std::vector<std::thread> threads;
   // RDMA access global table
   std::vector<MessageBlock *> msgs;
