@@ -8,6 +8,21 @@
 
 namespace kv {
 bool RDMAClient::Init(std::string ip, std::string port) {
+  struct ibv_context **ibv_ctxs;
+  int nr_devices_;
+  ibv_ctxs = rdma_get_devices(&nr_devices_);
+  if (!ibv_ctxs) {
+    perror("get device list fail");
+    return false;
+  }
+
+  context_ = ibv_ctxs[0];
+  pd_ = ibv_alloc_pd(context_);
+  if (!pd_) {
+    perror("ibv_alloc_pd fail");
+    return false;
+  }
+
   stop_ = false;
 
   cm_channel_ = rdma_create_event_channel();
@@ -75,13 +90,6 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   }
 
   rdma_ack_cm_event(event);
-
-  pd_ = ibv_alloc_pd(cm_id->verbs);
-  if (!pd_) {
-    perror("ibv_alloc_pd fail");
-    LOG_ERROR("ibv_alloc_pd fail");
-    return false;
-  }
 
   msg_buffer_ = new MsgBuffer(pd_);
   if (!msg_buffer_->Init()) {
@@ -153,12 +161,6 @@ bool RDMAClient::Init(std::string ip, std::string port) {
 
   remote_addr_ = server_pdata.buf_addr;
   remote_rkey_ = server_pdata.buf_rkey;
-
-  msg_buffer_ = new MsgBuffer(pd_);
-  if (!msg_buffer_->Init()) {
-    LOG_ERROR("Init MsgBuffer fail.");
-    return false;
-  }
 
   rdma_one_side_ = new ConnQue(kOneSideWorkerNum);
   rdma_one_side_->InitConnection(0, pd_, cq, cm_id);

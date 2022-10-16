@@ -144,7 +144,8 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
   rep_pdata.buf_rkey = msg_buffer_->Rkey();
 
   struct rdma_conn_param conn_param;
-  conn_param.responder_resources = 1;
+  conn_param.initiator_depth = 1;
+  conn_param.retry_count = 7;
   conn_param.private_data = &rep_pdata;
   conn_param.private_data_len = sizeof(rep_pdata);
 
