@@ -24,6 +24,7 @@ namespace kv {
 struct MemoryAccess {
   uint64_t addr;
   uint32_t rkey;
+  uint32_t lkey;
 };
 
 /* The RDMA connection queue */
@@ -64,9 +65,9 @@ class ConnQue {
     return true;
   }
 
-  RDMAConnection* At(int idx) {
+  RDMAConnection *At(int idx) {
     LOG_ASSERT(idx >= 0 && idx < (int)size_, "bound error");
-    return connections_[idx]; 
+    return connections_[idx];
   }
 
   void Enqueue(RDMAConnection *conn) {
@@ -114,6 +115,10 @@ class RDMAManager {
       conn_ = nullptr;
       queue_ = nullptr;
       return ret;
+    }
+
+    int FinishBatchTL() {
+      return conn_->FinishBatch();
     }
 
    private:
@@ -164,8 +169,17 @@ class RDMAManager {
     return ret;
   }
 
-  Batch* BeginBatch() {
+  RDMAConnection *At(int idx) { return rdma_one_side_->At(idx); }
+
+  Batch *BeginBatch() {
     auto conn = rdma_one_side_->Dequeue();
+    assert(conn != nullptr);
+    conn->BeginBatch();
+    return new Batch(conn, rdma_one_side_);
+  }
+
+  Batch *BeginBatchTL(int tid) {
+    auto conn = rdma_one_side_->At(tid);
     assert(conn != nullptr);
     conn->BeginBatch();
     return new Batch(conn, rdma_one_side_);

@@ -69,13 +69,13 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
         [&](int tid) {
           for (int i = 0; i < per_thread_num; i++) {
             AllocResponse resp;
-            _client->RPCRecv(resp, msgs[i + tid*per_thread_num]);
+            _client->RPCRecv(resp, msgs[i + tid * per_thread_num]);
             if (resp.status != RES_OK) {
               LOG_FATAL("Failed to alloc new block.");
             }
 
-            MemoryAccess access{.addr = resp.addr, .rkey = resp.rkey};
-            _global_access_table[i + tid*per_thread_num] = access;
+            MemoryAccess access{.addr = resp.addr, .rkey = resp.rkey, .lkey = resp.lkey};
+            _global_access_table[i + tid * per_thread_num] = access;
           }
         },
         t);
@@ -87,7 +87,7 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   }
   LOG_INFO("pool init");
 
-  for (auto& th : threads) {
+  for (auto &th : threads) {
     th.join();
   }
 
@@ -204,7 +204,7 @@ bool LocalEngine::encrypt(const std::string value, std::string &encrypt_value) {
   /* 6. Remove secret and release resources */
   ippsAESInit(0, _aes.key_len, m_pAES, m_ctxsize);
 
-  if (m_pAES) delete[] (Ipp8u *)m_pAES;
+  if (m_pAES) delete[](Ipp8u *) m_pAES;
   m_pAES = nullptr;
   std::string tmp(reinterpret_cast<const char *>(m_encrypt_val), value.size());
   encrypt_value = tmp;

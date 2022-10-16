@@ -76,6 +76,7 @@ CHECK_RDMA_MSG_SIZE(AllocRequest);
 struct AllocResponse : public ResponseMsg {
   uint64_t addr;
   uint32_t rkey;
+  uint32_t lkey;
 };
 CHECK_RDMA_MSG_SIZE(AllocResponse);
 

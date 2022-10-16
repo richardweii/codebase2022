@@ -215,7 +215,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   off = meta->SetFirstFreePos();
   LOG_ASSERT(off != -1, "set bitmap failed.");
   if (batch != nullptr) {
-    batch->FinishBatch();
+    batch->FinishBatchTL();
     delete batch;
   }
   allocingListWUnlock(al_index, slab_class);
@@ -260,7 +260,8 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
       LOG_ASSERT(entry != nullptr, "evicting failed.");
       // write dirty page back
       if (entry->Dirty) {
-        auto batch = _client->BeginBatch();
+        // auto conn_ = _client->At(cur_thread_id);
+        auto batch = _client->BeginBatchTL(cur_thread_id);
 #ifdef STAT
         stat::dirty_write.fetch_add(1);
 #endif
@@ -268,10 +269,8 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
         // LOG_ASSERT(ret == 0, "rdma write failed.");
         if (ret == 1) {
           delete batch;
-          // defer finish batch
           *batch_ret = nullptr;
         } else {
-          // defer finish batch
           *batch_ret = batch;
         }
         entry->Dirty = false;
@@ -336,7 +335,7 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
   }
 
   PageEntry *victim = _buffer_pool->Evict();
-  auto batch = _client->BeginBatch();
+  auto batch = _client->BeginBatchTL(cur_thread_id);
   if (victim->Dirty) {
 #ifdef STAT
     stat::dirty_write.fetch_add(1);
@@ -346,7 +345,7 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
     victim->Dirty = false;
   }
   auto ret = readFromRemote(victim, page_id, batch);
-  ret = batch->FinishBatch();
+  ret = batch->FinishBatchTL();
   if (open_compress) {
     // 解压缩
     LZ4_decompress_safe(_buffer_pool->compress_page_buff[cur_thread_id + kThreadNum].data, victim->Data(),
@@ -385,7 +384,7 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   // modify bitmap
   off = meta->SetFirstFreePos();
   if (batch != nullptr) {
-    batch->FinishBatch();
+    batch->FinishBatchTL();
     delete batch;
   }
   allocingListWUnlock(al_index, slab_class);
@@ -403,13 +402,14 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
 }
 
 int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch, bool use_net_buffer) {
+  // LOG_INFO("pageid %d writeToRemote", entry->PageId());
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
   LOG_DEBUG("write to block %d off %d", block, block_off);
   const MemoryAccess &access = _access_table[block];
-  if (use_net_buffer && _net_buffer[cur_thread_id].produce(entry->Data(), access.addr + kPageSize * block_off)) {
+  if (use_net_buffer && _net_buffer[cur_thread_id].produce(entry->Data(), access.addr + kPageSize * block_off, access.lkey)) {
     // net buff有空间
-    LOG_INFO("pageid %d 命中net buff", entry->PageId());
+    // LOG_INFO("pageid %d 命中net buff", entry->PageId());
     return 1;
   }
 RETRY:

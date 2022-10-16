@@ -30,13 +30,31 @@ class alignas(8) NetBuffer NOCOPYABLE {
     uint64_t tail = 0;
     uint64_t head = 0;
     uint64_t remote_addr[kNetBufferPageNum];
-    bool Empty() { return head == tail; }
-    bool Full() { return ((head + 1) % kNetBufferPageNum) == tail; }
+    uint64_t remote_lkey[kNetBufferPageNum];
+    bool Empty() {
+      if (tail >= kNetBufferPageNum) {
+        LOG_INFO("tail error");
+        return false;
+      }
+      return head == tail;
+    }
+    bool Full() {
+      if (tail >= kNetBufferPageNum) {
+        LOG_INFO("tail error");
+        return true;
+      }
+      return ((head + 1) % kNetBufferPageNum) == tail;
+    }
     // local端生产
-    bool produce(NetBuffer *buffer, char *data, uint64_t raddr) {
+    bool produce(NetBuffer *buffer, char *data, uint64_t raddr, uint32_t lkey) {
       if (!Full()) {
         memcpy(buffer->buff_data[head].data, data, kPageSize);
+        // char *p = buffer->buff_data[head].data;
+        // LOG_INFO("[%d] head %ld tail %ld --- value %08lx %08lx %08lx", cur_thread_id, head, tail, *((uint64_t *)(p)),
+        //          *((uint64_t *)(p + 8)), *((uint64_t *)(p + 16)));
+        LOG_INFO("raddr 0x%08lx lkey %d", raddr, lkey);
         remote_addr[head] = raddr;
+        remote_lkey[head] = lkey;
         head = (head + 1) % kNetBufferPageNum;
         return true;
       }
@@ -44,7 +62,7 @@ class alignas(8) NetBuffer NOCOPYABLE {
     }
     // remote端消费,tail通过远端rdma write来更改
   };
-  bool produce(char *data, uint64_t raddr) { return buff_meta.produce(this, data, raddr); }
+  bool produce(char *data, uint64_t raddr, uint32_t lkey) { return buff_meta.produce(this, data, raddr, lkey); }
   Meta buff_meta;
   PageData buff_data[kNetBufferPageNum];
 };
@@ -120,7 +138,8 @@ class RemotePool NOCOPYABLE {
     } else {
       LOG_ERROR("Alloc block %d Failed", cur);
     }
-    return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey()};
+    LOG_INFO("AllocBlock addr %p %d %d", block->Data(), block->Rkey(), block->Lkey());
+    return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey(), .lkey = block->Lkey()};
   }
 
   int BlockNum() const { return _block_cnt; }

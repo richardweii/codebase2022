@@ -53,6 +53,7 @@ void RemoteEngine::handler(RPCTask *task) {
 
       AllocResponse resp;
       resp.addr = access.addr;
+      resp.lkey = access.lkey;
       resp.rkey = access.rkey;
       resp.status = RES_OK;
       task->SetResponse(resp);

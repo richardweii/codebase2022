@@ -55,6 +55,7 @@
   do {                                                                                                \
     GET_TIME                                                                                          \
     DEBUG("\033[;31m[ERROR] %s %s:%d: " format "\n\033[0m", TIME, __FILE__, __LINE__, ##__VA_ARGS__); \
+    fflush(stdout);\
     abort();\
   } while (0)
 #else
