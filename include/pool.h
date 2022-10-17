@@ -121,8 +121,8 @@ class Pool NOCOPYABLE {
 
   SpinLock _lock;
   SpinLatch _latch;
-  NetBuffer _net_buffer[kThreadNum];
-  ibv_mr *_net_buffer_mr;
+  // NetBuffer _net_buffer[kThreadNum];
+  // ibv_mr *_net_buffer_mr;
   uint64_t _max_slot_num[kSlabSizeMax+1];
 };
 
