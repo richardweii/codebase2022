@@ -129,6 +129,7 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
   qp_attr.cap.max_send_sge = 1;
   qp_attr.cap.max_recv_wr = 1;
   qp_attr.cap.max_recv_sge = 1;
+  qp_attr.cap.max_inline_data = 64;
   qp_attr.send_cq = cq;
   qp_attr.recv_cq = cq;
   qp_attr.qp_type = IBV_QPT_RC;
@@ -144,8 +145,8 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
   rep_pdata.buf_rkey = msg_buffer_->Rkey();
 
   struct rdma_conn_param conn_param;
-  conn_param.responder_resources = 1;
-  conn_param.initiator_depth = 1;
+  conn_param.responder_resources = 16;
+  conn_param.initiator_depth = 16;
   conn_param.retry_count = 7;
   conn_param.private_data = &rep_pdata;
   conn_param.private_data_len = sizeof(rep_pdata);
@@ -170,6 +171,7 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
         return new RPCTask(&blocks_[i], this);
       }
     }
+    // _start_polling = false;
     if (_start_polling) {
       // 轮询 local端 netbuffer
       for (int i = thread_id * kRemoteThreadWorkNum; i < (thread_id + 1) * kRemoteThreadWorkNum; i++) {
@@ -185,14 +187,12 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
         // 2. 判断buff_meta是否有任务需要消费
         auto *buff_meta = &remote_net_buffer[i].buff_meta;
         if (!buff_meta->Empty()) {
-          // LOG_INFO("head %ld tail %ld", buff_meta->head, buff_meta->tail);
           // 3. 有任务需要消费, 开始消费任务,将对应的数据读取到remote端
-          // uint64_t tail0 = buff_meta->tail;
-          // uint64_t head0 = buff_meta->head;
           uint64_t tail = buff_meta->tail;
           uint64_t head = buff_meta->head;
           auto batch = this->BeginBatchTL(thread_id);
-          for (; tail != head; tail = ((tail + 1) % kNetBufferPageNum)) {
+          uint64_t count = 0;
+          for (; count < 4 && tail != head; tail = ((tail + 1) % kNetBufferPageNum)) {
             auto addr = buff_meta->addrs[tail].remote_addr;
             auto blkid = (addr - this->pool_->StartAddr()) / kMaxBlockSize;
             auto _lkey = this->pool_->lkey(blkid);
@@ -201,18 +201,10 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
                         buff_meta->addrs[tail].remote_lkey, _lkey);
               fflush(stdout);
             }
-            // LOG_INFO("raddr 0x%08lx lkey %ld", buff_meta->remote_addr[tail], buff_meta->remote_lkey[tail]);
             batch->RemoteRead((void *)(buff_meta->addrs[tail].remote_addr), _lkey, kPageSize,
                               _net_buffer_addr + buff_data_start_off + kPageSize * tail, _net_buffer_rkey);
+            count++;
           }
-          // batch->FinishBatchTL();
-          // LOG_INFO("[%d] head %ld tail %ld", i, head0, tail0);
-          // for (; tail0 != head0; tail0 = ((tail0 + 1) % kNetBufferPageNum)) {
-          //   char *p = (char *)buff_meta->remote_addr[tail0];
-          //   LOG_INFO("[%d] addr %p lkey %ld value %08lx %08lx %08lx", i, p, buff_meta->remote_lkey[tail0],
-          //            *((uint64_t *)(p)), *((uint64_t *)(p + 8)), *((uint64_t *)(p + 16)));
-          // }
-          // batch = this->BeginBatchTL(thread_id);
           // 4. 任务完成,更新tail
           buff_meta->tail = tail;
           batch->RemoteWrite(&remote_net_buffer[i].buff_meta, lkey, sizeof(uint64_t),

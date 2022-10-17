@@ -112,7 +112,7 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
               ASSERT(value.size() == (size_t)slab_class[key_idx] * kSlabSize, "got val length %lu, expected %d",
                      value.size(), slab_class[key_idx] * kSlabSize)
               auto cmp = memcmp(value.c_str(), k[key_idx].key, 16);
-              LOG_ASSERT(cmp == 0, "expect %08x, got %08x", *((uint32_t *)(k[key_idx].key+4)), *((uint32_t *)(value.c_str()+4)));
+              ASSERT(cmp == 0, "expect %08x, got %08x", *((uint32_t *)(k[key_idx].key+4)), *((uint32_t *)(value.c_str()+4)));
             }
             LOG_INFO("End read thread %d", i);
           },
@@ -223,37 +223,6 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
     for (auto &th : threads) {
       th.join();
     }
-
-    // // read? < 1M
-    // LOG_INFO(" @@@@@@@@@@@@@ read 1M @@@@@@@@@@@@@@@");
-    // int read_num = 1 * 1000000;
-    // int read_op_per_thread = read_num / thread_num;
-    // threads.clear();
-    // for (int i = 0; i < thread_num; i++) {
-    //   threads.emplace_back(
-    //       [=](TestKey *k, int *slab_class) {
-    //         LOG_INFO("Start read thread %d", i);
-    //         std::string value;
-    //         for (int j = 0; j < read_op_per_thread; j++) {
-    //           if (j % M == 0) {
-    //             LOG_INFO("[thread %d] finish read %d kv", i, j);
-    //           }
-    //           int key_idx = j + i * read_op_per_thread;
-    //           auto succ = local_engine->read(k[key_idx].to_string(), value);
-    //           ASSERT(succ, "[thread %d] failed to read %d", i, key_idx);
-    //           ASSERT(value.size() == (size_t)slab_class[key_idx] * kSlabSize, "got val length %lu, expected %d",
-    //                  value.size(), slab_class[key_idx] * kSlabSize)
-    //           TestKey expect_val; memcpy(expect_val.key, k[key_idx].key, kKeyLength); expect_val.key[0] += 1;
-    //           auto cmp = memcmp(value.c_str(), expect_val.key, 16);
-    //           ASSERT(cmp == 0, "expect %.16s, got %.16s", expect_val.key, value.c_str());
-    //         }
-    //         LOG_INFO("End read thread %d", i);
-    //       },
-    //       keys, key_slab_class);
-    // }
-    // for (auto &th : threads) {
-    //   th.join();
-    // }
 
     auto time_end = TIME_NOW;
     auto time_delta = time_end - time_now;

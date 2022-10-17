@@ -161,11 +161,11 @@ class RDMAManager {
   }
 
   int RemoteWrite(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey) {
-    auto conn = rdma_one_side_->Dequeue();
+    auto conn = rdma_one_side_->At(0);
     assert(conn != nullptr);
     auto ret = conn->RemoteWrite(ptr, lkey, size, remote_addr, rkey);
     assert(ret == 0);
-    rdma_one_side_->Enqueue(conn);
+    // rdma_one_side_->Enqueue(conn);
     return ret;
   }
 

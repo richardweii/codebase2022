@@ -95,6 +95,7 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
   qp_attr.cap.max_send_sge = 1;
   qp_attr.cap.max_recv_wr = 1;
   qp_attr.cap.max_recv_sge = 1;
+  qp_attr.cap.max_inline_data = 64;
 
   qp_attr.send_cq = cq_;
   qp_attr.recv_cq = cq_;

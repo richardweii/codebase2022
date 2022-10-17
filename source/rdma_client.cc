@@ -123,6 +123,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   qp_attr.cap.max_send_sge = 1;
   qp_attr.cap.max_recv_wr = 1;
   qp_attr.cap.max_recv_sge = 1;
+  qp_attr.cap.max_inline_data = 64;
 
   qp_attr.send_cq = cq;
   qp_attr.recv_cq = cq;
@@ -134,8 +135,8 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   }
 
   struct rdma_conn_param conn_param = {};
-  conn_param.responder_resources = 1;
-  conn_param.initiator_depth = 1;
+  conn_param.responder_resources = 16;
+  conn_param.initiator_depth = 16;
   conn_param.retry_count = 7;
   if (rdma_connect(cm_id, &conn_param)) {
     perror("rdma_connect fail");

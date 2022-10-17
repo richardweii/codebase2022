@@ -48,6 +48,7 @@ class alignas(64) NetBuffer NOCOPYABLE {
         // 保证这些刷到内存里面,避免cpu刷写顺序不一致,或者指令重排,导致RDMA从内存读到不对应的值
         // LOG_INFO("raddr 0x%08lx lkey %ld", remote_addr[head], remote_lkey[head]);
         memcpy(buffer->buff_data[head].data, data, kPageSize);
+        mb();
         head = (head + 1) % kNetBufferPageNum;
         return true;
       }
