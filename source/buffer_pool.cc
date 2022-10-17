@@ -115,8 +115,8 @@ class FrameHashTable {
 
   FrameId Find(PageId page_id) {
     uint32_t index = page_id % _size;
-    _slot_latch[index].WLock();
-    defer { _slot_latch[index].WUnlock(); };
+    _slot_latch[index].RLock();
+    defer { _slot_latch[index].RUnlock(); };
 
     Slot *slot = &_slots[index];
 

@@ -269,7 +269,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
 #ifdef STAT
         stat::dirty_write.fetch_add(1);
 #endif
-        auto ret = writeToRemote(entry, batch, true);
+        auto ret = writeToRemote(entry, batch, false);
         // LOG_ASSERT(ret == 0, "rdma write failed.");
         if (ret == 1) {
           delete batch;
