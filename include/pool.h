@@ -39,16 +39,12 @@ class alignas(64) NetBuffer NOCOPYABLE {
     // local端生产
     bool produce(NetBuffer *buffer, char *data, uint64_t raddr, uint32_t lkey) {
       if (!Full()) {
-        // LOG_INFO("raddr 0x%08lx lkey %d", raddr, lkey);
         addrs[head].remote_addr = raddr;
         addrs[head].remote_lkey = lkey;
-        // char *p = buffer->buff_data[head].data;
-        // LOG_INFO("[%d] raddr 0x%08lx lkey %ld  --- value %08lx %08lx %08lx", cur_thread_id, remote_addr[head],
-        //          remote_lkey[head], *((uint64_t *)(p)), *((uint64_t *)(p + 8)), *((uint64_t *)(p + 16)));
-        // 保证这些刷到内存里面,避免cpu刷写顺序不一致,或者指令重排,导致RDMA从内存读到不对应的值
-        // LOG_INFO("raddr 0x%08lx lkey %ld", remote_addr[head], remote_lkey[head]);
         memcpy(buffer->buff_data[head].data, data, kPageSize);
+        // 保证这些刷到内存里面,避免cpu刷写顺序不一致,或者指令重排,导致RDMA从内存读到不对应的值
         mb();
+        __sync_synchronize();
         head = (head + 1) % kNetBufferPageNum;
         return true;
       }

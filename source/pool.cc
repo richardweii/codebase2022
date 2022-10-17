@@ -153,10 +153,11 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = global_page_manager->Page(page_id);
 
-  if (meta->al_index == -1) {
-    meta->al_index = cur_thread_id;
-  }
-  int al_index = meta->al_index;
+  // if (meta->al_index == -1) {
+  //   meta->al_index = cur_thread_id;
+  // }
+  // int al_index = meta->al_index;
+  int al_index = (hash >> 24) % kAllocingListShard;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -182,8 +183,9 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   PageMeta *meta = global_page_manager->Page(page_id);
   assert(meta->SlabClass() != val.size() / kSlabSize);
 
-  meta->al_index = cur_thread_id;
-  int al_index = meta->al_index;
+  // meta->al_index = cur_thread_id;
+  // int al_index = meta->al_index;
+  int al_index = (hash >> 24) % kAllocingListShard;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -205,7 +207,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   PageEntry *page;
   RDMAManager::Batch *batch = nullptr;
   int off;
-  al_index = meta->al_index;
+  // al_index = meta->al_index;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, slab_class);
   page = _allocing_pages[al_index][slab_class];
@@ -234,12 +236,13 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
 }
 
 PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch **batch_ret, int tid) {
-  int al_index;
-  if (tid != -1) {
-    al_index = tid;
-  } else {
-    al_index = cur_thread_id;
-  }
+  // int al_index;
+  // if (tid != -1) {
+  //   al_index = tid;
+  // } else {
+  //   al_index = cur_thread_id;
+  // }
+  int al_index = (hash >> 24) % kAllocingListShard;
 
   PageEntry *old_entry;
   PageMeta *old_meta;
@@ -269,7 +272,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
 #ifdef STAT
         stat::dirty_write.fetch_add(1);
 #endif
-        auto ret = writeToRemote(entry, batch, false);
+        auto ret = writeToRemote(entry, batch, true);
         // LOG_ASSERT(ret == 0, "rdma write failed.");
         if (ret == 1) {
           delete batch;
@@ -372,7 +375,8 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   // write value
   uint8_t slab_class = val.size() / kSlabSize;
 
-  int al_index = cur_thread_id;
+  // int al_index = cur_thread_id;
+  int al_index = (hash >> 24) % kAllocingListShard;
   PageEntry *page;
   int off;
   PageMeta *meta;
@@ -411,7 +415,8 @@ int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch, bool use_ne
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
   LOG_DEBUG("write to block %d off %d", block, block_off);
   const MemoryAccess &access = _access_table[block];
-  if (use_net_buffer && _net_buffer[cur_thread_id].produce(entry->Data(), access.addr + kPageSize * block_off, access.lkey)) {
+  if (use_net_buffer &&
+      _net_buffer[cur_thread_id].produce(entry->Data(), access.addr + kPageSize * block_off, access.lkey)) {
     // net buff有空间
     // LOG_INFO("pageid %d 命中net buff", entry->PageId());
     return 1;
