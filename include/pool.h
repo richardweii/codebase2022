@@ -99,6 +99,8 @@ class Pool NOCOPYABLE {
 
   void allocingListWUnlock(uint32_t al_index, int slab_size) { _allocing_list_latch[al_index][slab_size].WUnlock(); }
 
+  void asyncFlushPage(PageEntry *entry);
+
   HashTable *_hash_index = nullptr;
 
   SingleFlight<PageId, PageEntry *> _replacement_sgfl;
@@ -121,6 +123,7 @@ class Pool NOCOPYABLE {
   SpinLatch _latch;
   NetBuffer _net_buffer[kThreadNum];
   ibv_mr *_net_buffer_mr;
+  uint64_t _max_slot_num[kSlabSizeMax+1];
 };
 
 class RemotePool NOCOPYABLE {

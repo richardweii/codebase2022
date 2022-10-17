@@ -2,6 +2,7 @@
 #include <infiniband/verbs.h>
 #include <cassert>
 #include <cstdint>
+#include <cstdlib>
 #include "config.h"
 #include "msg_buf.h"
 #include "util/logging.h"
@@ -143,6 +144,7 @@ int RDMAConnection::rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint
   send_wr.wr.rdma.rkey = rkey;
   if (ibv_post_send(cm_id_->qp, &send_wr, &bad_send_wr)) {
     perror("ibv_post_send fail");
+    abort();
     return -1;
   }
 

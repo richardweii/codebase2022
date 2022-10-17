@@ -55,6 +55,8 @@ class RDMAConnection NOCOPYABLE {
     batch_ = 0;
   }
 
+  int BatchNum() const { return batch_; }
+
   int RemoteRead(void *ptr, uint32_t lkey, uint64_t size, uint64_t remote_addr, uint32_t rkey) {
     batch_++;
     return rdma((uint64_t)ptr, lkey, size, remote_addr, rkey, true);
@@ -69,6 +71,16 @@ class RDMAConnection NOCOPYABLE {
     int ret = pollCq(batch_);
     is_batch_ = false;
     return ret;
+  }
+
+  void PollCQ() {
+    pollCq(batch_);
+    batch_ = 0;
+  }
+
+  void PollCQ(int num) {
+    pollCq(num);
+    batch_ -= num;
   }
 
   int ConnId() const { return conn_id_; }

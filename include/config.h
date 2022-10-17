@@ -24,7 +24,8 @@ using FrameId = int32_t;
 constexpr FrameId INVALID_FRAME_ID = -1;
 
 constexpr int kRPCWorkerNum = 4;
-constexpr int kOneSideWorkerNum = 16;
+constexpr int kOneSideWorkerNum = 32;
+constexpr int kDirtyFlushConn = 16;
 
 // 哈希种子
 constexpr int kPoolHashSeed = 0x89ea7d2f;

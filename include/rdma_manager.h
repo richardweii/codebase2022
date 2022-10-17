@@ -122,6 +122,12 @@ class RDMAManager {
 
     void SetConn(RDMAConnection *conn) { this->conn_ = conn; }
 
+    int BatchNum() const { return conn_->BatchNum(); }
+
+    void PollCQ() { conn_->PollCQ(); }
+
+    void PollCQ(int num) { conn_->PollCQ(num); }
+
    private:
     RDMAConnection *conn_ = nullptr;
     ConnQue *queue_ = nullptr;
@@ -187,6 +193,8 @@ class RDMAManager {
     return &batchs[tid];
   }
 
+  Batch *DirtyFlushBatch(int tid) { return &batchs[kDirtyFlushConn + tid]; }
+
  protected:
   volatile bool stop_;
   MsgBuffer *msg_buffer_ = nullptr;
@@ -197,7 +205,7 @@ class RDMAManager {
 
   uint64_t remote_addr_;
   uint32_t remote_rkey_;
-  Batch batchs[kThreadNum];
+  Batch batchs[kOneSideWorkerNum];
   // int signal_counter_ = 0;
 };
 

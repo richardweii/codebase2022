@@ -12,6 +12,7 @@ std::atomic_int64_t insert_num(0);
 std::atomic_int64_t dirty_write(0);
 std::atomic_int64_t hit_net_buffer(0);
 std::atomic_int64_t miss_net_buffer(0);
+std::atomic_int64_t async_flush(0);
 
 }  // namespace stat
 }  // namespace kv

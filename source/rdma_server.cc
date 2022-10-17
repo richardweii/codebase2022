@@ -173,6 +173,7 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
       }
     }
 
+    _start_polling = false;
     if (_start_polling) {
       // 轮询 local端 netbuffer
       bool flag[kThreadNum] = {false};

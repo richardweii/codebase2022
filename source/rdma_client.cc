@@ -105,7 +105,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
     return false;
   }
 
-  ibv_cq *cq = ibv_create_cq(cm_id->verbs, RDMA_MSG_CAP, NULL, comp_chan, 0);
+  ibv_cq *cq = ibv_create_cq(cm_id->verbs, 100000, NULL, comp_chan, 0);
   if (!cq) {
     perror("ibv_create_cq fail");
     LOG_FATAL("ibv_create_cq fail");
@@ -119,7 +119,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   }
 
   struct ibv_qp_init_attr qp_attr = {};
-  qp_attr.cap.max_send_wr = RDMA_MSG_CAP;
+  qp_attr.cap.max_send_wr = 4096;
   qp_attr.cap.max_send_sge = 1;
   qp_attr.cap.max_recv_wr = 1;
   qp_attr.cap.max_recv_sge = 1;
@@ -168,6 +168,12 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   rdma_one_side_->InitConnection(0, pd_, cq, cm_id);
   for (int i = 1; i < kOneSideWorkerNum; i++) {
     rdma_one_side_->InitConnection(i, pd_, ip, port);
+  }
+  for (int i = kDirtyFlushConn; i < kOneSideWorkerNum; i++) {
+    auto conn = rdma_one_side_->At(i);
+    assert(conn != nullptr);
+    conn->BeginBatch();
+    batchs[i].SetConn(conn);
   }
   return true;
 }
