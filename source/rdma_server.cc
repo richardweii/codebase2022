@@ -1,4 +1,5 @@
 #include "rdma_server.h"
+#include <sched.h>
 #include <atomic>
 #include <cassert>
 #include <cstddef>
@@ -227,6 +228,7 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
         }
       }
     }
+    sched_yield();
   }
   return nullptr;
 }

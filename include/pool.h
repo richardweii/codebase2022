@@ -29,14 +29,26 @@ class alignas(64) NetBuffer NOCOPYABLE {
  public:
   struct Meta {
     volatile uint64_t tail = 0;
+    uint64_t head = 0;
     struct Addr {
       uint64_t remote_addr;
       uint64_t remote_lkey;
     };
     volatile Addr addrs[kNetBufferPageNum];
-    volatile uint64_t head = 0;
-    bool Empty() { return head == tail; }
-    bool Full() { return ((head + 1) % kNetBufferPageNum) == tail; }
+    bool Empty() {
+      if (tail >= kNetBufferPageNum) {
+        LOG_ERROR("tail error");
+        return false;
+      }
+      return head == tail;
+    }
+    bool Full() {
+      if (tail >= kNetBufferPageNum) {
+        LOG_ERROR("tail error");
+        return true;
+      }
+      return ((head + 1) % kNetBufferPageNum) == tail;
+    }
     // local端生产
     bool produce(NetBuffer *buffer, char *data, uint64_t raddr, uint32_t lkey) {
       if (!Full()) {
@@ -53,6 +65,7 @@ class alignas(64) NetBuffer NOCOPYABLE {
           count11++;
         }
         head = (head + 1) % kNetBufferPageNum;
+        mb();
         return true;
       }
       return false;
