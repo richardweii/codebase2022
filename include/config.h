@@ -56,7 +56,7 @@ constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;  // 16 * 12M key
 // remote pool的大小
 constexpr size_t kPoolSize = (size_t)30 * 1024 * 1024 * 1024;  // 30GB remote pool
 // cache的大小
-constexpr size_t kBufferPoolSize = (size_t)4 * 1024 * 1024 * 1024;  // 4GB cache
+constexpr size_t kBufferPoolSize = (size_t)3 * 1024 * 1024 * 1024;  // 4GB cache
 // remote pool一个mr的大小
 constexpr size_t kMaxBlockSize = (size_t)1 * 512 * 1024 * 1024;      // 1GB mr
 constexpr size_t kMaxPoolBlockSize = (size_t)1 * 512 * 1024 * 1024;  // 1GB mr
@@ -64,7 +64,7 @@ constexpr size_t kMaxPoolBlockSize = (size_t)1 * 512 * 1024 * 1024;  // 1GB mr
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
 constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 
-constexpr int kNetBufferPageNum = 31;
+constexpr int kNetBufferPageNum = 63;
 constexpr int kRemoteThreadWorkNum = 4;
 
 using Addr = int32_t;
