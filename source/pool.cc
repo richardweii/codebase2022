@@ -90,7 +90,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 
   // 需要等待netbuffer处理完成
   for (int i = 0; i < kThreadNum; i++) {
-    while (!_net_buffer[i].buff_meta.Empty()) ;
+    while (!_net_buffer[i].buff_meta.Empty()) LOG_INFO("waiting...");
   }
 
   // cache miss

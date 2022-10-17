@@ -115,6 +115,8 @@ class FrameHashTable {
 
   FrameId Find(PageId page_id) {
     uint32_t index = page_id % _size;
+    _slot_latch[index].WLock();
+    defer { _slot_latch[index].WUnlock(); };
 
     Slot *slot = &_slots[index];
 
@@ -133,6 +135,8 @@ class FrameHashTable {
 
   void Insert(PageId page_id, FrameId frame) {
     uint32_t index = page_id % _size;
+    _slot_latch[index].WLock();
+    defer { _slot_latch[index].WUnlock(); };
     Slot *slot = &_slots[index];
 
     if (slot->_page_id == INVALID_PAGE_ID) {
@@ -160,7 +164,8 @@ class FrameHashTable {
 
   bool Remove(PageId page_id, FrameId frame) {
     uint32_t index = page_id % _size;
-
+    _slot_latch[index].WLock();
+    defer { _slot_latch[index].WUnlock(); };
     Slot *slot = &_slots[index];
 
     if (slot->_page_id == INVALID_PAGE_ID) {
@@ -268,14 +273,14 @@ PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
 
 PageEntry *BufferPool::Lookup(PageId page_id, bool writer) {
   FrameId fid;
-  while (true) {
-    fid = _hash_table->Find(page_id);
-    if (fid == INVALID_FRAME_ID) {
-      return nullptr;
-    }
-
-    if (_entries[fid]._page_id == page_id) break;
+  // while (true) {
+  fid = _hash_table->Find(page_id);
+  if (fid == INVALID_FRAME_ID) {
+    return nullptr;
   }
+
+  //   if (_entries[fid]._page_id == page_id) break;
+  // }
   LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
   _replacer->Ref(fid);
   // LOG_DEBUG("[shard %d] lookup page %d", _shard, page_id);
