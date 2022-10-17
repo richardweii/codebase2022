@@ -465,8 +465,8 @@ int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *b
 void Pool::asyncFlushPage(PageEntry *entry) {
   // stat::async_flush++;
   auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
-  if (dirtyFlushBatch->BatchNum() >= 100) {
-    dirtyFlushBatch->PollCQ(30);
+  if (dirtyFlushBatch->BatchNum() >= 30) {
+    dirtyFlushBatch->PollCQ(10);
   }
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
