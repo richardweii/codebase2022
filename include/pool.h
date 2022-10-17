@@ -57,13 +57,13 @@ class alignas(64) NetBuffer NOCOPYABLE {
         memcpy(buffer->buff_data[head].data, data, kPageSize);
         // 保证这些刷到内存里面,避免cpu刷写顺序不一致,或者指令重排,导致RDMA从内存读到不对应的值
         mb();
-        if (count11 < 1000) {
-          char *p = buffer->buff_data[head].data;
-          LOG_INFO("[%d] raddr 0x%08lx lkey %ld  --- value %08x %08x %08x %08x", cur_thread_id, addrs[head].remote_addr,
-                   addrs[head].remote_lkey, *((uint32_t *)(p)), *((uint32_t *)(p + 4)), *((uint32_t *)(p + 8)),
-                   *((uint32_t *)(p + 12)));
-          count11++;
-        }
+        // if (count11 < 1000) {
+        //   char *p = buffer->buff_data[head].data;
+        //   LOG_INFO("[%d] raddr 0x%08lx lkey %ld  --- value %08x %08x %08x %08x", cur_thread_id, addrs[head].remote_addr,
+        //            addrs[head].remote_lkey, *((uint32_t *)(p)), *((uint32_t *)(p + 4)), *((uint32_t *)(p + 8)),
+        //            *((uint32_t *)(p + 12)));
+        //   count11++;
+        // }
         head = (head + 1) % kNetBufferPageNum;
         mb();
         return true;

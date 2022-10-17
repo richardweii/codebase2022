@@ -64,7 +64,7 @@ constexpr size_t kMaxPoolBlockSize = (size_t)1 * 512 * 1024 * 1024;  // 1GB mr
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
 constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 
-constexpr int kNetBufferPageNum = 15;
+constexpr int kNetBufferPageNum = 31;
 constexpr int kRemoteThreadWorkNum = 4;
 
 using Addr = int32_t;

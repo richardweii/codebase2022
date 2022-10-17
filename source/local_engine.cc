@@ -104,7 +104,17 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   auto time_delta = time_end - time_now;
   auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
   LOG_INFO("init time: %lf s", count * 1.0 / 1000 / 1000);
-
+  char line[4096];
+  FILE *fp;
+  std::string cmd = "ibv_devinfo  -v | grep max_qp_init_rd_atom";
+  const char *sysCommand = cmd.data();
+  if ((fp = popen(sysCommand, "r")) == NULL) {
+    std::cout << "error" << std::endl;
+  }
+  while (fgets(line, sizeof(line) - 1, fp) != NULL) {
+    std::cout << line;
+  }
+  pclose(fp);
   return true;
 }
 
@@ -204,7 +214,7 @@ bool LocalEngine::encrypt(const std::string value, std::string &encrypt_value) {
   /* 6. Remove secret and release resources */
   ippsAESInit(0, _aes.key_len, m_pAES, m_ctxsize);
 
-  if (m_pAES) delete[](Ipp8u *) m_pAES;
+  if (m_pAES) delete[] (Ipp8u *)m_pAES;
   m_pAES = nullptr;
   std::string tmp(reinterpret_cast<const char *>(m_encrypt_val), value.size());
   encrypt_value = tmp;
