@@ -135,8 +135,8 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   }
 
   struct rdma_conn_param conn_param = {};
-  conn_param.responder_resources = 128;
-  conn_param.initiator_depth = 128;
+  conn_param.responder_resources = 16;
+  conn_param.initiator_depth = 16;
   conn_param.retry_count = 7;
   if (rdma_connect(cm_id, &conn_param)) {
     perror("rdma_connect fail");

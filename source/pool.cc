@@ -62,8 +62,6 @@ void Pool::Init() {
   assert(rc == 0);
 }
 
-std::atomic<int> count33 = 0;
-std::atomic<int> count44 = 0;
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   // existence
   KeySlot *slot = _hash_index->Find(key, hash);
@@ -87,34 +85,14 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     val.resize(val_len);
     my_memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
     _buffer_pool->Release(entry);
-    // if (count33 < 1000) {
-    //   LOG_INFO("!= null [%d] %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(val.data())),
-    //            *((uint32_t *)(val.data() + 4)), *((uint32_t *)(val.data() + 8)), *((uint32_t *)(val.data() + 12)));
-    //   count33++;
-    // }
     return true;
   }
-
-  // 需要等待netbuffer处理完成
-  // for (int i = 0; i < kThreadNum; i++) {
-  //   while (!_net_buffer[i].buff_meta.Empty()) {
-  //     if (count44 <= 100) {
-  //       LOG_INFO("waiting...");
-  //       count44++;
-  //     }
-  //   }
-  // }
 
   // cache miss
   PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
   uint32_t val_len = victim->SlabClass() * kSlabSize;
   val.resize(val_len);
   my_memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
-  // if (count33 < 1000) {
-  //   LOG_INFO("== null [%d] %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(val.data())),
-  //            *((uint32_t *)(val.data() + 4)), *((uint32_t *)(val.data() + 8)), *((uint32_t *)(val.data() + 12)));
-  //   count33++;
-  // }
   _buffer_pool->Release(victim);
   return true;
 }
@@ -169,11 +147,11 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = global_page_manager->Page(page_id);
 
-  // if (meta->al_index == -1) {
-  //   meta->al_index = cur_thread_id;
-  // }
-  // int al_index = meta->al_index;
-  int al_index = (hash >> 24) % kAllocingListShard;
+  if (meta->al_index == -1) {
+    meta->al_index = cur_thread_id;
+  }
+  int al_index = meta->al_index;
+  // int al_index = (hash >> 24) % kAllocingListShard;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -199,9 +177,9 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   PageMeta *meta = global_page_manager->Page(page_id);
   assert(meta->SlabClass() != val.size() / kSlabSize);
 
-  // meta->al_index = cur_thread_id;
-  // int al_index = meta->al_index;
-  int al_index = (hash >> 24) % kAllocingListShard;
+  meta->al_index = cur_thread_id;
+  int al_index = meta->al_index;
+  // int al_index = (hash >> 24) % kAllocingListShard;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -223,7 +201,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   PageEntry *page;
   RDMAManager::Batch *batch = nullptr;
   int off;
-  // al_index = meta->al_index;
+  al_index = meta->al_index;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, slab_class);
   page = _allocing_pages[al_index][slab_class];
@@ -238,7 +216,6 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   LOG_ASSERT(off != -1, "set bitmap failed.");
   if (batch != nullptr) {
     batch->FinishBatchTL();
-    delete batch;
   }
   allocingListWUnlock(al_index, slab_class);
 
@@ -252,13 +229,13 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
 }
 
 PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch **batch_ret, int tid) {
-  // int al_index;
-  // if (tid != -1) {
-  //   al_index = tid;
-  // } else {
-  //   al_index = cur_thread_id;
-  // }
-  int al_index = (hash >> 24) % kAllocingListShard;
+  int al_index;
+  if (tid != -1) {
+    al_index = tid;
+  } else {
+    al_index = cur_thread_id;
+  }
+  // int al_index = (hash >> 24) % kAllocingListShard;
 
   PageEntry *old_entry;
   PageMeta *old_meta;
@@ -283,7 +260,6 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
       LOG_ASSERT(entry != nullptr, "evicting failed.");
       // write dirty page back
       if (entry->Dirty) {
-        // auto conn_ = _client->At(cur_thread_id);
         auto batch = _client->BeginBatchTL(cur_thread_id);
 #ifdef STAT
         stat::dirty_write.fetch_add(1);
@@ -291,7 +267,6 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
         auto ret = writeToRemote(entry, batch, true);
         // LOG_ASSERT(ret == 0, "rdma write failed.");
         if (ret == 1) {
-          delete batch;
           *batch_ret = nullptr;
         } else {
           *batch_ret = batch;
@@ -374,7 +349,7 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
     LZ4_decompress_safe(_buffer_pool->compress_page_buff[cur_thread_id + kThreadNum].data, victim->Data(),
                         _buffer_pool->pg_com_szs[page_id], kPageSize);
   }
-  delete batch;
+  // delete batch;
   _buffer_pool->InsertPage(victim, page_id, slab_class);
   LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
   return victim;
@@ -391,8 +366,8 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   // write value
   uint8_t slab_class = val.size() / kSlabSize;
 
-  // int al_index = cur_thread_id;
-  int al_index = (hash >> 24) % kAllocingListShard;
+  int al_index = cur_thread_id;
+  // int al_index = (hash >> 24) % kAllocingListShard;
   PageEntry *page;
   int off;
   PageMeta *meta;
@@ -409,7 +384,6 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   off = meta->SetFirstFreePos();
   if (batch != nullptr) {
     batch->FinishBatchTL();
-    delete batch;
   }
   allocingListWUnlock(al_index, slab_class);
 
@@ -435,8 +409,11 @@ int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch, bool use_ne
       _net_buffer[cur_thread_id].produce(entry->Data(), access.addr + kPageSize * block_off, access.lkey)) {
     // net buff有空间
     // LOG_INFO("pageid %d 命中net buff", entry->PageId());
+    stat::hit_net_buffer++;
     return 1;
   }
+  if (use_net_buffer) stat::miss_net_buffer++;
+  // LOG_INFO("[%d] pageid %d 未命中 net buff", cur_thread_id, entry->PageId());
 RETRY:
   if (open_compress) {
     // 先压缩

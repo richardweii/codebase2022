@@ -14,7 +14,7 @@ namespace kv {
 class FrameHashTable;
 class ClockReplacer;
 
-struct PageData {
+struct alignas(64) PageData {
   char data[kPageSize];
 };
 
@@ -64,7 +64,7 @@ class BufferPool {
   ibv_mr *MR(int id) const { return _mr[id]; }
 
   ibv_mr *CompressMR() const { return compress_page_buff_mr; }
-  PageData compress_page_buff[kThreadNum<<1];
+  PageData compress_page_buff[kThreadNum << 1];
   size_t pg_com_szs[TOTAL_PAGE_NUM];
 
  private:

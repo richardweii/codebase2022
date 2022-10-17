@@ -66,8 +66,8 @@ bool RDMAServer::Init(std::string ip, std::string port) {
     return succ;
   }
 
-  rdma_one_side_ = new ConnQue(kRPCWorkerNum);
-  _remote_net_buffer_mr = ibv_reg_mr(pd_, remote_net_buffer, sizeof(NetBuffer) * kThreadNum, RDMA_MR_FLAG);
+  rdma_one_side_ = new ConnQue(kOneSideWorkerNum);
+  _remote_net_buffer_mr = ibv_reg_mr(pd_, remote_net_buffer_meta, sizeof(NetBuffer::Meta) * kThreadNum, RDMA_MR_FLAG);
   if (_remote_net_buffer_mr == nullptr) {
     LOG_FATAL("_remote_net_buffer_mr register memory failed");
     abort();
@@ -146,8 +146,8 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
   rep_pdata.buf_rkey = msg_buffer_->Rkey();
 
   struct rdma_conn_param conn_param;
-  conn_param.responder_resources = 128;
-  conn_param.initiator_depth = 128;
+  conn_param.responder_resources = 16;
+  conn_param.initiator_depth = 16;
   conn_param.retry_count = 7;
   conn_param.private_data = &rep_pdata;
   conn_param.private_data_len = sizeof(rep_pdata);
@@ -156,14 +156,13 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
     perror("rdma_accept fail");
     return -1;
   }
-  if (worker_num_ < kRPCWorkerNum) {
+  if (worker_num_ < kOneSideWorkerNum) {
     rdma_one_side_->InitConnection(worker_num_, pd_, cq, cm_id);
     worker_num_++;
   }
   return 0;
 }
 
-std::atomic<int> count22 = 0;
 RPCTask *RDMAServer::pollTask(int thread_id) {
   MessageBlock *blocks_ = msg_buffer_->Data();
   while (!stop_) {
@@ -173,65 +172,74 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
         return new RPCTask(&blocks_[i], this);
       }
     }
-    // _start_polling = false;
+
     if (_start_polling) {
       // 轮询 local端 netbuffer
+      bool flag[kThreadNum] = {false};
+      RDMAManager::Batch *batchs[kThreadNum];
+      uint64_t tails[kThreadNum];
       for (int i = thread_id * kRemoteThreadWorkNum; i < (thread_id + 1) * kRemoteThreadWorkNum; i++) {
         // 轮询local端的第i个线程对应的NetBuffer区域
         // 1. 首先读取buff meta数据到本地
         uint64_t buff_meta_start_off = sizeof(NetBuffer) * i;
         uint64_t buff_data_start_off = buff_meta_start_off + sizeof(NetBuffer::Meta);
-        auto batch = this->BeginBatchTL(thread_id);
-        batch->RemoteRead(&remote_net_buffer[i].buff_meta, lkey, sizeof(NetBuffer::Meta),
+        auto batch = this->BeginBatchTL(i);
+        batch->RemoteRead(&remote_net_buffer_meta[i], lkey, sizeof(NetBuffer::Meta),
                           _net_buffer_addr + buff_meta_start_off, _net_buffer_rkey);
-        batch->FinishBatchTL();
-        delete batch;
+        batchs[i] = batch;
+      }
+      for (int i = thread_id * kRemoteThreadWorkNum; i < (thread_id + 1) * kRemoteThreadWorkNum; i++) {
+        batchs[i]->FinishBatchTL();
+      }
+
+      for (int i = thread_id * kRemoteThreadWorkNum; i < (thread_id + 1) * kRemoteThreadWorkNum; i++) {
+        uint64_t buff_meta_start_off = sizeof(NetBuffer) * i;
+        uint64_t buff_data_start_off = buff_meta_start_off + sizeof(NetBuffer::Meta);
         // 2. 判断buff_meta是否有任务需要消费
-        auto *buff_meta = &remote_net_buffer[i].buff_meta;
+        auto *buff_meta = &remote_net_buffer_meta[i];
         if (!buff_meta->Empty()) {
           // 3. 有任务需要消费, 开始消费任务,将对应的数据读取到remote端
-          uint64_t tail0 = buff_meta->tail;
-          uint64_t head0 = buff_meta->head;
           uint64_t tail = buff_meta->tail;
           uint64_t head = buff_meta->head;
-          auto batch = this->BeginBatchTL(thread_id);
-          // uint64_t count = 0;
+          auto batch = this->BeginBatchTL(i);
           for (; tail != head; tail = ((tail + 1) % kNetBufferPageNum)) {
-            auto addr = buff_meta->addrs[tail].remote_addr;
-            auto blkid = (addr - this->pool_->StartAddr()) / kMaxBlockSize;
-            auto _lkey = this->pool_->lkey(blkid);
-            if (_lkey != buff_meta->addrs[tail].remote_lkey) {
-              LOG_ERROR("raddr 0x%08lx lkey %ld correct lkey %d", buff_meta->addrs[tail].remote_addr,
-                        buff_meta->addrs[tail].remote_lkey, _lkey);
-              fflush(stdout);
-            }
-            batch->RemoteRead((void *)(buff_meta->addrs[tail].remote_addr), _lkey, kPageSize,
-                              _net_buffer_addr + buff_data_start_off + kPageSize * tail, _net_buffer_rkey);
-            // count++;
+            batch->RemoteRead((void *)(buff_meta->addrs[tail].remote_addr), buff_meta->addrs[tail].remote_lkey,
+                              kPageSize, _net_buffer_addr + buff_data_start_off + kPageSize * tail, _net_buffer_rkey);
           }
-          batch->FinishBatchTL();
-          delete batch;
-          batch = this->BeginBatchTL(thread_id);
-          // 4. 任务完成,更新tail
-          buff_meta->tail = tail;
-          batch->RemoteWrite(&remote_net_buffer[i].buff_meta, lkey, sizeof(uint64_t),
-                             _net_buffer_addr + buff_meta_start_off, _net_buffer_rkey);
-          batch->FinishBatchTL();
-          // if (count22 <= 1000) {
-          //   LOG_INFO("[%d] head %ld tail %ld", i, head0, tail0);
-          //   for (; tail0 != head0; tail0 = ((tail0 + 1) % kNetBufferPageNum)) {
-          //     char *p = (char *)buff_meta->addrs[tail0].remote_addr;
-          //     LOG_INFO("[%d] addr %p lkey %ld value %08x %08x %08x %08x", i, p, buff_meta->addrs[tail0].remote_lkey,
-          //              *((uint32_t *)(p)), *((uint32_t *)(p + 4)), *((uint32_t *)(p + 8)), *((uint32_t *)(p + 12)));
-          //   }
-          //   count22++;
-          // }
-          delete batch;
-          // LOG_INFO("[%d] head %ld tail %ld", i, buff_meta->head, buff_meta->tail);
+          flag[i] = true;
+          batchs[i] = batch;
+          tails[i] = tail;
         }
       }
+      for (int i = thread_id * kRemoteThreadWorkNum; i < (thread_id + 1) * kRemoteThreadWorkNum; i++) {
+        if (flag[i]) {
+          batchs[i]->FinishBatchTL();
+          // 4. 任务完成,更新tail
+          auto *buff_meta = &remote_net_buffer_meta[i];
+          uint64_t buff_meta_start_off = sizeof(NetBuffer) * i;
+          uint64_t buff_data_start_off = buff_meta_start_off + sizeof(NetBuffer::Meta);
+          auto batch = this->BeginBatchTL(i);
+          buff_meta->tail = tails[i];
+          // LOG_INFO("[%d] %d完成, 更新tail为 %ld", thread_id, i, tails[i]);
+          batch->RemoteWrite(&remote_net_buffer_meta[i], lkey, sizeof(uint64_t), _net_buffer_addr + buff_meta_start_off,
+                             _net_buffer_rkey);
+          batchs[i] = batch;
+        }
+      }
+      for (int i = thread_id * kRemoteThreadWorkNum; i < (thread_id + 1) * kRemoteThreadWorkNum; i++) {
+        if (flag[i]) {
+          batchs[i]->FinishBatchTL();
+        }
+      }
+
+      int k;
+      for (k = thread_id * kRemoteThreadWorkNum; k < (thread_id + 1) * kRemoteThreadWorkNum; k++) {
+        if (!flag[k]) break;
+      }
+      if (k == (thread_id + 1) * kRemoteThreadWorkNum) {
+        usleep(100 * 1000);
+      }
     }
-    sched_yield();
   }
   return nullptr;
 }

@@ -77,6 +77,39 @@ static inline void memcpy_512bit_1kB_as(void *dest, const void *src) {
   memcpy_512bit_64B_as(dest + 15 * 64, src + 15 * 64);
 }
 
+// 64B align
+static inline void memcpy_512bit_64B_align(void *dest, const void *src) {
+  __m512i zmm0;
+
+  zmm0 = _mm512_load_si512((const void *)src);
+  _mm512_store_si512((void *)dest, zmm0);
+}
+
+// 1KB align
+static inline void memcpy_512bit_1kB_align(void *dest, const void *src) {
+  memcpy_512bit_64B_align(dest + 0 * 64, src + 0 * 64);
+  memcpy_512bit_64B_align(dest + 1 * 64, src + 1 * 64);
+  memcpy_512bit_64B_align(dest + 2 * 64, src + 2 * 64);
+  memcpy_512bit_64B_align(dest + 3 * 64, src + 3 * 64);
+  memcpy_512bit_64B_align(dest + 4 * 64, src + 4 * 64);
+  memcpy_512bit_64B_align(dest + 5 * 64, src + 5 * 64);
+  memcpy_512bit_64B_align(dest + 6 * 64, src + 6 * 64);
+  memcpy_512bit_64B_align(dest + 7 * 64, src + 7 * 64);
+  memcpy_512bit_64B_align(dest + 8 * 64, src + 8 * 64);
+  memcpy_512bit_64B_align(dest + 9 * 64, src + 9 * 64);
+  memcpy_512bit_64B_align(dest + 10 * 64, src + 10 * 64);
+  memcpy_512bit_64B_align(dest + 11 * 64, src + 11 * 64);
+  memcpy_512bit_64B_align(dest + 12 * 64, src + 12 * 64);
+  memcpy_512bit_64B_align(dest + 13 * 64, src + 13 * 64);
+  memcpy_512bit_64B_align(dest + 14 * 64, src + 14 * 64);
+  memcpy_512bit_64B_align(dest + 15 * 64, src + 15 * 64);
+}
+void my_memcpy_NKB_align(void *dest, const void *src, int n) {
+  for (int i = 0; i < n; i++) {
+    memcpy_512bit_1kB_align(dest + i*1024, src + i*1024);
+  }
+}
+
 //--------------
 static inline void memcpy_80B_as(void *dest, const void *src) {
   memcpy_512bit_64B_as(dest, src);

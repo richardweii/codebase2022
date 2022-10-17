@@ -104,17 +104,7 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   auto time_delta = time_end - time_now;
   auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
   LOG_INFO("init time: %lf s", count * 1.0 / 1000 / 1000);
-  char line[4096];
-  FILE *fp;
-  std::string cmd = "ibv_devinfo  -v | grep max_qp_init_rd_atom";
-  const char *sysCommand = cmd.data();
-  if ((fp = popen(sysCommand, "r")) == NULL) {
-    std::cout << "error" << std::endl;
-  }
-  while (fgets(line, sizeof(line) - 1, fp) != NULL) {
-    std::cout << line;
-  }
-  pclose(fp);
+
   return true;
 }
 
@@ -136,6 +126,8 @@ void LocalEngine::stop() {
   LOG_INFO(" Cache hit %ld times", stat::cache_hit.load());
   LOG_INFO(" Read Miss %ld times", stat::read_miss.load());
   LOG_INFO(" Delete %ld times", stat::delete_times.load());
+  LOG_INFO("hit net buffer %ld", stat::hit_net_buffer.load());
+  LOG_INFO("miss net buffer %ld", stat::miss_net_buffer.load());
   return;
 };
 

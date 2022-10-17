@@ -55,7 +55,7 @@ class RDMAServer : public RDMAManager {
   rdma_cm_id *listen_id_ = nullptr;
   ibv_mr *_remote_net_buffer_mr;
   uint32_t lkey;
-  NetBuffer remote_net_buffer[kThreadNum];
+  NetBuffer::Meta remote_net_buffer_meta[kThreadNum];
 };
 
 class RPCTask {

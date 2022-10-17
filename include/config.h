@@ -41,6 +41,7 @@ constexpr int kSlabSize = 16;
 // 配置PageSize的大小
 constexpr int kPageSizeBit = 20;  // 20: 1MB
 constexpr int kPageSize = 1 << kPageSizeBit;
+constexpr int kNumOfKB = 1024;
 
 // page管理的一个slot的大小最小为5个slab，也就是80字节
 constexpr int kSlabSizeMin = 5;  // 5 * 16 = 80 Bytes
@@ -56,7 +57,7 @@ constexpr size_t kKeyNum = 12 * 16 * 1024 * 1024;  // 16 * 12M key
 // remote pool的大小
 constexpr size_t kPoolSize = (size_t)30 * 1024 * 1024 * 1024;  // 30GB remote pool
 // cache的大小
-constexpr size_t kBufferPoolSize = (size_t)3 * 1024 * 1024 * 1024;  // 4GB cache
+constexpr size_t kBufferPoolSize = (size_t)2 * 1024 * 1024 * 1024;  // 4GB cache
 // remote pool一个mr的大小
 constexpr size_t kMaxBlockSize = (size_t)1 * 512 * 1024 * 1024;      // 1GB mr
 constexpr size_t kMaxPoolBlockSize = (size_t)1 * 512 * 1024 * 1024;  // 1GB mr

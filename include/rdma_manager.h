@@ -100,6 +100,7 @@ class RDMAManager {
  public:
   class Batch {
    public:
+    Batch(){};
     Batch(RDMAConnection *connection, ConnQue *q) : conn_(connection), queue_(q){};
 
     int RemoteRead(void *ptr, uint32_t lkey, size_t size, uint64_t remote_addr, uint32_t rkey) {
@@ -117,9 +118,9 @@ class RDMAManager {
       return ret;
     }
 
-    int FinishBatchTL() {
-      return conn_->FinishBatch();
-    }
+    int FinishBatchTL() { return conn_->FinishBatch(); }
+
+    void SetConn(RDMAConnection *conn) { this->conn_ = conn; }
 
    private:
     RDMAConnection *conn_ = nullptr;
@@ -182,7 +183,8 @@ class RDMAManager {
     auto conn = rdma_one_side_->At(tid);
     assert(conn != nullptr);
     conn->BeginBatch();
-    return new Batch(conn, rdma_one_side_);
+    batchs[tid].SetConn(conn);
+    return &batchs[tid];
   }
 
  protected:
@@ -195,6 +197,7 @@ class RDMAManager {
 
   uint64_t remote_addr_;
   uint32_t remote_rkey_;
+  Batch batchs[kThreadNum];
   // int signal_counter_ = 0;
 };
 
