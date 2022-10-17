@@ -62,6 +62,7 @@ void Pool::Init() {
   assert(rc == 0);
 }
 
+std::atomic<int> count33 = 0;
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   // existence
   KeySlot *slot = _hash_index->Find(key, hash);
@@ -85,6 +86,11 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     val.resize(val_len);
     my_memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
     _buffer_pool->Release(entry);
+    if (count33 < 1000) {
+      LOG_INFO("!= null [%d] encryption %08lx %08lx %08lx %08lx", cur_thread_id, *((uint64_t *)(val.data())),
+               *((uint64_t *)(val.data() + 8)), *((uint64_t *)(val.data() + 16)), *((uint64_t *)(val.data() + 24)));
+      count33++;
+    }
     return true;
   }
 
@@ -98,7 +104,11 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   uint32_t val_len = victim->SlabClass() * kSlabSize;
   val.resize(val_len);
   my_memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
-
+  if (count33 < 1000) {
+    LOG_INFO("== null [%d] encryption %08lx %08lx %08lx %08lx", cur_thread_id, *((uint64_t *)(val.data())),
+             *((uint64_t *)(val.data() + 8)), *((uint64_t *)(val.data() + 16)), *((uint64_t *)(val.data() + 24)));
+    count33++;
+  }
   _buffer_pool->Release(victim);
   return true;
 }

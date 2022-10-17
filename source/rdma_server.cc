@@ -162,6 +162,7 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
   return 0;
 }
 
+std::atomic<int> count22 = 0;
 RPCTask *RDMAServer::pollTask(int thread_id) {
   MessageBlock *blocks_ = msg_buffer_->Data();
   while (!stop_) {
@@ -188,11 +189,13 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
         auto *buff_meta = &remote_net_buffer[i].buff_meta;
         if (!buff_meta->Empty()) {
           // 3. 有任务需要消费, 开始消费任务,将对应的数据读取到remote端
+          uint64_t tail0 = buff_meta->tail;
+          uint64_t head0 = buff_meta->head;
           uint64_t tail = buff_meta->tail;
           uint64_t head = buff_meta->head;
           auto batch = this->BeginBatchTL(thread_id);
-          uint64_t count = 0;
-          for (; count < 4 && tail != head; tail = ((tail + 1) % kNetBufferPageNum)) {
+          // uint64_t count = 0;
+          for (; tail != head; tail = ((tail + 1) % kNetBufferPageNum)) {
             auto addr = buff_meta->addrs[tail].remote_addr;
             auto blkid = (addr - this->pool_->StartAddr()) / kMaxBlockSize;
             auto _lkey = this->pool_->lkey(blkid);
@@ -203,7 +206,16 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
             }
             batch->RemoteRead((void *)(buff_meta->addrs[tail].remote_addr), _lkey, kPageSize,
                               _net_buffer_addr + buff_data_start_off + kPageSize * tail, _net_buffer_rkey);
-            count++;
+            // count++;
+          }
+          if (count22 <= 1000) {
+            LOG_INFO("[%d] head %ld tail %ld", i, head0, tail0);
+            for (; tail0 != head0; tail0 = ((tail0 + 1) % kNetBufferPageNum)) {
+              char *p = (char *)buff_meta->addrs[tail0].remote_addr;
+              LOG_INFO("[%d] addr %p lkey %ld value %08lx %08lx %08lx", i, p, buff_meta->addrs[tail0].remote_lkey,
+                       *((uint64_t *)(p)), *((uint64_t *)(p + 8)), *((uint64_t *)(p + 16)));
+            }
+            count22++;
           }
           // 4. 任务完成,更新tail
           buff_meta->tail = tail;

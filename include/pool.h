@@ -24,6 +24,7 @@ namespace kv {
 #define mb() __asm__ __volatile__("mfence" ::: "memory")
 // writeToRemote的时候,如果NetBuffer有空间,那么可以直接将要置换到远端的Page存到NetBuffer当中,然后直接返回即可,不用自己写到远端,
 // 远端机器轮询这块区域,主动读到对应的page的位置
+static std::atomic<int> count11 = 0;
 class alignas(64) NetBuffer NOCOPYABLE {
  public:
   struct Meta {
@@ -44,7 +45,12 @@ class alignas(64) NetBuffer NOCOPYABLE {
         memcpy(buffer->buff_data[head].data, data, kPageSize);
         // 保证这些刷到内存里面,避免cpu刷写顺序不一致,或者指令重排,导致RDMA从内存读到不对应的值
         mb();
-        __sync_synchronize();
+        if (count11 < 1000) {
+          char *p = buffer->buff_data[head].data;
+          LOG_INFO("[%d] raddr 0x%08lx lkey %ld  --- value %08lx %08lx %08lx", cur_thread_id, addrs[head].remote_addr,
+                   addrs[head].remote_lkey, *((uint64_t *)(p)), *((uint64_t *)(p + 8)), *((uint64_t *)(p + 16)));
+          count11++;
+        }
         head = (head + 1) % kNetBufferPageNum;
         return true;
       }
