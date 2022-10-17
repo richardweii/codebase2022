@@ -209,6 +209,9 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
                               _net_buffer_addr + buff_data_start_off + kPageSize * tail, _net_buffer_rkey);
             // count++;
           }
+          batch->FinishBatchTL();
+          delete batch;
+          batch = this->BeginBatchTL(thread_id);
           // 4. 任务完成,更新tail
           buff_meta->tail = tail;
           batch->RemoteWrite(&remote_net_buffer[i].buff_meta, lkey, sizeof(uint64_t),
