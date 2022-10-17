@@ -88,6 +88,11 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     return true;
   }
 
+  // 需要等待netbuffer处理完成
+  for (int i = 0; i < kThreadNum; i++) {
+    while (!_net_buffer[i].buff_meta.Empty()) ;
+  }
+
   // cache miss
   PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
   uint32_t val_len = victim->SlabClass() * kSlabSize;
