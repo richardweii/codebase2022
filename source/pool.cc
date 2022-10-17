@@ -426,25 +426,27 @@ int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch, bool use_ne
   // }
   // if (use_net_buffer) stat::miss_net_buffer++;
   // LOG_INFO("[%d] pageid %d 未命中 net buff", cur_thread_id, entry->PageId());
-// RETRY:
-//   if (open_compress) {
-//     // 先压缩
-//     size_t com_size =
-//         LZ4_compress_fast(entry->Data(), _buffer_pool->compress_page_buff[cur_thread_id].data, kPageSize, kPageSize, 1);
-//     _buffer_pool->pg_com_szs[entry->PageId()] = com_size;
-//     if (com_size == 0 || ((kPageSize * 1.0) / com_size) < 1.5) {
-//       open_compress = false;
-//       LOG_INFO("close compress");
-//       goto RETRY;
-//     }
+  // RETRY:
+  //   if (open_compress) {
+  //     // 先压缩
+  //     size_t com_size =
+  //         LZ4_compress_fast(entry->Data(), _buffer_pool->compress_page_buff[cur_thread_id].data, kPageSize,
+  //         kPageSize, 1);
+  //     _buffer_pool->pg_com_szs[entry->PageId()] = com_size;
+  //     if (com_size == 0 || ((kPageSize * 1.0) / com_size) < 1.5) {
+  //       open_compress = false;
+  //       LOG_INFO("close compress");
+  //       goto RETRY;
+  //     }
 
-//     batch->RemoteWrite(_buffer_pool->compress_page_buff[cur_thread_id].data, _buffer_pool->CompressMR()->lkey, com_size,
-//                        access.addr + kPageSize * block_off, access.rkey);
-//     return 0;
-//   } else {
-    batch->RemoteWrite(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
-                       access.addr + kPageSize * block_off, access.rkey);
-    return 0;
+  //     batch->RemoteWrite(_buffer_pool->compress_page_buff[cur_thread_id].data, _buffer_pool->CompressMR()->lkey,
+  //     com_size,
+  //                        access.addr + kPageSize * block_off, access.rkey);
+  //     return 0;
+  //   } else {
+  batch->RemoteWrite(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
+                     access.addr + kPageSize * block_off, access.rkey);
+  return 0;
   // }
 }
 
@@ -458,22 +460,22 @@ int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *b
   //                            _buffer_pool->CompressMR()->lkey, _buffer_pool->pg_com_szs[page_id],
   //                            access.addr + kPageSize * block_off, access.rkey);
   // } else {
-    return batch->RemoteRead(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
-                             access.addr + kPageSize * block_off, access.rkey);
+  return batch->RemoteRead(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
+                           access.addr + kPageSize * block_off, access.rkey);
   // }
 }
 
 void Pool::asyncFlushPage(PageEntry *entry) {
   // stat::async_flush++;
   auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
-  if (dirtyFlushBatch->BatchNum() >= 15) {
-    dirtyFlushBatch->PollCQ(dirtyFlushBatch->BatchNum()-1);
-  }
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
   const MemoryAccess &access = _access_table[block];
   dirtyFlushBatch->RemoteWrite(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
                                access.addr + kPageSize * block_off, access.rkey);
+  if (dirtyFlushBatch->BatchNum() >= 32) {
+    dirtyFlushBatch->PollCQ(dirtyFlushBatch->BatchNum()-1);
+  }
   entry->Dirty = false;
 }
 }  // namespace kv
