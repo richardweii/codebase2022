@@ -21,40 +21,33 @@
 #include "util/slice.h"
 
 namespace kv {
-
+#define mb() __asm__ __volatile__("mfence" ::: "memory")
 // writeToRemote的时候,如果NetBuffer有空间,那么可以直接将要置换到远端的Page存到NetBuffer当中,然后直接返回即可,不用自己写到远端,
 // 远端机器轮询这块区域,主动读到对应的page的位置
-class alignas(8) NetBuffer NOCOPYABLE {
+class alignas(64) NetBuffer NOCOPYABLE {
  public:
   struct Meta {
-    uint64_t tail = 0;
-    uint64_t head = 0;
-    uint64_t remote_addr[kNetBufferPageNum];
-    uint64_t remote_lkey[kNetBufferPageNum];
-    bool Empty() {
-      if (tail >= kNetBufferPageNum) {
-        LOG_INFO("tail error");
-        return false;
-      }
-      return head == tail;
-    }
-    bool Full() {
-      if (tail >= kNetBufferPageNum) {
-        LOG_INFO("tail error");
-        return true;
-      }
-      return ((head + 1) % kNetBufferPageNum) == tail;
-    }
+    volatile uint64_t tail = 0;
+    struct Addr {
+      uint64_t remote_addr;
+      uint64_t remote_lkey;
+    };
+    volatile Addr addrs[kNetBufferPageNum];
+    volatile uint64_t head = 0;
+    bool Empty() { return head == tail; }
+    bool Full() { return ((head + 1) % kNetBufferPageNum) == tail; }
     // local端生产
     bool produce(NetBuffer *buffer, char *data, uint64_t raddr, uint32_t lkey) {
       if (!Full()) {
-        memcpy(buffer->buff_data[head].data, data, kPageSize);
+        // LOG_INFO("raddr 0x%08lx lkey %d", raddr, lkey);
+        addrs[head].remote_addr = raddr;
+        addrs[head].remote_lkey = lkey;
         // char *p = buffer->buff_data[head].data;
-        // LOG_INFO("[%d] head %ld tail %ld --- value %08lx %08lx %08lx", cur_thread_id, head, tail, *((uint64_t *)(p)),
-        //          *((uint64_t *)(p + 8)), *((uint64_t *)(p + 16)));
-        LOG_INFO("raddr 0x%08lx lkey %d", raddr, lkey);
-        remote_addr[head] = raddr;
-        remote_lkey[head] = lkey;
+        // LOG_INFO("[%d] raddr 0x%08lx lkey %ld  --- value %08lx %08lx %08lx", cur_thread_id, remote_addr[head],
+        //          remote_lkey[head], *((uint64_t *)(p)), *((uint64_t *)(p + 8)), *((uint64_t *)(p + 16)));
+        // 保证这些刷到内存里面,避免cpu刷写顺序不一致,或者指令重排,导致RDMA从内存读到不对应的值
+        // LOG_INFO("raddr 0x%08lx lkey %ld", remote_addr[head], remote_lkey[head]);
+        memcpy(buffer->buff_data[head].data, data, kPageSize);
         head = (head + 1) % kNetBufferPageNum;
         return true;
       }
@@ -136,13 +129,21 @@ class RemotePool NOCOPYABLE {
     if (succ) {
       LOG_INFO("Alloc block %d successfully, prepare response.", cur);
     } else {
-      LOG_ERROR("Alloc block %d Failed", cur);
+      LOG_FATAL("Alloc block %d Failed", cur);
     }
-    LOG_INFO("AllocBlock addr %p %d %d", block->Data(), block->Rkey(), block->Lkey());
+    // LOG_INFO("AllocBlock addr %p %d %d", block->Data(), block->Rkey(), block->Lkey());
+    lkeys[cur] = block->Lkey();
     return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey(), .lkey = block->Lkey()};
   }
 
   int BlockNum() const { return _block_cnt; }
+
+  uint32_t lkey(int bid) const {
+    LOG_ASSERT(bid >= 0 && bid < kMrBlockNum, "bound error");
+    return lkeys[bid];
+  }
+
+  uint64_t StartAddr() const { return (uint64_t)_blocks; }
 
  private:
   class ValueBlock NOCOPYABLE {
@@ -167,6 +168,7 @@ class RemotePool NOCOPYABLE {
   ValueBlock *_blocks = nullptr;
   ibv_pd *_pd = nullptr;
   std::atomic<int> _block_cnt{0};
+  uint32_t lkeys[kMrBlockNum];
 };
 
 }  // namespace kv

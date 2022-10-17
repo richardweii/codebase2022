@@ -68,7 +68,7 @@ bool RDMAServer::Init(std::string ip, std::string port) {
   rdma_one_side_ = new ConnQue(kRPCWorkerNum);
   _remote_net_buffer_mr = ibv_reg_mr(pd_, remote_net_buffer, sizeof(NetBuffer) * kThreadNum, RDMA_MR_FLAG);
   if (_remote_net_buffer_mr == nullptr) {
-    LOG_ERROR("_remote_net_buffer_mr register memory failed");
+    LOG_FATAL("_remote_net_buffer_mr register memory failed");
     abort();
   }
   lkey = _remote_net_buffer_mr->lkey;
@@ -193,25 +193,34 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
           uint64_t head = buff_meta->head;
           auto batch = this->BeginBatchTL(thread_id);
           for (; tail != head; tail = ((tail + 1) % kNetBufferPageNum)) {
-            LOG_INFO("raddr 0x%08lx lkey %ld", buff_meta->remote_addr[tail], buff_meta->remote_lkey[tail]);
-            batch->RemoteRead((void *)(buff_meta->remote_addr[tail]), buff_meta->remote_lkey[tail], kPageSize,
-                              _net_buffer_addr + buff_data_start_off, _net_buffer_rkey);
+            auto addr = buff_meta->addrs[tail].remote_addr;
+            auto blkid = (addr - this->pool_->StartAddr()) / kMaxBlockSize;
+            auto _lkey = this->pool_->lkey(blkid);
+            if (_lkey != buff_meta->addrs[tail].remote_lkey) {
+              LOG_ERROR("raddr 0x%08lx lkey %ld correct lkey %d", buff_meta->addrs[tail].remote_addr,
+                        buff_meta->addrs[tail].remote_lkey, _lkey);
+              fflush(stdout);
+            }
+            // LOG_INFO("raddr 0x%08lx lkey %ld", buff_meta->remote_addr[tail], buff_meta->remote_lkey[tail]);
+            batch->RemoteRead((void *)(buff_meta->addrs[tail].remote_addr), _lkey, kPageSize,
+                              _net_buffer_addr + buff_data_start_off + kPageSize * tail, _net_buffer_rkey);
           }
-          batch->FinishBatchTL();
-          batch = this->BeginBatchTL(thread_id);
-
+          // batch->FinishBatchTL();
+          // LOG_INFO("[%d] head %ld tail %ld", i, head0, tail0);
+          // for (; tail0 != head0; tail0 = ((tail0 + 1) % kNetBufferPageNum)) {
+          //   char *p = (char *)buff_meta->remote_addr[tail0];
+          //   LOG_INFO("[%d] addr %p lkey %ld value %08lx %08lx %08lx", i, p, buff_meta->remote_lkey[tail0],
+          //            *((uint64_t *)(p)), *((uint64_t *)(p + 8)), *((uint64_t *)(p + 16)));
+          // }
+          // batch = this->BeginBatchTL(thread_id);
           // 4. 任务完成,更新tail
           buff_meta->tail = tail;
           batch->RemoteWrite(&remote_net_buffer[i].buff_meta, lkey, sizeof(uint64_t),
                              _net_buffer_addr + buff_meta_start_off, _net_buffer_rkey);
           batch->FinishBatchTL();
-          // for (; tail0 != head0; tail0 = ((tail0 + 1) % kNetBufferPageNum)) {
-          //   char *p = (char *)buff_meta->remote_addr[tail0];
-          //   LOG_INFO("[%d] tail %ld value %08lx %08lx %08lx", i, tail0,  *((uint64_t *)(p)), *((uint64_t *)(p + 8)),
-          //   *((uint64_t *)(p + 16)));
-          // }
+
           delete batch;
-          // LOG_INFO("remote消费线程%d成功, 更新tail为 %ld", i, remote_net_buffer[i].buff_meta.tail);
+          // LOG_INFO("[%d] head %ld tail %ld", i, buff_meta->head, buff_meta->tail);
         }
       }
     }

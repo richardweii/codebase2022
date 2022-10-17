@@ -82,6 +82,7 @@ class RemoteEngine : public Engine {
   bool start(const std::string addr, const std::string port) override;
   void stop() override;
   bool alive() override;
+  RemotePool *Pool() const { return _pool; }
 
  private:
   static uint32_t Shard(uint32_t hash) { return hash % (1 << kPoolShardingBits); }
@@ -90,7 +91,7 @@ class RemoteEngine : public Engine {
   kv::RDMAServer *_server;
   volatile bool _stop;
   RemotePool *_pool;
-  
+
   uintptr_t _net_buffer_addr;
   uint32_t _net_buffer_rkey;
   volatile bool _start_polling = false;

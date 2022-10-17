@@ -41,7 +41,7 @@ class RDMAConnection NOCOPYABLE {
 
   int Init(ibv_cq *cq, rdma_cm_id *cm_id) {
     if (init_) {
-      LOG_ERROR("Double init.");
+      LOG_FATAL("Double init.");
       return -1;
     }
     cq_ = cq;

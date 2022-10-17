@@ -26,6 +26,8 @@ bool RemoteEngine::start(const std::string addr, const std::string port) {
 
   _pool = new RemotePool(_server->Pd());
 
+  _server->pool_ = _pool;
+
   _server->Start();
   return true;
 }

@@ -39,7 +39,7 @@ constexpr int kKeyLength = 16;
 // 一个slab的大小为16字节，这是内存管理的最小单位
 constexpr int kSlabSize = 16;
 // 配置PageSize的大小
-constexpr int kPageSizeBit = 20;  // 20: 1MB
+constexpr int kPageSizeBit = 19;  // 20: 1MB
 constexpr int kPageSize = 1 << kPageSizeBit;
 
 // page管理的一个slot的大小最小为5个slab，也就是80字节
@@ -64,7 +64,7 @@ constexpr size_t kMaxPoolBlockSize = (size_t)1 * 512 * 1024 * 1024;  // 1GB mr
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
 constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 
-constexpr int kNetBufferPageNum = 16;
+constexpr int kNetBufferPageNum = 63;
 constexpr int kRemoteThreadWorkNum = 4;
 
 using Addr = int32_t;

@@ -48,7 +48,7 @@ class ConnQue {
     LOG_ASSERT((size_t)idx < size_, "idx %d", idx);
     connections_[idx] = new RDMAConnection(pd, idx);
     if (connections_[idx]->Init(ip, port)) {
-      LOG_ERROR("Init rdma connection %d failed", idx);
+      LOG_FATAL("Init rdma connection %d failed", idx);
       return false;
     }
     return true;
@@ -59,7 +59,7 @@ class ConnQue {
     LOG_ASSERT((size_t)idx < size_, "idx %d", idx);
     connections_[idx] = new RDMAConnection(pd, idx);
     if (connections_[idx]->Init(cq, cm_id)) {
-      LOG_ERROR("Init rdma connection %d failed", idx);
+      LOG_FATAL("Init rdma connection %d failed", idx);
       return false;
     }
     return true;
@@ -143,7 +143,7 @@ class RDMAManager {
     auto mr = ibv_reg_mr(pd_, ptr, length, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
     if (mr == nullptr) {
       perror("ibv_reg_mr failed : ");
-      LOG_ERROR("Failed to register %zu bytes memory.", length);
+      LOG_FATAL("Failed to register %zu bytes memory.", length);
       return nullptr;
     }
     return mr;

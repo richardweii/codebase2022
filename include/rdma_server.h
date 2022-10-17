@@ -37,6 +37,7 @@ class RDMAServer : public RDMAManager {
   uintptr_t _net_buffer_addr;
   uint32_t _net_buffer_rkey;
   volatile bool _start_polling = false;
+  RemotePool* pool_;
 
  private:
   void handleConnection();

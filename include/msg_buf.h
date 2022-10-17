@@ -33,7 +33,7 @@ class MsgBuffer {
                      IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
     if (mr_ == nullptr) {
       perror("ibv_reg_mr failed : ");
-      LOG_ERROR("Failed to registrate mr for MsgBuffer.");
+      LOG_FATAL("Failed to registrate mr for MsgBuffer.");
       return false;
     }
     return true;

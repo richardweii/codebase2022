@@ -10,7 +10,7 @@ namespace kv {
 
 int RDMAConnection::Init(const std::string ip, const std::string port) {
   if (init_) {
-    LOG_ERROR("Double init.");
+    LOG_FATAL("Double init.");
     return -1;
   }
   cm_channel_ = rdma_create_event_channel();
@@ -66,7 +66,7 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
   }
 
   if (event->event != RDMA_CM_EVENT_ROUTE_RESOLVED) {
-    LOG_ERROR("aaa: %d\n", event->event);
+    LOG_FATAL("aaa: %d\n", event->event);
     perror("RDMA_CM_EVENT_ROUTE_RESOLVED fail");
     return -1;
   }
@@ -106,7 +106,7 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
 
   if (rdma_connect(cm_id_, nullptr)) {
     perror("rdma_connect fail");
-    LOG_ERROR("rdma_connect fail");
+    LOG_FATAL("rdma_connect fail");
     return false;
   }
 
@@ -146,13 +146,13 @@ int RDMAConnection::rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint
   }
 
   if (bad_send_wr != nullptr) {
-    LOG_ERROR("Bad send wr.");
+    LOG_FATAL("Bad send wr.");
   }
 
   if (!is_batch_) {
     return pollCq(1);
   }
-  // LOG_ERROR("remote write %ld %d\n", remote_addr, rkey);
+  // LOG_FATAL("remote write %ld %d\n", remote_addr, rkey);
   return 0;
 }
 
@@ -162,14 +162,14 @@ int RDMAConnection::pollCq(int num) {
   struct ibv_wc wc[num];
   while (num > 0) {
     if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
-      LOG_ERROR("rdma_one_side timeout\n");
+      LOG_FATAL("rdma_one_side timeout\n");
       return -1;
     }
     int rc = ibv_poll_cq(cq_, num, wc);
     if (rc > 0) {
       for (int i = 0; i < rc; i++) {
         if (IBV_WC_SUCCESS != wc[i].status) {
-          LOG_ERROR("poll cq %d/%d failed. Status %d : %s", i, num, wc[i].status, ibv_wc_status_str(wc[i].status));
+          LOG_FATAL("poll cq %d/%d failed. Status %d : %s", i, num, wc[i].status, ibv_wc_status_str(wc[i].status));
           perror("cmd_send ibv_poll_cq status error");
           ret = -1;
           break;

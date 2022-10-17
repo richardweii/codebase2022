@@ -44,7 +44,6 @@ void Pool::Init() {
 
   // mr net buffer
   _net_buffer_mr = ibv_reg_mr(_client->Pd(), _net_buffer, sizeof(NetBuffer) * kThreadNum, RDMA_MR_FLAG);
-  LOG_INFO("addr %p %p", _net_buffer, _net_buffer_mr->addr);
   if (_net_buffer_mr == nullptr) {
     LOG_FATAL("Register Net Buffer Failed.");
   }

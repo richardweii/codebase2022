@@ -45,7 +45,7 @@ class Arena NOCOPYABLE {
     {
       _lock.Lock();
       if (_free_block_queue.empty()) {
-        LOG_ERROR("no more block.");
+        LOG_FATAL("no more block.");
         _lock.Unlock();
         return INVALID_BLOCK;
       }

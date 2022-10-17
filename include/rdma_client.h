@@ -21,7 +21,7 @@ class RDMAClient : public RDMAManager {
     RPCSend(req, msg);
     RPCRecv(resp, msg);
     if (resp.status == RES_FAIL) {
-      LOG_ERROR("Connect to remote failed.");
+      LOG_FATAL("Connect to remote failed.");
     }
   }
 
@@ -35,7 +35,7 @@ class RDMAClient : public RDMAManager {
     RPCSend(req, msg);
     RPCRecv(resp, msg);
     if (resp.status == RES_FAIL) {
-      LOG_ERROR("Stop failed.");
+      LOG_FATAL("Stop failed.");
     }
   }
 
@@ -69,7 +69,7 @@ int RDMAClient::RPCRecv(Resp &resp, MessageBlock* msg) {
   auto start = TIME_NOW;
   while (msg->resp_block.notify != DONE) {
     if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
-      LOG_ERROR("wait for request completion timeout\n");
+      LOG_FATAL("wait for request completion timeout\n");
       return -1;
     }
   }

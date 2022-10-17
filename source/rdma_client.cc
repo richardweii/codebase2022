@@ -58,13 +58,13 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   struct rdma_cm_event *event;
   if (rdma_get_cm_event(cm_channel_, &event)) {
     perror("rdma_get_cm_event fail");
-    LOG_ERROR("rdma_get_cm_event fail");
+    LOG_FATAL("rdma_get_cm_event fail");
     return false;
   }
 
   if (event->event != RDMA_CM_EVENT_ADDR_RESOLVED) {
     perror("RDMA_CM_EVENT_ADDR_RESOLVED fail");
-    LOG_ERROR("RDMA_CM_EVENT_ADDR_RESOLVED fail");
+    LOG_FATAL("RDMA_CM_EVENT_ADDR_RESOLVED fail");
     return false;
   }
 
@@ -72,20 +72,20 @@ bool RDMAClient::Init(std::string ip, std::string port) {
 
   if (rdma_resolve_route(cm_id, RESOLVE_TIMEOUT_MS)) {
     perror("rdma_resolve_route fail");
-    LOG_ERROR("rdma_resolve_route fail");
+    LOG_FATAL("rdma_resolve_route fail");
     return false;
   }
 
   if (rdma_get_cm_event(cm_channel_, &event)) {
     perror("rdma_get_cm_event fail");
-    LOG_ERROR("rdma_get_cm_event fail");
+    LOG_FATAL("rdma_get_cm_event fail");
     return false;
   }
 
   if (event->event != RDMA_CM_EVENT_ROUTE_RESOLVED) {
     printf("aaa: %d\n", event->event);
     perror("RDMA_CM_EVENT_ROUTE_RESOLVED fail");
-    LOG_ERROR("RDMA_CM_EVENT_ROUTE_RESOLVED fail");
+    LOG_FATAL("RDMA_CM_EVENT_ROUTE_RESOLVED fail");
     return false;
   }
 
@@ -93,7 +93,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
 
   msg_buffer_ = new MsgBuffer(pd_);
   if (!msg_buffer_->Init()) {
-    LOG_ERROR("Init MsgBuffer fail.");
+    LOG_FATAL("Init MsgBuffer fail.");
     return false;
   }
 
@@ -101,20 +101,20 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   comp_chan = ibv_create_comp_channel(cm_id->verbs);
   if (!comp_chan) {
     perror("ibv_create_comp_channel fail");
-    LOG_ERROR("ibv_create_comp_channel fail");
+    LOG_FATAL("ibv_create_comp_channel fail");
     return false;
   }
 
   ibv_cq *cq = ibv_create_cq(cm_id->verbs, RDMA_MSG_CAP, NULL, comp_chan, 0);
   if (!cq) {
     perror("ibv_create_cq fail");
-    LOG_ERROR("ibv_create_cq fail");
+    LOG_FATAL("ibv_create_cq fail");
     return false;
   }
 
   if (ibv_req_notify_cq(cq, 0)) {
     perror("ibv_req_notify_cq fail");
-    LOG_ERROR("ibv_req_notify_cq fail");
+    LOG_FATAL("ibv_req_notify_cq fail");
     return false;
   }
 
@@ -129,7 +129,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   qp_attr.qp_type = IBV_QPT_RC;
   if (rdma_create_qp(cm_id, pd_, &qp_attr)) {
     perror("rdma_create_qp fail");
-    LOG_ERROR("rdma_create_qp fail");
+    LOG_FATAL("rdma_create_qp fail");
     return false;
   }
 
@@ -139,19 +139,19 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   conn_param.retry_count = 7;
   if (rdma_connect(cm_id, &conn_param)) {
     perror("rdma_connect fail");
-    LOG_ERROR("rdma_connect fail");
+    LOG_FATAL("rdma_connect fail");
     return false;
   }
 
   if (rdma_get_cm_event(cm_channel_, &event)) {
     perror("rdma_get_cm_event fail");
-    LOG_ERROR("rdma_get_cm_event fail");
+    LOG_FATAL("rdma_get_cm_event fail");
     return false;
   }
 
   if (event->event != RDMA_CM_EVENT_ESTABLISHED) {
     perror("RDMA_CM_EVENT_ESTABLISHED fail");
-    LOG_ERROR("RDMA_CM_EVENT_ESTABLISHED fail , got %s", rdma_event_str(event->event));
+    LOG_FATAL("RDMA_CM_EVENT_ESTABLISHED fail , got %s", rdma_event_str(event->event));
     return false;
   }
 

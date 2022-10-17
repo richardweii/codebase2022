@@ -224,7 +224,7 @@ BufferPool::~BufferPool() {
   for (int i = 0; i < kPoolMrBlockNum; i++) {
     if (ibv_dereg_mr(_mr[i])) {
       perror("ibv_derge_mr failed.");
-      LOG_ERROR("ibv_derge_mr failed.");
+      LOG_FATAL("ibv_derge_mr failed.");
     }
   }
 
@@ -239,14 +239,14 @@ bool BufferPool::Init(ibv_pd *pd) {
   for (int i = 0; i < kPoolMrBlockNum; i++) {
     _mr[i] = ibv_reg_mr(pd, (char *)_pages + per_mr_bp_sz * i, per_mr_bp_sz, RDMA_MR_FLAG);
     if (_mr[i] == nullptr) {
-      LOG_ERROR("Register %lu memory failed.", per_mr_bp_sz);
+      LOG_FATAL("Register %lu memory failed.", per_mr_bp_sz);
       return false;
     }
   }
 
   compress_page_buff_mr = ibv_reg_mr(pd, compress_page_buff, sizeof(compress_page_buff), RDMA_MR_FLAG);
   if (compress_page_buff_mr == nullptr) {
-    LOG_ERROR("Register %lu memory failed.", sizeof(compress_page_buff));
+    LOG_FATAL("Register %lu memory failed.", sizeof(compress_page_buff));
     return false;
   }
 
