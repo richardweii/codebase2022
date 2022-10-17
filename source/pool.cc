@@ -466,7 +466,7 @@ void Pool::asyncFlushPage(PageEntry *entry) {
   // stat::async_flush++;
   auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
   if (dirtyFlushBatch->BatchNum() >= 30) {
-    dirtyFlushBatch->PollCQ(10);
+    dirtyFlushBatch->PollCQ(15);
   }
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
