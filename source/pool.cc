@@ -63,6 +63,7 @@ void Pool::Init() {
 }
 
 std::atomic<int> count33 = 0;
+std::atomic<int> count44 = 0;
 bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   // existence
   KeySlot *slot = _hash_index->Find(key, hash);
@@ -87,17 +88,22 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     my_memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
     _buffer_pool->Release(entry);
     if (count33 < 1000) {
-      LOG_INFO("!= null [%d] encryption %08lx %08lx %08lx %08lx", cur_thread_id, *((uint64_t *)(val.data())),
-               *((uint64_t *)(val.data() + 8)), *((uint64_t *)(val.data() + 16)), *((uint64_t *)(val.data() + 24)));
+      LOG_INFO("!= null [%d] %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(val.data())),
+               *((uint32_t *)(val.data() + 4)), *((uint32_t *)(val.data() + 8)), *((uint32_t *)(val.data() + 12)));
       count33++;
     }
     return true;
   }
 
   // 需要等待netbuffer处理完成
-  // for (int i = 0; i < kThreadNum; i++) {
-  //   while (!_net_buffer[i].buff_meta.Empty()) LOG_INFO("waiting...");
-  // }
+  for (int i = 0; i < kThreadNum; i++) {
+    while (!_net_buffer[i].buff_meta.Empty()) {
+      if (count44 <= 100) {
+        LOG_INFO("waiting...");
+        count44++;
+      }
+    }
+  }
 
   // cache miss
   PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
@@ -105,8 +111,8 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   val.resize(val_len);
   my_memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
   if (count33 < 1000) {
-    LOG_INFO("== null [%d] encryption %08lx %08lx %08lx %08lx", cur_thread_id, *((uint64_t *)(val.data())),
-             *((uint64_t *)(val.data() + 8)), *((uint64_t *)(val.data() + 16)), *((uint64_t *)(val.data() + 24)));
+    LOG_INFO("== null [%d] %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(val.data())),
+             *((uint32_t *)(val.data() + 4)), *((uint32_t *)(val.data() + 8)), *((uint32_t *)(val.data() + 12)));
     count33++;
   }
   _buffer_pool->Release(victim);

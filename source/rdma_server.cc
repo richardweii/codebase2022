@@ -208,21 +208,20 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
                               _net_buffer_addr + buff_data_start_off + kPageSize * tail, _net_buffer_rkey);
             // count++;
           }
-          if (count22 <= 1000) {
-            LOG_INFO("[%d] head %ld tail %ld", i, head0, tail0);
-            for (; tail0 != head0; tail0 = ((tail0 + 1) % kNetBufferPageNum)) {
-              char *p = (char *)buff_meta->addrs[tail0].remote_addr;
-              LOG_INFO("[%d] addr %p lkey %ld value %08lx %08lx %08lx", i, p, buff_meta->addrs[tail0].remote_lkey,
-                       *((uint64_t *)(p)), *((uint64_t *)(p + 8)), *((uint64_t *)(p + 16)));
-            }
-            count22++;
-          }
           // 4. 任务完成,更新tail
           buff_meta->tail = tail;
           batch->RemoteWrite(&remote_net_buffer[i].buff_meta, lkey, sizeof(uint64_t),
                              _net_buffer_addr + buff_meta_start_off, _net_buffer_rkey);
           batch->FinishBatchTL();
-
+          if (count22 <= 1000) {
+            LOG_INFO("[%d] head %ld tail %ld", i, head0, tail0);
+            for (; tail0 != head0; tail0 = ((tail0 + 1) % kNetBufferPageNum)) {
+              char *p = (char *)buff_meta->addrs[tail0].remote_addr;
+              LOG_INFO("[%d] addr %p lkey %ld value %08x %08x %08x %08x", i, p, buff_meta->addrs[tail0].remote_lkey,
+                       *((uint32_t *)(p)), *((uint32_t *)(p + 4)), *((uint32_t *)(p + 8)), *((uint32_t *)(p + 12)));
+            }
+            count22++;
+          }
           delete batch;
           // LOG_INFO("[%d] head %ld tail %ld", i, buff_meta->head, buff_meta->tail);
         }
