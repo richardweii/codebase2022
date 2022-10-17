@@ -124,9 +124,9 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
       if (!entry->Dirty) entry->Dirty = true;
 
       my_memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
-      // if (AddrParser::Off(addr) + 1 == _max_slot_num[meta->SlabClass()]) {
-      //   asyncFlushPage(entry);
-      // }
+      if (AddrParser::Off(addr) + 1 == _max_slot_num[meta->SlabClass()]) {
+        asyncFlushPage(entry);
+      }
       _buffer_pool->Release(entry);
       return true;
     }
@@ -274,7 +274,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
 #ifdef STAT
         stat::dirty_write.fetch_add(1);
 #endif
-        // stat::replacement++;
+        // stat::mount_new_replacement++;
         auto ret = writeToRemote(entry, batch, false);
         // LOG_ASSERT(ret == 0, "rdma write failed.");
         if (ret == 1) {
@@ -349,6 +349,7 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
 #ifdef STAT
     stat::dirty_write.fetch_add(1);
 #endif
+    // stat::dirty_write.fetch_add(1);
     auto ret = writeToRemote(victim, batch, false);
     // LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
     victim->Dirty = false;
@@ -465,8 +466,8 @@ int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *b
 void Pool::asyncFlushPage(PageEntry *entry) {
   // stat::async_flush++;
   auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
-  if (dirtyFlushBatch->BatchNum() >= 20) {
-    dirtyFlushBatch->PollCQ(10);
+  if (dirtyFlushBatch->BatchNum() >= 15) {
+    dirtyFlushBatch->PollCQ(dirtyFlushBatch->BatchNum()-1);
   }
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());

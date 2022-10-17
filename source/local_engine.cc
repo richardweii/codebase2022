@@ -122,7 +122,8 @@ void LocalEngine::stop() {
   LOG_INFO(" ========== Performance Statistics ============");
   LOG_INFO(" Total read %ld times, write %ld times", stat::read_times.load(), stat::write_times.load());
   LOG_INFO(" Unique insert %ld  times", stat::insert_num.load());
-  LOG_INFO(" Replacement %ld times, Dirty write %ld times ", stat::replacement.load(), stat::dirty_write.load());
+  LOG_INFO(" modify in place Replacement %ld times, mount new Replacement %ld times ", stat::replacement.load(), stat::mount_new_replacement.load());
+  LOG_INFO(" dirty write %ld times", stat::dirty_write.load());
   LOG_INFO(" async flush hit %ld times", stat::async_flush.load());
   LOG_INFO(" Cache hit %ld times", stat::cache_hit.load());
   LOG_INFO(" Read Miss %ld times", stat::read_miss.load());

@@ -8,6 +8,7 @@ namespace stat {
 // some performance counter, used for tuning
 extern std::atomic_int64_t cache_hit;
 extern std::atomic_int64_t replacement;
+extern std::atomic_int64_t mount_new_replacement;
 extern std::atomic_int64_t read_times;
 extern std::atomic_int64_t write_times;
 extern std::atomic_int64_t dirty_write;
