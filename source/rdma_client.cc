@@ -105,7 +105,7 @@ bool RDMAClient::Init(std::string ip, std::string port) {
     return false;
   }
 
-  ibv_cq *cq = ibv_create_cq(cm_id->verbs, 100000, NULL, comp_chan, 0);
+  ibv_cq *cq = ibv_create_cq(cm_id->verbs, MAX_CQE, NULL, comp_chan, 0);
   if (!cq) {
     perror("ibv_create_cq fail");
     LOG_FATAL("ibv_create_cq fail");
@@ -119,9 +119,9 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   }
 
   struct ibv_qp_init_attr qp_attr = {};
-  qp_attr.cap.max_send_wr = 4096;
+  qp_attr.cap.max_send_wr = MAX_QP_WR;
   qp_attr.cap.max_send_sge = 1;
-  qp_attr.cap.max_recv_wr = 1;
+  qp_attr.cap.max_recv_wr = MAX_QP_WR;
   qp_attr.cap.max_recv_sge = 1;
   qp_attr.cap.max_inline_data = 64;
 

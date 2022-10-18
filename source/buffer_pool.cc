@@ -126,7 +126,8 @@ class FrameHashTable {
 constexpr int a = kPoolSize / kPageSize;
 BufferPool::BufferPool(size_t buffer_pool_size, uint8_t shard) : _buffer_pool_size(buffer_pool_size), _shard(shard) {
   size_t page_num = buffer_pool_size / kPageSize;
-  _pages = new PageData[page_num];
+  // _pages = new PageData[page_num];
+  _pages = (PageData*) aligned_alloc(4096, sizeof(PageData) * page_num);
   _hash_table = new FrameHashTable(kPoolSize / kPageSize);
   _replacer = new ClockReplacer(page_num);
   _entries = new PageEntry[page_num];

@@ -80,7 +80,7 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
     return -1;
   }
 
-  cq_ = ibv_create_cq(cm_id_->verbs, RDMA_MSG_CAP, NULL, comp_chan_, 0);
+  cq_ = ibv_create_cq(cm_id_->verbs, MAX_CQE, NULL, comp_chan_, 0);
   if (!cq_) {
     perror("ibv_create_cq fail");
     return -1;
@@ -92,9 +92,9 @@ int RDMAConnection::Init(const std::string ip, const std::string port) {
   }
 
   struct ibv_qp_init_attr qp_attr = {};
-  qp_attr.cap.max_send_wr = RDMA_MSG_CAP;
+  qp_attr.cap.max_send_wr = MAX_QP_WR;
   qp_attr.cap.max_send_sge = 1;
-  qp_attr.cap.max_recv_wr = 1;
+  qp_attr.cap.max_recv_wr = MAX_QP_WR;
   qp_attr.cap.max_recv_sge = 1;
   qp_attr.cap.max_inline_data = 64;
 

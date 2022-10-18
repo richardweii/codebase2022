@@ -114,7 +114,7 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
     return -1;
   }
 
-  struct ibv_cq *cq = ibv_create_cq(context_, RDMA_MSG_CAP, NULL, comp_chan, 0);
+  struct ibv_cq *cq = ibv_create_cq(context_, MAX_CQE, NULL, comp_chan, 0);
   if (!cq) {
     perror("ibv_create_cq fail");
     return -1;
@@ -126,9 +126,9 @@ int RDMAServer::createConnection(rdma_cm_id *cm_id) {
   }
 
   struct ibv_qp_init_attr qp_attr = {};
-  qp_attr.cap.max_send_wr = RDMA_MSG_CAP;
+  qp_attr.cap.max_send_wr = MAX_QP_WR;
   qp_attr.cap.max_send_sge = 1;
-  qp_attr.cap.max_recv_wr = 1;
+  qp_attr.cap.max_recv_wr = MAX_QP_WR;
   qp_attr.cap.max_recv_sge = 1;
   qp_attr.cap.max_inline_data = 64;
   qp_attr.send_cq = cq;

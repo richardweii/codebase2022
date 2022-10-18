@@ -112,7 +112,8 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
               ASSERT(value.size() == (size_t)slab_class[key_idx] * kSlabSize, "got val length %lu, expected %d",
                      value.size(), slab_class[key_idx] * kSlabSize)
               auto cmp = memcmp(value.c_str(), k[key_idx].key, 16);
-              ASSERT(cmp == 0, "expect %08x, got %08x", *((uint32_t *)(k[key_idx].key+4)), *((uint32_t *)(value.c_str()+4)));
+              ASSERT(cmp == 0, "expect %08x, got %08x", *((uint32_t *)(k[key_idx].key + 4)),
+                     *((uint32_t *)(value.c_str() + 4)));
             }
             LOG_INFO("End read thread %d", i);
           },
@@ -179,7 +180,8 @@ void part1(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
               memcpy(expect_val.key, k[key_idx].key, kKeyLength);
               expect_val.key[0] += 1;
               auto cmp = memcmp(value.c_str(), expect_val.key, 16);
-              ASSERT(cmp == 0, "expect %08x, got %08x", *((uint32_t *)(expect_val.key)), *((uint32_t *)(value.c_str())));
+              ASSERT(cmp == 0, "expect %08x, got %08x", *((uint32_t *)(expect_val.key)),
+                     *((uint32_t *)(value.c_str())));
               // ASSERT(cmp == 0, "expect %.16s, got %.16s", expect_val.key, value.c_str());
             }
             LOG_INFO("End read thread %d", i);
@@ -347,7 +349,8 @@ void part3(LocalEngine *local_engine, TestKey *keys, int *zipf_index, int *key_s
               memcpy(expect_val.key, k[key_idx].key, kKeyLength);
               expect_val.key[0] += 1;
               auto cmp = memcmp(value.c_str(), expect_val.key, 16);
-              ASSERT(cmp == 0, "expect %.16s, got %.16s", expect_val.key, value.c_str());
+              ASSERT(cmp == 0, "expect %08x %08x, got %08x %08x", *((uint32_t *)(expect_val.key)),
+                     *((uint32_t *)(expect_val.key + 4)), *((uint32_t *)(value.c_str())), *((uint32_t *)(value.c_str()+4)));
             }
             LOG_INFO("End read thread %d", i);
           },

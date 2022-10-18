@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <thread>
@@ -124,12 +125,12 @@ class Pool NOCOPYABLE {
   SpinLatch _latch;
   // NetBuffer _net_buffer[kThreadNum];
   // ibv_mr *_net_buffer_mr;
-  uint64_t _max_slot_num[kSlabSizeMax+1];
+  uint64_t _max_slot_num[kSlabSizeMax + 1];
 };
 
 class RemotePool NOCOPYABLE {
  public:
-  RemotePool(ibv_pd *pd) : _pd(pd) { _blocks = new ValueBlock[kMrBlockNum]; }
+  RemotePool(ibv_pd *pd) : _pd(pd) { _blocks = (ValueBlock *)aligned_alloc(4096, sizeof(ValueBlock) * kMrBlockNum); }
   ~RemotePool() {}
   // Allocate a datablock for one side write
   MemoryAccess AllocBlock() {
@@ -173,7 +174,7 @@ class RemotePool NOCOPYABLE {
     uint32_t Lkey() const { return _mr->lkey; }
 
    private:
-    char _data[kMaxBlockSize];
+    alignas(4096) char _data[kMaxBlockSize];
     ibv_mr *_mr = nullptr;
   };
   ValueBlock *_blocks = nullptr;
