@@ -95,7 +95,7 @@ class ClockReplacer {
 
 struct Slot {
   PageId _page_id = INVALID_PAGE_ID;
-  uint32_t _frame;
+  uint32_t _frame = INVALID_FRAME_ID;
   Slot *_next = nullptr;
 };
 
@@ -103,112 +103,31 @@ struct Slot {
 class FrameHashTable {
  public:
   FrameHashTable(size_t size) {
-    int logn = 0;
-    while (size >= 2) {
-      size /= 2;
-      logn++;
-    }
-    _size = PrimeList[logn];
-    _slots = new Slot[_size];
-    _slot_latch = new SpinLatch[_size];
+    _slots = new Slot[size];
   }
 
-  FrameId Find(PageId page_id) {
-    uint32_t index = page_id % _size;
-    Slot *slot = &_slots[index];
+  FrameId Find(PageId page_id) { return _slots[page_id]._frame; }
 
-    if (slot->_page_id == INVALID_PAGE_ID) {
-      return INVALID_FRAME_ID;
-    }
-
-    while (slot != nullptr) {
-      if (page_id == slot->_page_id) {
-        return slot->_frame;
-      }
-      slot = slot->_next;
-    }
-    return INVALID_FRAME_ID;
-  }
-
-  void Insert(PageId page_id, FrameId frame) {
-    uint32_t index = page_id % _size;
-
-    Slot *slot = &_slots[index];
-
-    if (slot->_page_id == INVALID_PAGE_ID) {
-      slot->_page_id = page_id;
-      slot->_frame = frame;
-      return;
-    }
-
-    // find
-    while (slot != nullptr) {
-      if (page_id == slot->_page_id) {
-        // duplicate
-        return;
-      }
-      slot = slot->_next;
-    }
-
-    // insert into head
-    slot = new Slot;
-    slot->_page_id = page_id;
-    slot->_frame = frame;
-    slot->_next = _slots[index]._next;
-    _slots[index]._next = slot;
-  }
+  void Insert(PageId page_id, FrameId frame) { _slots[page_id]._frame = frame; }
 
   bool Remove(PageId page_id, FrameId frame) {
-    uint32_t index = page_id % _size;
-    Slot *slot = &_slots[index];
-
-    if (slot->_page_id == INVALID_PAGE_ID) {
+    if (_slots[page_id]._frame == INVALID_FRAME_ID) {
       return false;
     }
-
-    // head
-    if (page_id == slot->_page_id) {
-      if (slot->_next != nullptr) {
-        Slot *tmp = slot->_next;
-        slot->_page_id = tmp->_page_id;
-        slot->_frame = tmp->_frame;
-        slot->_next = tmp->_next;
-        // delete tmp;
-      } else {
-        slot->_page_id = INVALID_PAGE_ID;
-        slot->_frame = INVALID_FRAME_ID;
-        slot->_next = nullptr;
-      }
-      return true;
-    }
-
-    // find
-    Slot *front = slot;
-    while (slot != nullptr) {
-      if (page_id == slot->_page_id) {
-        front->_next = slot->_next;
-        // delete slot;
-        return true;
-      }
-      front = slot;
-      slot = slot->_next;
-    }
-    // cannot find
-    return false;
+    _slots[page_id]._frame = INVALID_FRAME_ID;
+    return true;
   }
 
   ~FrameHashTable() { delete[] _slots; }
 
  private:
   Slot *_slots;
-  SpinLatch *_slot_latch;
-  size_t _size;
 };
-
+constexpr int a = kPoolSize / kPageSize;
 BufferPool::BufferPool(size_t buffer_pool_size, uint8_t shard) : _buffer_pool_size(buffer_pool_size), _shard(shard) {
   size_t page_num = buffer_pool_size / kPageSize;
   _pages = new PageData[page_num];
-  _hash_table = new FrameHashTable(page_num);
+  _hash_table = new FrameHashTable(kPoolSize / kPageSize);
   _replacer = new ClockReplacer(page_num);
   _entries = new PageEntry[page_num];
   int per_wr_page_num = page_num / kPoolMrBlockNum;
@@ -267,17 +186,12 @@ PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
 
 PageEntry *BufferPool::Lookup(PageId page_id, bool writer) {
   FrameId fid;
-  while (true) {
-    fid = _hash_table->Find(page_id);
-    if (fid == INVALID_FRAME_ID) {
-      return nullptr;
-    }
-
-    if (_entries[fid]._page_id == page_id) break;
+  fid = _hash_table->Find(page_id);
+  if (fid == INVALID_FRAME_ID) {
+    return nullptr;
   }
-  LOG_ASSERT(page_id == _entries[fid]._page_id, "Unmatched page. expect %u, got %u", page_id, _entries[fid]._page_id);
+
   _replacer->Ref(fid);
-  // LOG_DEBUG("[shard %d] lookup page %d", _shard, page_id);
   return &_entries[fid];
 }
 

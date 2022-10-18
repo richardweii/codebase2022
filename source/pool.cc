@@ -338,10 +338,10 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
   // recheck
   // 这里必须要recheck，因为在调用replacement之前的check中，虽然这个page_id不在本地，但是由于没有锁的保证，所以可能在你check完之后它又在了
   // 如果不recheck，那么会从远端读取数据，而本地的那个可能发生更改，那么就会导致远端的旧数据覆盖本地写入的新数据，导致读取发生错误
-  // PageEntry *entry = _buffer_pool->Lookup(page_id, writer);
-  // if (entry != nullptr) {
-  //   return entry;
-  // }
+  PageEntry *entry = _buffer_pool->Lookup(page_id, writer);
+  if (entry != nullptr) {
+    return entry;
+  }
 
   PageEntry *victim = _buffer_pool->Evict();
   auto batch = _client->BeginBatchTL(cur_thread_id);

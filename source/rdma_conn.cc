@@ -164,10 +164,10 @@ int RDMAConnection::pollCq(int num) {
   int ret = 0;
   struct ibv_wc wc[num];
   while (num > 0) {
-    if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
-      LOG_FATAL("rdma_one_side timeout\n");
-      return -1;
-    }
+    // if (TIME_DURATION_US(start, TIME_NOW) > RDMA_TIMEOUT_US) {
+    //   LOG_FATAL("rdma_one_side timeout\n");
+    //   return -1;
+    // }
     int rc = ibv_poll_cq(cq_, num, wc);
     if (rc > 0) {
       for (int i = 0; i < rc; i++) {
