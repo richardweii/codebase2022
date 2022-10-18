@@ -124,9 +124,9 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
       if (!entry->Dirty) entry->Dirty = true;
 
       my_memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
-      if (AddrParser::Off(addr) + 1 == _max_slot_num[meta->SlabClass()]) {
-        asyncFlushPage(entry);
-      }
+      // if (AddrParser::Off(addr) + 1 == _max_slot_num[meta->SlabClass()]) {
+      //   asyncFlushPage(entry);
+      // }
       _buffer_pool->Release(entry);
       return true;
     }
@@ -135,6 +135,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
     // stat::replacement++;
     PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), true);
     my_memcpy((char *)(victim->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
+    // asyncWriteToRemote(page_id, addr, val, val.size());
     if (!victim->Dirty) victim->Dirty = true;
 
     _buffer_pool->Release(victim);
@@ -252,7 +253,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
   old_entry = _allocing_pages[al_index][slab_class];
   _allocing_pages[al_index][slab_class] = nullptr;
   old_meta = global_page_manager->Page(old_entry->PageId());
-  asyncFlushPage(old_entry);
+  // asyncFlushPage(old_entry);
 
   PageMeta *meta = old_meta->Next();
   PageEntry *entry = nullptr;
@@ -478,4 +479,18 @@ void Pool::asyncFlushPage(PageEntry *entry) {
   }
   entry->Dirty = false;
 }
+
+// void Pool::asyncWriteToRemote(PageEntry *entry, Addr addr, char* val, size_t size) {
+//   // stat::async_flush++;
+//   auto off = AddrParser::Off(addr);
+//   auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
+//   uint32_t block = AddrParser::GetBlockFromPageId(PageId);
+//   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
+//   const MemoryAccess &access = _access_table[block];
+//   dirtyFlushBatch->RemoteWrite(val, _buffer_pool->MR(entry->MRID())->lkey, size,
+//                                access.addr + kPageSize * block_off + off*size, access.rkey);
+//   if (dirtyFlushBatch->BatchNum() >= 32) {
+//     dirtyFlushBatch->PollCQ(28);
+//   }
+// }
 }  // namespace kv

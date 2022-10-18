@@ -100,6 +100,7 @@ class Pool NOCOPYABLE {
   void allocingListWUnlock(uint32_t al_index, int slab_size) { _allocing_list_latch[al_index][slab_size].WUnlock(); }
 
   void asyncFlushPage(PageEntry *entry);
+  void asyncWriteToRemote(PageEntry *entry, Addr addr, size_t size);
 
   HashTable *_hash_index = nullptr;
 
