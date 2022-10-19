@@ -121,7 +121,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 
     // cache miss
     // stat::replacement++;
-    PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), true);
+    PageEntry *victim = replacement(page_id, meta->SlabClass(), true);
     my_memcpy((char *)(victim->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
     if (!victim->Dirty) victim->Dirty = true;
 
@@ -193,7 +193,6 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   RDMAManager::Batch *batch = nullptr;
   int off;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
-  allocingListWLock(al_index, slab_class);
   page = _allocing_pages[al_index][slab_class];
   meta = global_page_manager->Page(page->PageId());
   if (UNLIKELY(meta->Full())) {
@@ -207,7 +206,6 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   if (batch != nullptr) {
     batch->FinishBatchTL();
   }
-  allocingListWUnlock(al_index, slab_class);
 
   my_memcpy((char *)(page->Data() + val.size() * off), val.data(), val.size());
   if (!page->Dirty) page->Dirty = true;
@@ -294,7 +292,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
   entry = _buffer_pool->Lookup(page_id, true);
   if (entry == nullptr) {
     // replacement
-    entry = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, slab_class, true);
+    entry = replacement(page_id, slab_class, true);
   }
   _buffer_pool->PinPage(entry);
   _allocing_pages[al_index][slab_class] = entry;
@@ -306,14 +304,6 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
 #ifdef STAT
   stat::replacement.fetch_add(1);
 #endif
-  // recheck
-  // 这里必须要recheck，因为在调用replacement之前的check中，虽然这个page_id不在本地，但是由于没有锁的保证，所以可能在你check完之后它又在了
-  // 如果不recheck，那么会从远端读取数据，而本地的那个可能发生更改，那么就会导致远端的旧数据覆盖本地写入的新数据，导致读取发生错误
-  PageEntry *entry = _buffer_pool->Lookup(page_id, writer);
-  if (entry != nullptr) {
-    return entry;
-  }
-
   PageEntry *victim = _buffer_pool->Evict();
   auto batch = _client->BeginBatchTL(cur_thread_id);
   if (victim->Dirty) {
@@ -353,7 +343,6 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   int off;
   PageMeta *meta;
   RDMAManager::Batch *batch = nullptr;
-  allocingListWLock(al_index, slab_class);
   page = _allocing_pages[al_index][slab_class];
   meta = global_page_manager->Page(page->PageId());
   if (UNLIKELY(meta->Full())) {
@@ -365,7 +354,6 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   if (batch != nullptr) {
     batch->FinishBatchTL();
   }
-  allocingListWUnlock(al_index, slab_class);
 
   LOG_ASSERT(off != -1, "set bitmap failed.");
   Addr addr = AddrParser::GenAddrFrom(meta->PageId(), off);
