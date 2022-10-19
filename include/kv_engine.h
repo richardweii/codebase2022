@@ -96,7 +96,7 @@ class LocalEngine : public Engine {
   static uint32_t Shard(uint32_t hash) { return hash & kPoolShardingMask; }
 
   crypto_message_t _aes;
-  Pool *_pool[kPoolShardingNum];
+  Pool *_pool;
   RDMAClient *_client;
   MemoryAccess _global_access_table[kMrBlockNum];
   std::atomic<int> count_;

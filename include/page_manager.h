@@ -89,12 +89,16 @@ class PageManager {
 
   // thread-safe
   PageMeta *Page(uint32_t page_id) {
+    const int per_thread_page_num = _page_num/kThreadNum;
     LOG_ASSERT(page_id < _page_num, "page_id %u out of range %lu", page_id, _page_num);
-    return &_pages[page_id];
+    int tid = page_id / per_thread_page_num;
+    int off = page_id % per_thread_page_num;
+    // LOG_INFO("_page_num %ld page_id %d tid %d off %d", _page_num, page_id, tid, off);
+    return &_pages[tid][off];
   }
 
   // mutex
-  PageMeta *AllocNewPage(uint8_t slab_class);
+  PageMeta *AllocNewPage(uint8_t slab_class, int tid);
   // mutex
   void FreePage(uint32_t page_id);
 
@@ -105,8 +109,8 @@ class PageManager {
   void Mount(PageMeta **list_tail, PageMeta *meta);
 
  private:
-  PageMeta *_pages = nullptr;
-  PageMeta *_free_list;
+  PageMeta *_pages[kThreadNum];
+  PageMeta *_free_list[kThreadNum];
   size_t _page_num = 0;
   SpinLock _lock;
 };

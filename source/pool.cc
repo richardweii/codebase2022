@@ -36,7 +36,7 @@ void Pool::Init() {
 
   for (int i = kSlabSizeMin; i <= kSlabSizeMax; i++) {
     for (int j = 0; j < kAllocingListShard; j++) {
-      PageMeta *page = global_page_manager->AllocNewPage(i);
+      PageMeta *page = global_page_manager->AllocNewPage(i, j);
       _allocing_tail[j][i] = page;
       _allocing_pages[j][i] = _buffer_pool->FetchNew(page->PageId(), i);
       _buffer_pool->PinPage(_allocing_pages[j][i]);
@@ -232,7 +232,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
     assert(old_meta->Next() == nullptr);
     assert(old_meta->Prev() == nullptr);
     // allocing list is empty, need alloc new page
-    meta = global_page_manager->AllocNewPage(slab_class);
+    meta = global_page_manager->AllocNewPage(slab_class, cur_thread_id);
     meta->Pin();
     meta->al_index = al_index;
     entry = _buffer_pool->FetchNew(meta->PageId(), slab_class);

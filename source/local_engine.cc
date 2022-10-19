@@ -73,10 +73,9 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
         t);
   }
 
-  for (int i = 0; i < kPoolShardingNum; i++) {
-    _pool[i] = new Pool(i, _client, _global_access_table);
-    _pool[i]->Init();
-  }
+  _pool = new Pool(0, _client, _global_access_table);
+  _pool->Init();
+
   LOG_INFO("pool init");
 
   for (auto &th : threads) {
@@ -250,11 +249,11 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
     std::string encrypt_value;
     encrypt(value, encrypt_value);
     assert(value.size() == encrypt_value.size());
-    auto succ = _pool[0]->Write(Slice(key), hash, Slice(encrypt_value));
+    auto succ = _pool->Write(Slice(key), hash, Slice(encrypt_value));
     return succ;
   }
 
-  return _pool[0]->Write(Slice(key), hash, Slice(value));
+  return _pool->Write(Slice(key), hash, Slice(value));
 }
 
 /**
@@ -270,7 +269,7 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
 
-  bool succ = _pool[0]->Read(Slice(key), hash, value);
+  bool succ = _pool->Read(Slice(key), hash, value);
 
   return succ;
 }
@@ -282,7 +281,7 @@ bool LocalEngine::deleteK(const std::string &key) {
 #endif
   uint32_t hash = Hash(key.c_str(), key.size(), kPoolHashSeed);
 
-  return _pool[0]->Delete(Slice(key), hash);
+  return _pool->Delete(Slice(key), hash);
 }
 
 // 全局变量，通过config.h extern出去
