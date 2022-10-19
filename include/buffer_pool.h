@@ -23,7 +23,6 @@ class PageEntry {
 
  public:
   bool Dirty = false;
-  bool Flush = false;
   kv::PageId PageId() const { return _page_id; }
   uint8_t MRID() const { return mr_id; }
   char *Data() { return _data->data; }

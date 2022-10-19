@@ -190,4 +190,25 @@ int RDMAConnection::pollCq(int num) {
   return ret;
 }
 
+int RDMAConnection::asyncPollCq(int num) {
+  // auto start = TIME_NOW;
+  int ret = 0;
+  struct ibv_wc wc[num];
+
+  int rc = ibv_poll_cq(cq_, num, wc);
+  if (rc > 0) {
+    for (int i = 0; i < rc; i++) {
+      if (IBV_WC_SUCCESS != wc[i].status) {
+        LOG_FATAL("poll cq %d/%d failed. Status %d : %s", i, num, wc[i].status, ibv_wc_status_str(wc[i].status));
+        perror("cmd_send ibv_poll_cq status error");
+        ret = -1;
+        break;
+      }
+    }
+  }
+
+  batch_ -= rc;
+  return rc;
+}
+
 }  // namespace kv

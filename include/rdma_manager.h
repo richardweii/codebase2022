@@ -128,6 +128,8 @@ class RDMAManager {
 
     void PollCQ(int num) { conn_->PollCQ(num); }
 
+    void asyncPollCQ(int num) { conn_->asyncPollCq(num); }
+
    private:
     RDMAConnection *conn_ = nullptr;
     ConnQue *queue_ = nullptr;

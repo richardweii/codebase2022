@@ -83,6 +83,8 @@ class RDMAConnection NOCOPYABLE {
     batch_ -= num;
   }
 
+  int asyncPollCq(int num);
+
   int ConnId() const { return conn_id_; }
 
  private:

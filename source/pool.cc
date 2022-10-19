@@ -14,7 +14,8 @@
 #include "util/rwlock.h"
 
 namespace kv {
-
+bool done = true;
+SpinLock lock_;
 Pool::Pool(uint8_t shard, RDMAClient *client, MemoryAccess *global_rdma_access)
     : _access_table(global_rdma_access), _client(client), _shard(shard) {
   _buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum, shard);
@@ -77,6 +78,18 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     return true;
   }
 
+  // if (!done) {
+  //   lock_.Lock();
+  //   if (!done) {
+  //     for (int i = 0; i < kThreadNum; i++) {
+  //       auto dirtyFlushBatch = _client->DirtyFlushBatch(i);
+  //       dirtyFlushBatch->asyncPollCQ(dirtyFlushBatch->BatchNum());
+  //     }
+  //   }
+  //   done = true;
+  //   lock_.Unlock();
+  // }
+
   // cache miss
   PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
   uint32_t val_len = victim->SlabClass() * kSlabSize;
@@ -108,9 +121,9 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
       if (!entry->Dirty) entry->Dirty = true;
 
       my_memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
-      if (AddrParser::Off(addr) + 1 == _max_slot_num[meta->SlabClass()]) {
-        asyncFlushPage(entry);
-      }
+      // if (AddrParser::Off(addr) + 1 == _max_slot_num[meta->SlabClass()]) {
+      //   asyncFlushPage(entry);
+      // }
       _buffer_pool->Release(entry);
       return true;
     }
@@ -224,7 +237,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
   old_entry = _allocing_pages[al_index][slab_class];
   _allocing_pages[al_index][slab_class] = nullptr;
   old_meta = global_page_manager->Page(old_entry->PageId());
-  asyncFlushPage(old_entry);
+  // asyncFlushPage(old_entry);
 
   PageMeta *meta = old_meta->Next();
   PageEntry *entry = nullptr;
@@ -266,17 +279,14 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
         old_meta->UnPin();
         return entry;
       }
+      // auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
+      // dirtyFlushBatch->asyncPollCQ(dirtyFlushBatch->BatchNum() - 1);
       _buffer_pool->PinPage(entry);
       _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
       _buffer_pool->UnpinPage(old_entry);
       old_meta->UnPin();
       _allocing_pages[al_index][slab_class] = entry;
       _allocing_tail[al_index][slab_class] = meta;
-      if (entry->Flush) {
-        entry->Flush = false;
-        auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
-        dirtyFlushBatch->PollCQ(1);
-      }
       LOG_ASSERT(_allocing_tail[al_index][slab_class] != nullptr, "tail should not be null");
       return entry;
     }
@@ -331,6 +341,8 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
     // LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
     victim->Dirty = false;
   }
+  // auto ret = batch->FinishBatchTL();
+  // batch = _client->BeginBatchTL(cur_thread_id);
   auto ret = readFromRemote(victim, page_id, batch);
   ret = batch->FinishBatchTL();
   // if (open_compress) {
@@ -432,6 +444,7 @@ int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *b
 }
 
 void Pool::asyncFlushPage(PageEntry *entry) {
+  done = false;
   auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
@@ -439,7 +452,6 @@ void Pool::asyncFlushPage(PageEntry *entry) {
   dirtyFlushBatch->RemoteWrite(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
                                access.addr + kPageSize * block_off, access.rkey);
   entry->Dirty = false;
-  if (!entry->Flush) entry->Flush = true;
 }
 
 }  // namespace kv
