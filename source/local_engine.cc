@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <unordered_map>
 #include "assert.h"
 #include "atomic"
 #include "config.h"
@@ -19,16 +20,7 @@
 #include "util/slice.h"
 
 namespace kv {
-thread_local int cur_thread_id = -1;
-bool open_compress = false;
-void bind_core(int cpu_id) {
-  cpu_set_t cpuset;
-  CPU_ZERO(&cpuset);
-  CPU_SET(cpu_id, &cpuset);
 
-  auto thread_id = pthread_self();
-  pthread_setaffinity_np(thread_id, sizeof(cpu_set_t), &cpuset);
-}
 /**
  * @description: start local engine service
  * @param {string} addr    the address string of RemoteEngine to connect
@@ -122,7 +114,8 @@ void LocalEngine::stop() {
   LOG_INFO(" ========== Performance Statistics ============");
   LOG_INFO(" Total read %ld times, write %ld times", stat::read_times.load(), stat::write_times.load());
   LOG_INFO(" Unique insert %ld  times", stat::insert_num.load());
-  LOG_INFO(" modify in place Replacement %ld times, mount new Replacement %ld times ", stat::replacement.load(), stat::mount_new_replacement.load());
+  LOG_INFO(" modify in place Replacement %ld times, mount new Replacement %ld times ", stat::replacement.load(),
+           stat::mount_new_replacement.load());
   LOG_INFO(" dirty write %ld times", stat::dirty_write.load());
   LOG_INFO(" async flush hit %ld times", stat::async_flush.load());
   LOG_INFO(" Cache hit %ld times", stat::cache_hit.load());
@@ -208,7 +201,7 @@ bool LocalEngine::encrypt(const std::string value, std::string &encrypt_value) {
   /* 6. Remove secret and release resources */
   ippsAESInit(0, _aes.key_len, m_pAES, m_ctxsize);
 
-  if (m_pAES) delete[] (Ipp8u *)m_pAES;
+  if (m_pAES) delete[](Ipp8u *) m_pAES;
   m_pAES = nullptr;
   std::string tmp(reinterpret_cast<const char *>(m_encrypt_val), value.size());
   encrypt_value = tmp;
@@ -246,11 +239,7 @@ char *LocalEngine::decrypt(const char *value, size_t len) {
  * @return {bool} true for success
  */
 bool LocalEngine::write(const std::string &key, const std::string &value, bool use_aes) {
-  if (UNLIKELY(-1 == cur_thread_id)) {
-    cur_thread_id = count_++;
-    cur_thread_id %= kThreadNum;
-    // bind_core(cur_thread_id);
-  }
+  bind_core();
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
 #endif
@@ -275,11 +264,7 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
  * @return {bool}  true for success
  */
 bool LocalEngine::read(const std::string &key, std::string &value) {
-  if (UNLIKELY(-1 == cur_thread_id)) {
-    cur_thread_id = count_++;
-    cur_thread_id %= kThreadNum;
-    // bind_core(cur_thread_id);
-  }
+  bind_core();
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
 #endif
@@ -291,11 +276,7 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
 }
 
 bool LocalEngine::deleteK(const std::string &key) {
-  if (UNLIKELY(-1 == cur_thread_id)) {
-    cur_thread_id = count_++;
-    cur_thread_id %= kThreadNum;
-    // bind_core(cur_thread_id);
-  }
+  bind_core();
 #ifdef STAT
   stat::delete_times.fetch_add(1, std::memory_order_relaxed);
 #endif
@@ -308,4 +289,10 @@ bool LocalEngine::deleteK(const std::string &key) {
 SpinLock page_locks_[TOTAL_PAGE_NUM];
 class PageEntry;
 std::shared_ptr<_Result> _do[TOTAL_PAGE_NUM];
+
+thread_local int cur_thread_id = -1;
+bool open_compress = false;
+bool finished = false;
+SpinLock thread_map_lock_;
+std::unordered_map<pthread_t, int> thread_map;
 }  // namespace kv

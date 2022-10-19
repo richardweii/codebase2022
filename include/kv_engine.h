@@ -14,7 +14,11 @@
 #include "rdma_server.h"
 
 namespace kv {
-
+extern thread_local int cur_thread_id;
+extern bool open_compress;
+extern bool finished;
+extern SpinLock thread_map_lock_;
+extern std::unordered_map<pthread_t, int> thread_map;
 /* Encryption algorithm competitor can choose. */
 enum aes_algorithm { CTR = 0, CBC, CBC_CS1, CBC_CS2, CBC_CS3, CFB, OFB };
 
@@ -63,6 +67,30 @@ class LocalEngine : public Engine {
   bool read(const std::string &key, std::string &value);
   /** The delete interface */
   bool deleteK(const std::string &key);
+  void bind_core() {
+    if (UNLIKELY(-1 == cur_thread_id)) {
+      if (finished) {
+        thread_map_lock_.Lock();
+        cur_thread_id = thread_map[pthread_self()];
+        thread_map_lock_.Unlock();
+      } else {
+        cur_thread_id = count_++;
+        cur_thread_id %= kThreadNum;
+        if (!finished) {
+          thread_map_lock_.Lock();
+          thread_map[pthread_self()] = cur_thread_id;
+          if (cur_thread_id + 1 == kThreadNum) finished = true;
+          thread_map_lock_.Unlock();
+        }
+      }
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(cur_thread_id, &cpuset);
+      auto thread_id = pthread_self();
+      // LOG_INFO("cur_thread_id %d thread_self %ld", cur_thread_id, thread_id);
+      pthread_setaffinity_np(thread_id, sizeof(cpu_set_t), &cpuset);
+    }
+  }
 
  private:
   static uint32_t Shard(uint32_t hash) { return hash & kPoolShardingMask; }
