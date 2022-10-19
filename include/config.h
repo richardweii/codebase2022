@@ -69,7 +69,7 @@ constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 constexpr int kNetBufferPageNum = 63;
 constexpr int kRemoteThreadWorkNum = 4;
 
-constexpr int MAX_BATCH_NUM = 256;
+constexpr int MAX_BATCH_NUM = 3072;
 constexpr int MAX_CQE = MAX_BATCH_NUM;
 constexpr int MAX_QP_WR = MAX_BATCH_NUM;
 constexpr int MAX_CQ = MAX_BATCH_NUM;

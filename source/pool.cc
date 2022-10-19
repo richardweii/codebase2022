@@ -108,9 +108,9 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
       if (!entry->Dirty) entry->Dirty = true;
 
       my_memcpy((char *)(entry->Data() + val.size() * AddrParser::Off(addr)), val.data(), val.size());
-      // if (AddrParser::Off(addr) + 1 == _max_slot_num[meta->SlabClass()]) {
-      //   asyncFlushPage(entry);
-      // }
+      if (AddrParser::Off(addr) + 1 == _max_slot_num[meta->SlabClass()]) {
+        asyncFlushPage(entry);
+      }
       _buffer_pool->Release(entry);
       return true;
     }
@@ -224,7 +224,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
   old_entry = _allocing_pages[al_index][slab_class];
   _allocing_pages[al_index][slab_class] = nullptr;
   old_meta = global_page_manager->Page(old_entry->PageId());
-  // asyncFlushPage(old_entry);
+  asyncFlushPage(old_entry);
 
   PageMeta *meta = old_meta->Next();
   PageEntry *entry = nullptr;
@@ -272,6 +272,11 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
       old_meta->UnPin();
       _allocing_pages[al_index][slab_class] = entry;
       _allocing_tail[al_index][slab_class] = meta;
+      if (entry->Flush) {
+        entry->Flush = false;
+        auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
+        dirtyFlushBatch->PollCQ(1);
+      }
       LOG_ASSERT(_allocing_tail[al_index][slab_class] != nullptr, "tail should not be null");
       return entry;
     }
@@ -433,10 +438,8 @@ void Pool::asyncFlushPage(PageEntry *entry) {
   const MemoryAccess &access = _access_table[block];
   dirtyFlushBatch->RemoteWrite(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
                                access.addr + kPageSize * block_off, access.rkey);
-  if (dirtyFlushBatch->BatchNum() >= 32) {
-    dirtyFlushBatch->PollCQ(28);
-  }
   entry->Dirty = false;
+  if (!entry->Flush) entry->Flush = true;
 }
 
 }  // namespace kv
