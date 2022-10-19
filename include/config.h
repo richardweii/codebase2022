@@ -73,6 +73,7 @@ constexpr int MAX_BATCH_NUM = 256;
 constexpr int MAX_CQE = MAX_BATCH_NUM;
 constexpr int MAX_QP_WR = MAX_BATCH_NUM;
 constexpr int MAX_CQ = MAX_BATCH_NUM;
+constexpr int MAX_INITIATOR_DEPTH = 64;
 
 using Addr = int32_t;
 constexpr Addr INVALID_ADDR = (-1);

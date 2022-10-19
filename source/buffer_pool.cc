@@ -95,7 +95,7 @@ class ClockReplacer {
 
 struct Slot {
   PageId _page_id = INVALID_PAGE_ID;
-  uint32_t _frame = INVALID_FRAME_ID;
+  FrameId _frame = INVALID_FRAME_ID;
   Slot *_next = nullptr;
 };
 

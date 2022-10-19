@@ -160,7 +160,7 @@ int RDMAConnection::rdma(uint64_t local_addr, uint32_t lkey, uint64_t size, uint
 }
 
 int RDMAConnection::pollCq(int num) {
-  auto start = TIME_NOW;
+  // auto start = TIME_NOW;
   int ret = 0;
   struct ibv_wc wc[num];
   while (num > 0) {

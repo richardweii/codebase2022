@@ -40,28 +40,12 @@ void Pool::Init() {
       _allocing_pages[j][i] = _buffer_pool->FetchNew(page->PageId(), i);
       _buffer_pool->PinPage(_allocing_pages[j][i]);
       _allocing_tail[j][i]->Pin();
+      _allocing_tail[j][i]->al_index = j;
     }
   }
 
-  // mr net buffer
-  // _net_buffer_mr = ibv_reg_mr(_client->Pd(), _net_buffer, sizeof(NetBuffer) * kThreadNum, RDMA_MR_FLAG);
-  // if (_net_buffer_mr == nullptr) {
-  //   LOG_FATAL("Register Net Buffer Failed.");
-  // }
-
   // send net buffer meta to remote
   MessageBlock *block;
-
-  // NetBufferInitReq req;
-  // req.type = MSG_NET_BUFFER;
-  // req.addr = (uintptr_t)_net_buffer_mr->addr;
-  // req.rkey = _net_buffer_mr->rkey;
-  // _client->RPCSend(req, block);
-
-  // NetBufferInitResponse resp;
-  // auto rc = _client->RPCRecv(resp, block);
-  // assert(rc == 0);
-
   for (int i = kSlabSizeMin; i <= kSlabSizeMax; i++) {
     _max_slot_num[i] = kPageSize / kSlabSize / i;
   }
@@ -102,8 +86,6 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   return true;
 }
 
-std::atomic<int> count1 = 0;
-std::atomic<int> count2 = 0;
 bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
   KeySlot *slot = _hash_index->Find(key, hash);
   if (slot == nullptr) {
@@ -118,11 +100,6 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 
   // modify in place
   if (LIKELY(meta->SlabClass() == val.size() / kSlabSize)) {
-    if (count1 <= 1000) {
-      LOG_INFO("[%d] 原地更新 %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
-               *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
-      count1++;
-    }
     PageEntry *entry = _buffer_pool->Lookup(page_id, true);
     if (entry != nullptr) {
 #ifdef STAT
@@ -149,11 +126,6 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
     return true;
   }
 
-  if (count2 <= 1000) {
-    LOG_INFO("[%d] update %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
-             *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
-    count2++;
-  }
   modifyLength(slot, val, hash);
   return true;
 }
@@ -169,11 +141,7 @@ bool Pool::Delete(const Slice &key, uint32_t hash) {
   PageId page_id = AddrParser::PageId(addr);
   PageMeta *meta = global_page_manager->Page(page_id);
 
-  if (meta->al_index == -1) {
-    meta->al_index = cur_thread_id;
-  }
   int al_index = meta->al_index;
-  // int al_index = (hash >> 24) % kAllocingListShard;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -199,9 +167,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   PageMeta *meta = global_page_manager->Page(page_id);
   assert(meta->SlabClass() != val.size() / kSlabSize);
 
-  meta->al_index = cur_thread_id;
   int al_index = meta->al_index;
-  // int al_index = (hash >> 24) % kAllocingListShard;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, meta->SlabClass());
   meta->ClearPos(AddrParser::Off(addr));
@@ -223,7 +189,6 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
   PageEntry *page;
   RDMAManager::Batch *batch = nullptr;
   int off;
-  al_index = meta->al_index;
   LOG_ASSERT(al_index >= 0 && al_index <= 15, "bound error");
   allocingListWLock(al_index, slab_class);
   page = _allocing_pages[al_index][slab_class];
@@ -251,13 +216,7 @@ void Pool::modifyLength(KeySlot *slot, const Slice &val, uint32_t hash) {
 }
 
 PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch **batch_ret, int tid) {
-  int al_index;
-  if (tid != -1) {
-    al_index = tid;
-  } else {
-    al_index = cur_thread_id;
-  }
-  // int al_index = (hash >> 24) % kAllocingListShard;
+  int al_index = tid;
 
   PageEntry *old_entry;
   PageMeta *old_meta;
@@ -275,6 +234,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
     // allocing list is empty, need alloc new page
     meta = global_page_manager->AllocNewPage(slab_class);
     meta->Pin();
+    meta->al_index = al_index;
     entry = _buffer_pool->FetchNew(meta->PageId(), slab_class);
     LOG_ASSERT(meta != nullptr, "no more page.");
 
@@ -287,7 +247,6 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
 #ifdef STAT
         stat::dirty_write.fetch_add(1);
 #endif
-        // stat::mount_new_replacement++;
         auto ret = writeToRemote(entry, batch, false);
         // LOG_ASSERT(ret == 0, "rdma write failed.");
         if (UNLIKELY(ret == 1)) {
@@ -327,6 +286,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
   }
   // 说明后面有挂载的其他page，将其pin住
   meta->Pin();
+  meta->al_index = al_index;
   LOG_ASSERT(meta->IsMounted(), "meta should be mounted");
   LOG_ASSERT(!meta->Full(), "invalid allocing page.");
   global_page_manager->Unmount(old_meta);
@@ -362,7 +322,6 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
 #ifdef STAT
     stat::dirty_write.fetch_add(1);
 #endif
-    // stat::dirty_write.fetch_add(1);
     auto ret = writeToRemote(victim, batch, false);
     // LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
     victim->Dirty = false;
@@ -392,25 +351,23 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   uint8_t slab_class = val.size() / kSlabSize;
 
   int al_index = cur_thread_id;
-  // int al_index = (hash >> 24) % kAllocingListShard;
   PageEntry *page;
   int off;
   PageMeta *meta;
   RDMAManager::Batch *batch = nullptr;
-  // allocingListWLock(al_index, slab_class);
+  allocingListWLock(al_index, slab_class);
   page = _allocing_pages[al_index][slab_class];
   meta = global_page_manager->Page(page->PageId());
   if (UNLIKELY(meta->Full())) {
     page = mountNewPage(slab_class, hash, &batch, al_index);
     meta = global_page_manager->Page(page->PageId());
   }
-  meta->al_index = cur_thread_id;
   // modify bitmap
   off = meta->SetFirstFreePos();
   if (batch != nullptr) {
     batch->FinishBatchTL();
   }
-  // allocingListWUnlock(al_index, slab_class);
+  allocingListWUnlock(al_index, slab_class);
 
   LOG_ASSERT(off != -1, "set bitmap failed.");
   Addr addr = AddrParser::GenAddrFrom(meta->PageId(), off);
@@ -430,15 +387,6 @@ int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch, bool use_ne
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
   LOG_DEBUG("write to block %d off %d", block, block_off);
   const MemoryAccess &access = _access_table[block];
-  // if (use_net_buffer &&
-  //     _net_buffer[cur_thread_id].produce(entry->Data(), access.addr + kPageSize * block_off, access.lkey)) {
-  //   // net buff有空间
-  //   // LOG_INFO("pageid %d 命中net buff", entry->PageId());
-  //   stat::hit_net_buffer++;
-  //   return 1;
-  // }
-  // if (use_net_buffer) stat::miss_net_buffer++;
-  // LOG_INFO("[%d] pageid %d 未命中 net buff", cur_thread_id, entry->PageId());
   // RETRY:
   //   if (open_compress) {
   //     // 先压缩
@@ -479,7 +427,6 @@ int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *b
 }
 
 void Pool::asyncFlushPage(PageEntry *entry) {
-  // stat::async_flush++;
   auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
@@ -492,17 +439,4 @@ void Pool::asyncFlushPage(PageEntry *entry) {
   entry->Dirty = false;
 }
 
-// void Pool::asyncWriteToRemote(PageEntry *entry, Addr addr, char* val, size_t size) {
-//   // stat::async_flush++;
-//   auto off = AddrParser::Off(addr);
-//   auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
-//   uint32_t block = AddrParser::GetBlockFromPageId(PageId);
-//   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
-//   const MemoryAccess &access = _access_table[block];
-//   dirtyFlushBatch->RemoteWrite(val, _buffer_pool->MR(entry->MRID())->lkey, size,
-//                                access.addr + kPageSize * block_off + off*size, access.rkey);
-//   if (dirtyFlushBatch->BatchNum() >= 32) {
-//     dirtyFlushBatch->PollCQ(28);
-//   }
-// }
 }  // namespace kv
