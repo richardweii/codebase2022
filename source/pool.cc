@@ -78,17 +78,17 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     return true;
   }
 
-  // if (!done) {
-  //   lock_.Lock();
-  //   if (!done) {
-  //     for (int i = 0; i < kThreadNum; i++) {
-  //       auto dirtyFlushBatch = _client->DirtyFlushBatch(i);
-  //       dirtyFlushBatch->asyncPollCQ(dirtyFlushBatch->BatchNum());
-  //     }
-  //   }
-  //   done = true;
-  //   lock_.Unlock();
-  // }
+  if (UNLIKELY(!done)) {
+    lock_.Lock();
+    if (!done) {
+      for (int i = 0; i < kThreadNum; i++) {
+        auto dirtyFlushBatch = _client->DirtyFlushBatch(i);
+        dirtyFlushBatch->asyncPollCQ(dirtyFlushBatch->BatchNum());
+      }
+    }
+    done = true;
+    lock_.Unlock();
+  }
 
   // cache miss
   PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
@@ -237,7 +237,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
   old_entry = _allocing_pages[al_index][slab_class];
   _allocing_pages[al_index][slab_class] = nullptr;
   old_meta = global_page_manager->Page(old_entry->PageId());
-  // asyncFlushPage(old_entry);
+  asyncFlushPage(old_entry);
 
   PageMeta *meta = old_meta->Next();
   PageEntry *entry = nullptr;
@@ -279,8 +279,8 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
         old_meta->UnPin();
         return entry;
       }
-      // auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
-      // dirtyFlushBatch->asyncPollCQ(dirtyFlushBatch->BatchNum() - 1);
+      auto dirtyFlushBatch = _client->DirtyFlushBatch(cur_thread_id);
+      dirtyFlushBatch->asyncPollCQ(dirtyFlushBatch->BatchNum() - 1);
       _buffer_pool->PinPage(entry);
       _buffer_pool->InsertPage(entry, meta->PageId(), slab_class);
       _buffer_pool->UnpinPage(old_entry);

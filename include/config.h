@@ -40,7 +40,7 @@ constexpr int kKeyLength = 16;
 // 一个slab的大小为16字节，这是内存管理的最小单位
 constexpr int kSlabSize = 16;
 // 配置PageSize的大小
-constexpr int kPageSizeBit = 21;  // 20: 1MB
+constexpr int kPageSizeBit = 20;  // 20: 1MB
 constexpr int kPageSize = 1 << kPageSizeBit;
 constexpr int kNumOfKB = 1024;
 
@@ -73,7 +73,7 @@ constexpr int MAX_BATCH_NUM = 2048;
 constexpr int MAX_CQE = MAX_BATCH_NUM;
 constexpr int MAX_QP_WR = MAX_BATCH_NUM;
 constexpr int MAX_CQ = MAX_BATCH_NUM;
-constexpr int MAX_INITIATOR_DEPTH = 64;
+constexpr int MAX_INITIATOR_DEPTH = 16;
 
 using Addr = int32_t;
 constexpr Addr INVALID_ADDR = (-1);
