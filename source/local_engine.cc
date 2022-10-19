@@ -249,7 +249,7 @@ bool LocalEngine::write(const std::string &key, const std::string &value, bool u
   if (UNLIKELY(-1 == cur_thread_id)) {
     cur_thread_id = count_++;
     cur_thread_id %= kThreadNum;
-    bind_core(cur_thread_id);
+    // bind_core(cur_thread_id);
   }
 #ifdef STAT
   stat::write_times.fetch_add(1, std::memory_order_relaxed);
@@ -278,7 +278,7 @@ bool LocalEngine::read(const std::string &key, std::string &value) {
   if (UNLIKELY(-1 == cur_thread_id)) {
     cur_thread_id = count_++;
     cur_thread_id %= kThreadNum;
-    bind_core(cur_thread_id);
+    // bind_core(cur_thread_id);
   }
 #ifdef STAT
   stat::read_times.fetch_add(1, std::memory_order_relaxed);
@@ -294,7 +294,7 @@ bool LocalEngine::deleteK(const std::string &key) {
   if (UNLIKELY(-1 == cur_thread_id)) {
     cur_thread_id = count_++;
     cur_thread_id %= kThreadNum;
-    bind_core(cur_thread_id);
+    // bind_core(cur_thread_id);
   }
 #ifdef STAT
   stat::delete_times.fetch_add(1, std::memory_order_relaxed);

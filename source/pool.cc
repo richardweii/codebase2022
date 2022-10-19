@@ -102,6 +102,8 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
   return true;
 }
 
+std::atomic<int> count1 = 0;
+std::atomic<int> count2 = 0;
 bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
   KeySlot *slot = _hash_index->Find(key, hash);
   if (slot == nullptr) {
@@ -116,6 +118,11 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 
   // modify in place
   if (LIKELY(meta->SlabClass() == val.size() / kSlabSize)) {
+    if (count1 <= 1000) {
+      LOG_INFO("[%d] 原地更新 %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
+               *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
+      count1++;
+    }
     PageEntry *entry = _buffer_pool->Lookup(page_id, true);
     if (entry != nullptr) {
 #ifdef STAT
@@ -142,6 +149,11 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
     return true;
   }
 
+  if (count2 <= 1000) {
+    LOG_INFO("[%d] update %08x %08x %08x %08x", cur_thread_id, *((uint32_t *)(key.data())),
+             *((uint32_t *)(key.data() + 4)), *((uint32_t *)(key.data() + 8)), *((uint32_t *)(key.data() + 12)));
+    count2++;
+  }
   modifyLength(slot, val, hash);
   return true;
 }
