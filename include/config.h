@@ -39,9 +39,9 @@ constexpr int kKeyLength = 16;
 // 一个slab的大小为16字节，这是内存管理的最小单位
 constexpr int kSlabSize = 16;
 // 配置PageSize的大小
-constexpr int kPageSizeBit = 20;  // 20: 1MB
+constexpr int kPageSizeBit = 19;  // 20: 1MB
 constexpr int kPageSize = 1 << kPageSizeBit;
-constexpr int kNumOfKB = 1024;
+constexpr int kNumOfKB = 512;
 
 // page管理的一个slot的大小最小为5个slab，也就是80字节
 constexpr int kSlabSizeMin = 5;  // 5 * 16 = 80 Bytes
@@ -68,7 +68,7 @@ constexpr int kHashIndexSize = 201326611;
 
 // read时预取的page个数
 constexpr int kPrefetchPageNum = 8;
-constexpr int kPrefetchLinerProbePageNum = 12;
+constexpr int kPrefetchLinerProbePageNum = 16;
 
 constexpr int kPreFlushPageNum = 4;
 // net buffer的相关配置项
