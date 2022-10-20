@@ -39,9 +39,9 @@ constexpr int kKeyLength = 16;
 // 一个slab的大小为16字节，这是内存管理的最小单位
 constexpr int kSlabSize = 16;
 // 配置PageSize的大小
-constexpr int kPageSizeBit = 19;  // 20: 1MB
+constexpr int kPageSizeBit = 20;  // 20: 1MB
 constexpr int kPageSize = 1 << kPageSizeBit;
-constexpr int kNumOfKB = 512;
+constexpr int kNumOfKB = 1024;
 
 // page管理的一个slot的大小最小为5个slab，也就是80字节
 constexpr int kSlabSizeMin = 5;  // 5 * 16 = 80 Bytes

@@ -3,7 +3,7 @@
 
 namespace kv {
 
-PageManager *global_page_manager = nullptr;
+PageManager *global_page_manager = new PageManager(kPoolSize / kPageSize);;
 PageManager::PageManager(size_t page_num) : _page_num(page_num) {
   for (int i = 0; i < kThreadNum; i++) {
     _pages[i] = new PageMeta[page_num / kThreadNum];

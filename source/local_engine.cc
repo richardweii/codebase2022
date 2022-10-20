@@ -34,7 +34,6 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   LOG_INFO("Create %d pool, each pool with %lu MB cache, %lu pages", kPoolShardingNum, buffer_pool_size / 1024 / 1024,
            buffer_pool_size / kPageSize);
   Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
-  global_page_manager = new PageManager(kPoolSize / kPageSize);
   _client = new RDMAClient();
   if (!_client->Init(addr, port)) return false;
   _client->Start();
@@ -85,24 +84,24 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
  * @return {void}
  */
 void LocalEngine::stop() {
-  _client->Stop();
-  delete _client;
+  // _client->Stop();
+  // delete _client;
   // for (int i = 0; i < kPoolShardingNum; i++) {
   //   delete _pool[i];
   // }
   // delete global_page_manager;
-  LOG_INFO(" ========== Performance Statistics ============");
-  LOG_INFO(" Total read %ld times, write %ld times", stat::read_times.load(), stat::write_times.load());
-  LOG_INFO(" Unique insert %ld  times", stat::insert_num.load());
-  LOG_INFO(" modify in place Replacement %ld times, mount new Replacement %ld times ", stat::replacement.load(),
-           stat::mount_new_replacement.load());
-  LOG_INFO(" dirty write %ld times", stat::dirty_write.load());
-  LOG_INFO(" async flush hit %ld times", stat::async_flush.load());
-  LOG_INFO(" Cache hit %ld times", stat::cache_hit.load());
-  LOG_INFO(" Read Miss %ld times", stat::read_miss.load());
-  LOG_INFO(" Delete %ld times", stat::delete_times.load());
-  LOG_INFO("hit net buffer %ld", stat::hit_net_buffer.load());
-  LOG_INFO("miss net buffer %ld", stat::miss_net_buffer.load());
+  // LOG_INFO(" ========== Performance Statistics ============");
+  // LOG_INFO(" Total read %ld times, write %ld times", stat::read_times.load(), stat::write_times.load());
+  // LOG_INFO(" Unique insert %ld  times", stat::insert_num.load());
+  // LOG_INFO(" modify in place Replacement %ld times, mount new Replacement %ld times ", stat::replacement.load(),
+  //          stat::mount_new_replacement.load());
+  // LOG_INFO(" dirty write %ld times", stat::dirty_write.load());
+  // LOG_INFO(" async flush hit %ld times", stat::async_flush.load());
+  // LOG_INFO(" Cache hit %ld times", stat::cache_hit.load());
+  // LOG_INFO(" Read Miss %ld times", stat::read_miss.load());
+  // LOG_INFO(" Delete %ld times", stat::delete_times.load());
+  // LOG_INFO("hit net buffer %ld", stat::hit_net_buffer.load());
+  // LOG_INFO("miss net buffer %ld", stat::miss_net_buffer.load());
   return;
 };
 

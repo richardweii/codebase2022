@@ -68,12 +68,12 @@ class LocalEngine : public Engine {
     if (UNLIKELY(-1 == cur_thread_id)) {
       cur_thread_id = count_++;
       cur_thread_id %= kThreadNum;
-      cpu_set_t cpuset;
-      CPU_ZERO(&cpuset);
-      CPU_SET(cur_thread_id, &cpuset);
-      auto thread_id = pthread_self();
-      // LOG_INFO("cur_thread_id %d thread_self %ld", cur_thread_id, thread_id);
-      pthread_setaffinity_np(thread_id, sizeof(cpu_set_t), &cpuset);
+      // cpu_set_t cpuset;
+      // CPU_ZERO(&cpuset);
+      // CPU_SET(cur_thread_id, &cpuset);
+      // auto thread_id = pthread_self();
+      // // LOG_INFO("cur_thread_id %d thread_self %ld", cur_thread_id, thread_id);
+      // pthread_setaffinity_np(thread_id, sizeof(cpu_set_t), &cpuset);
     }
   }
 
