@@ -32,12 +32,7 @@ void SlotMonitor::FreeSlot(KeySlot *slot) {
 }
 
 HashTable::HashTable(size_t size) {
-  int logn = 0;
-  while (size >= 2) {
-    size /= 2;
-    logn++;
-  }
-  _size = PrimeList[logn];
+  _size = size;
   _bucket = new int[_size];
 
   // init bucket

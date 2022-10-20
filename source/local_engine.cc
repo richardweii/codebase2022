@@ -272,7 +272,7 @@ class PageEntry;
 std::shared_ptr<_Result> _do[TOTAL_PAGE_NUM];
 
 thread_local int cur_thread_id = -1;
-bool open_compress = false;
+bool open_compress = true;
 bool finished = false;
 bool open_prefetch = true;
 SpinLock thread_map_lock_;

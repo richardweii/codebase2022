@@ -181,6 +181,12 @@ bool BufferPool::Init(ibv_pd *pd) {
         },
         t);
   }
+  threads.emplace_back([&]() {
+    compress_page_buff_mr = ibv_reg_mr(pd, compress_page_buff, sizeof(compress_page_buff), RDMA_MR_FLAG);
+    if (compress_page_buff_mr == nullptr) {
+      LOG_FATAL("Register %lu memory failed.", sizeof(compress_page_buff));
+    }
+  });
   for (auto &th : threads) {
     th.join();
   }

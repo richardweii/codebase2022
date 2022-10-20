@@ -91,9 +91,9 @@ class Pool NOCOPYABLE {
 
   void modifyLength(KeySlot *slot, const Slice &val, uint32_t hash);
 
-  int writeToRemote(PageEntry *entry, RDMAManager::Batch *batch, bool use);
+  int writeToRemote(PageEntry *entry, RDMAManager::Batch *batch, int idx);
 
-  int readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch);
+  int readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch, int idx);
 
   void allocingListWLock(uint32_t al_index, int slab_size) { _allocing_list_latch[al_index][slab_size].WLock(); }
 

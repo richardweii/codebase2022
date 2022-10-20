@@ -16,11 +16,10 @@
 #include "util/rwlock.h"
 
 namespace kv {
-HashTable *table = new HashTable(kHashIndexSize);
-BufferPool *buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum);
 Pool::Pool(RDMAClient *client, MemoryAccess *global_rdma_access) : _access_table(global_rdma_access), _client(client) {
-  _buffer_pool = buffer_pool;
-  _hash_index = table;
+  _buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum);
+  _hash_index = new HashTable(kHashIndexSize);
+  ;
   _replacement =
       std::bind(&Pool::replacement, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 }
@@ -233,7 +232,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
       // write dirty page back
       if (entry->Dirty) {
         auto batch = _client->BeginBatchTL(cur_thread_id);
-        auto ret = writeToRemote(entry, batch, false);
+        auto ret = writeToRemote(entry, batch, 0);
         // LOG_ASSERT(ret == 0, "rdma write failed.");
         *batch_ret = batch;
         entry->Dirty = false;
@@ -312,12 +311,19 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
       victim = victims[i];
       page_id = prefetch_page_ids[i];
       if (victim->Dirty) {
-        writeToRemote(victim, batch, false);
+        writeToRemote(victim, batch, i);
         victim->Dirty = false;
       }
-      readFromRemote(victim, page_id, batch);
+      readFromRemote(victim, page_id, batch, i);
     }
     batch->FinishBatchTL();
+    if (open_compress) {
+      for (int i = 0; i < prefetch_num; i++) {
+        // 解压缩
+        LZ4_decompress_safe(_buffer_pool->compress_page_buff[cur_thread_id * kPrefetchPageNum + i].data,
+                            victims[i]->Data(), _buffer_pool->pg_com_szs[prefetch_page_ids[i]], kPageSize);
+      }
+    }
 
     PageMeta *meta;
     for (int i = 0; i < prefetch_num; i++) {
@@ -332,12 +338,17 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
     PageEntry *victim = _buffer_pool->Evict();
     auto batch = _client->BeginBatchTL(cur_thread_id);
     if (victim->Dirty) {
-      auto ret = writeToRemote(victim, batch, false);
+      auto ret = writeToRemote(victim, batch, 0);
       LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
       victim->Dirty = false;
     }
-    auto ret = readFromRemote(victim, page_id, batch);
+    auto ret = readFromRemote(victim, page_id, batch, 0);
     ret = batch->FinishBatchTL();
+    if (open_compress) {
+      // 解压缩
+      LZ4_decompress_safe(_buffer_pool->compress_page_buff[cur_thread_id * kPrefetchPageNum].data, victim->Data(),
+                          _buffer_pool->pg_com_szs[page_id], kPageSize);
+    }
     _buffer_pool->InsertPage(victim, page_id, slab_class);
     LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
     return victim;
@@ -348,12 +359,17 @@ PageEntry *Pool::write_replacement(PageId page_id, uint8_t slab_class) {
   PageEntry *victim = _buffer_pool->Evict();
   auto batch = _client->BeginBatchTL(cur_thread_id);
   if (victim->Dirty) {
-    auto ret = writeToRemote(victim, batch, false);
+    auto ret = writeToRemote(victim, batch, 0);
     LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
     victim->Dirty = false;
   }
-  auto ret = readFromRemote(victim, page_id, batch);
+  auto ret = readFromRemote(victim, page_id, batch, 0);
   ret = batch->FinishBatchTL();
+  if (open_compress) {
+    // 解压缩
+    LZ4_decompress_safe(_buffer_pool->compress_page_buff[cur_thread_id * kPrefetchPageNum].data, victim->Data(),
+                        _buffer_pool->pg_com_szs[page_id], kPageSize);
+  }
   _buffer_pool->InsertPage(victim, page_id, slab_class);
   LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
   return victim;
@@ -399,23 +415,49 @@ bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
   return true;
 }
 
-int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch, bool use_net_buffer) {
+int Pool::writeToRemote(PageEntry *entry, RDMAManager::Batch *batch, int idx) {
   // LOG_INFO("pageid %d writeToRemote", entry->PageId());
   uint32_t block = AddrParser::GetBlockFromPageId(entry->PageId());
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(entry->PageId());
   LOG_DEBUG("write to block %d off %d", block, block_off);
   const MemoryAccess &access = _access_table[block];
-  batch->RemoteWrite(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
-                     access.addr + kPageSize * block_off, access.rkey);
+RETRY:
+  if (open_compress) {
+    // 先压缩
+    size_t com_size =
+        LZ4_compress_fast(entry->Data(), _buffer_pool->compress_page_buff[cur_thread_id * kPrefetchPageNum + idx].data,
+                          kPageSize, kPageSize, 1);
+    _buffer_pool->pg_com_szs[entry->PageId()] = com_size;
+    if (com_size == 0 || ((kPageSize * 1.0) / com_size) < 1.5) {
+      open_compress = false;
+      LOG_INFO("compress ratio is too low, close compress, com_size is %zu", com_size);
+      goto RETRY;
+    }
+
+    batch->RemoteWrite(_buffer_pool->compress_page_buff[cur_thread_id * kPrefetchPageNum + idx].data,
+                       _buffer_pool->CompressMR()->lkey, com_size, access.addr + kPageSize * block_off, access.rkey);
+    return 0;
+  } else {
+    batch->RemoteWrite(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
+                       access.addr + kPageSize * block_off, access.rkey);
+    return 0;
+  }
   return 0;
 }
 
-int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch) {
+int Pool::readFromRemote(PageEntry *entry, PageId page_id, RDMAManager::Batch *batch, int idx) {
   uint32_t block = AddrParser::GetBlockFromPageId(page_id);
   uint32_t block_off = AddrParser::GetBlockOffFromPageId(page_id);
   const MemoryAccess &access = _access_table[block];
-  return batch->RemoteRead(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
-                           access.addr + kPageSize * block_off, access.rkey);
+  if (open_compress) {
+    // 读取到的是压缩后的数据
+    return batch->RemoteRead(_buffer_pool->compress_page_buff[cur_thread_id * kPrefetchPageNum + idx].data,
+                             _buffer_pool->CompressMR()->lkey, _buffer_pool->pg_com_szs[page_id],
+                             access.addr + kPageSize * block_off, access.rkey);
+  } else {
+    return batch->RemoteRead(entry->Data(), _buffer_pool->MR(entry->MRID())->lkey, kPageSize,
+                             access.addr + kPageSize * block_off, access.rkey);
+  }
 }
 
 }  // namespace kv
