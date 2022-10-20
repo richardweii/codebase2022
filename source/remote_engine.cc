@@ -62,7 +62,7 @@ void RemoteEngine::handler(RPCTask *task) {
       LOG_INFO("Response Alloc msg...");
       break;
     }
-    case MSG_NET_BUFFER : {
+    case MSG_NET_BUFFER: {
       NetBufferInitReq *req = task->GetRequest<NetBufferInitReq>();
       LOG_INFO("NetBuffer Init.");
       _net_buffer_rkey = req->rkey;

@@ -35,9 +35,14 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   _client = new RDMAClient();
   if (!_client->Init(addr, port)) return false;
   _client->Start();
+  auto time_end = TIME_NOW;
+  auto time_delta = time_end - time_now;
+  auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
+  LOG_INFO("_client start time: %lf s", count * 1.0 / 1000 / 1000);
 
+  time_now = TIME_NOW;
   int thread_num = 10;
-  std::vector<std::thread> threads;
+  // std::vector<std::thread> threads;
   // RDMA access global table
   std::vector<MessageBlock *> msgs;
   for (int i = 0; i < kMrBlockNum; i++) {
@@ -50,33 +55,42 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
     _client->RPCSend(req, msg);
     msgs.emplace_back(msg);
   }
+  time_end = TIME_NOW;
+  time_delta = time_end - time_now;
+  count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
+  LOG_INFO("RPCSend time: %lf s", count * 1.0 / 1000 / 1000);
 
+  time_now = TIME_NOW;
   int per_thread_num = kMrBlockNum / thread_num;
-  for (int t = 0; t < thread_num; t++) {
-    threads.emplace_back(
-        [&](int tid) {
-          for (int i = 0; i < per_thread_num; i++) {
-            AllocResponse resp;
-            _client->RPCRecv(resp, msgs[i + tid * per_thread_num]);
-            if (resp.status != RES_OK) {
-              LOG_FATAL("Failed to alloc new block.");
-            }
+  for (int i = 0; i < kMrBlockNum; i++) {
+    AllocResponse resp;
+    _client->RPCRecv(resp, msgs[i]);
+    if (resp.status != RES_OK) {
+      LOG_FATAL("Failed to alloc new block.");
+    }
 
-            MemoryAccess access{.addr = resp.addr, .rkey = resp.rkey, .lkey = resp.lkey};
-            _global_access_table[i + tid * per_thread_num] = access;
-          }
-        },
-        t);
+    MemoryAccess access{.addr = resp.addr, .rkey = resp.rkey, .lkey = resp.lkey};
+    _global_access_table[i] = access;
   }
 
+  // for (auto &th : threads) {
+  //   th.join();
+  // }
+
+  time_end = TIME_NOW;
+  time_delta = time_end - time_now;
+  count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
+  LOG_INFO("RPCRecv time: %lf s", count * 1.0 / 1000 / 1000);
+
+  time_now = TIME_NOW;
   Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
   global_page_manager = new PageManager(kPoolSize / kPageSize);
   _pool = new Pool(_client, _global_access_table);
   _pool->Init();
-
-  for (auto &th : threads) {
-    th.join();
-  }
+  time_end = TIME_NOW;
+  time_delta = time_end - time_now;
+  count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
+  LOG_INFO("Arena global_page_manager _pool init  time: %lf s", count * 1.0 / 1000 / 1000);
 
   auto watcher = std::thread([&]() {
     sleep(60 * 6);
@@ -85,10 +99,10 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   });
   watcher.detach();
 
-  auto time_end = TIME_NOW;
-  auto time_delta = time_end - time_now;
-  auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
-  LOG_INFO("init time: %lf s", count * 1.0 / 1000 / 1000);
+  // auto time_end = TIME_NOW;
+  // auto time_delta = time_end - time_now;
+  // auto count = std::chrono::duration_cast<std::chrono::microseconds>(time_delta).count();
+  // LOG_INFO("init time: %lf s", count * 1.0 / 1000 / 1000);
 
   return true;
 }

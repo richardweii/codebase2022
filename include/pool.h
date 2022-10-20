@@ -117,21 +117,52 @@ class Pool NOCOPYABLE {
   SpinLatch _latch;
 };
 
+class ValueBlock NOCOPYABLE {
+ public:
+  friend class RemotePool;
+  const char *Data() const { return _data; }
+  bool Init(ibv_pd *pd) {
+    _mr = ibv_reg_mr(pd, _data, kMaxBlockSize, RDMA_MR_FLAG);
+    if (_mr == nullptr) {
+      LOG_ERROR("Register memory failed.");
+      return false;
+    }
+    return true;
+  }
+  uint32_t Rkey() const { return _mr->rkey; }
+  uint32_t Lkey() const { return _mr->lkey; }
+
+ private:
+  alignas(4096) char _data[kMaxBlockSize];
+  ibv_mr *_mr = nullptr;
+};
+
+static ValueBlock *blocks = (ValueBlock *)aligned_alloc(4096, sizeof(ValueBlock) * kMrBlockNum);
 class RemotePool NOCOPYABLE {
  public:
-  RemotePool(ibv_pd *pd) : _pd(pd) { _blocks = (ValueBlock *)aligned_alloc(4096, sizeof(ValueBlock) * kMrBlockNum); }
+  RemotePool(ibv_pd *pd) : _pd(pd) {
+    _blocks = blocks;
+    std::vector<std::thread> threads;
+    for (int t = 0; t < 4; t++) {
+      threads.emplace_back(
+          [&](int tid) {
+            for (int i = 0; i < 8; i++) {
+              if (8 * tid + i >= kMrBlockNum) break;
+              _blocks[8 * tid + i].Init(pd);
+            }
+          },
+          t);
+    }
+    for (auto &th : threads) {
+      th.join();
+    }
+  }
   ~RemotePool() {}
   // Allocate a datablock for one side write
   MemoryAccess AllocBlock() {
     int cur = _block_cnt.fetch_add(1);
     ValueBlock *block = &_blocks[cur];
-    auto succ = block->Init(_pd);
-    LOG_ASSERT(succ, "Failed to init memblock  %d.", cur);
-    if (succ) {
-      LOG_INFO("Alloc block %d successfully, prepare response.", cur);
-    } else {
-      LOG_FATAL("Alloc block %d Failed", cur);
-    }
+    LOG_INFO("Alloc block %d successfully, prepare response.", cur);
     // LOG_INFO("AllocBlock addr %p %d %d", block->Data(), block->Rkey(), block->Lkey());
     lkeys[cur] = block->Lkey();
     return {.addr = (uint64_t)block->Data(), .rkey = block->Rkey(), .lkey = block->Lkey()};
@@ -147,25 +178,6 @@ class RemotePool NOCOPYABLE {
   uint64_t StartAddr() const { return (uint64_t)_blocks; }
 
  private:
-  class ValueBlock NOCOPYABLE {
-   public:
-    friend class RemotePool;
-    const char *Data() const { return _data; }
-    bool Init(ibv_pd *pd) {
-      _mr = ibv_reg_mr(pd, _data, kMaxBlockSize, RDMA_MR_FLAG);
-      if (_mr == nullptr) {
-        LOG_ERROR("Register memory failed.");
-        return false;
-      }
-      return true;
-    }
-    uint32_t Rkey() const { return _mr->rkey; }
-    uint32_t Lkey() const { return _mr->lkey; }
-
-   private:
-    alignas(4096) char _data[kMaxBlockSize];
-    ibv_mr *_mr = nullptr;
-  };
   ValueBlock *_blocks = nullptr;
   ibv_pd *_pd = nullptr;
   std::atomic<int> _block_cnt{0};
