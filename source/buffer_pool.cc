@@ -136,7 +136,7 @@ class FrameHashTable {
  private:
   Slot *_slots;
 };
-constexpr int a = kPoolSize / kPageSize;
+
 BufferPool::BufferPool(size_t buffer_pool_size, uint8_t shard) : _buffer_pool_size(buffer_pool_size), _shard(shard) {
   size_t page_num = buffer_pool_size / kPageSize;
   _per_thread_page_num = page_num / kThreadNum;

@@ -173,7 +173,7 @@ RPCTask *RDMAServer::pollTask(int thread_id) {
       }
     }
 
-    // 受限于RDMA网卡带宽,此优化实际上没有性能提升,遂关闭
+    //! 受限于RDMA网卡带宽,此优化实际上没有性能提升,遂关闭
     _start_polling = false;
     if (_start_polling) {
       // 轮询 local端 netbuffer

@@ -3,6 +3,8 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
+#include <vector>
+#include "buffer_pool.h"
 #include "config.h"
 #include "msg.h"
 #include "page_manager.h"
@@ -31,8 +33,8 @@ void Pool::Init() {
   auto succ = _buffer_pool->Init(_client->Pd());
   LOG_ASSERT(succ, "Init buffer pool failed.");
 
-  for (int i = kSlabSizeMin; i <= kSlabSizeMax; i++) {
-    for (int j = 0; j < kAllocingListShard; j++) {
+  for (int j = 0; j < kAllocingListShard; j++) {
+    for (int i = kSlabSizeMin; i <= kSlabSizeMax; i++) {
       PageMeta *page = global_page_manager->AllocNewPage(i, j);
       _allocing_tail[j][i] = page;
       _allocing_pages[j][i] = _buffer_pool->FetchNew(page->PageId(), i, j);
@@ -62,7 +64,7 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 #ifdef STAT
     stat::cache_hit.fetch_add(1, std::memory_order_relaxed);
 #endif
-    uint32_t val_len = entry->SlabClass() * kSlabSize;
+    uint32_t val_len = meta->SlabClass() * kSlabSize;
     val.resize(val_len);
     my_memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
     _buffer_pool->Release(entry);
@@ -71,7 +73,8 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
 
   // cache miss
   PageEntry *victim = _replacement_sgfl.Do(page_id, page_id, _replacement, page_id, meta->SlabClass(), false);
-  uint32_t val_len = victim->SlabClass() * kSlabSize;
+  PageMeta *victim_meta = global_page_manager->Page(victim->PageId());
+  uint32_t val_len = victim_meta->SlabClass() * kSlabSize;
   val.resize(val_len);
   my_memcpy((char *)val.data(), victim->Data() + val_len * AddrParser::Off(addr), val_len);
   _buffer_pool->Release(victim);
@@ -284,31 +287,49 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
   return entry;
 }
 
+constexpr int PER_THREAD_PAGE_NUM = kPoolSize / kPageSize / kThreadNum;
 PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
-  // miss
-#ifdef STAT
-  stat::replacement.fetch_add(1);
-#endif
-  PageEntry *victim = _buffer_pool->Evict();
   auto batch = _client->BeginBatchTL(cur_thread_id);
-  if (victim->Dirty) {
-#ifdef STAT
-    stat::dirty_write.fetch_add(1);
-#endif
-    auto ret = writeToRemote(victim, batch, false);
-    // LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
-    victim->Dirty = false;
+  std::vector<PageEntry *> victims;
+  std::vector<PageId> prefetch_page_ids;
+  PageEntry *victim = _buffer_pool->Evict();
+  victims.emplace_back(victim);
+  prefetch_page_ids.emplace_back(page_id);
+  int prefetch_num;
+  for (prefetch_num = 1; prefetch_num < kPrefetchPageNum; prefetch_num++) {
+    page_id++;
+    if (page_id % PER_THREAD_PAGE_NUM == 0 || _buffer_pool->Lookup(page_id) != nullptr) break;
+    victim = _buffer_pool->Evict();
+    victims.emplace_back(victim);
+    prefetch_page_ids.emplace_back(page_id);
   }
-  auto ret = readFromRemote(victim, page_id, batch);
-  ret = batch->FinishBatchTL();
+
+  // 预取
+  for (int i = 0; i < prefetch_num; i++) {
+    victim = victims[i];
+    page_id = prefetch_page_ids[i];
+    if (victim->Dirty) {
+      writeToRemote(victim, batch, false);
+      victim->Dirty = false;
+    }
+    readFromRemote(victim, page_id, batch);
+  }
+  batch->FinishBatchTL();
+
+  PageMeta *meta;
+  for (int i = 0; i < prefetch_num; i++) {
+    victim = victims[i];
+    page_id = prefetch_page_ids[i];
+    meta = global_page_manager->Page(page_id);
+    _buffer_pool->InsertPage(victim, page_id, meta->SlabClass());
+  }
+
   if (open_compress) {
     // 解压缩
     LZ4_decompress_safe(_buffer_pool->compress_page_buff[cur_thread_id + kThreadNum].data, victim->Data(),
                         _buffer_pool->pg_com_szs[page_id], kPageSize);
   }
-  _buffer_pool->InsertPage(victim, page_id, slab_class);
-  LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
-  return victim;
+  return victims[0];
 }
 
 bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {

@@ -15,7 +15,7 @@ PageManager::PageManager(size_t page_num) : _page_num(page_num) {
       _pages[i][j]._next = &_pages[i][j + 1];
       _pages[i][j]._page_id = i * per_thread_page_num + j;
     }
-    _pages[i][per_thread_page_num - 1]._page_id = (i - 1) * per_thread_page_num;
+    _pages[i][per_thread_page_num - 1]._page_id = (i + 1) * per_thread_page_num - 1;
     _free_list[i] = &_pages[i][0];
   }
 }
