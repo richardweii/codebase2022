@@ -3,6 +3,7 @@
 #include <thread>
 #include "config.h"
 #include "hash_index.h"
+#include "util/logging.h"
 
 namespace kv {
 class ClockReplacer {
@@ -106,7 +107,7 @@ class ClockReplacer {
   Frame *frames_[kThreadNum];
   std::list<FrameId> free_list_[kThreadNum];
   SpinLock _lock;
-  uint32_t per_thread_frame_num;
+  int per_thread_frame_num;
 };
 
 struct Slot {
@@ -225,6 +226,7 @@ PageEntry *BufferPool::Evict() {
   auto succ = _replacer->Victim(&fid);
   assert(succ);
   PageEntry *victim = &_entries[fid];
+  LOG_ASSERT(fid >= 0 && fid < _buffer_pool_size / kPageSize, "invaild fid %d", fid);
 
   // remove from old hash table
   _hash_table->Remove(victim->_page_id, victim->_frame_id);

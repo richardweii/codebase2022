@@ -298,16 +298,21 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
   PageEntry *victim = _buffer_pool->Evict();
   victims.emplace_back(victim);
   prefetch_page_ids.emplace_back(page_id);
-  int prefetch_num;
-  for (prefetch_num = 1; prefetch_num < kPrefetchPageNum; prefetch_num++) {
+  int prefetch_num = 1;
+  int count = 0;
+  for (; count < kPrefetchLinerProbePageNum && prefetch_num < kPrefetchPageNum;) {
     page_id++;
-    if (page_id % PER_THREAD_PAGE_NUM == 0 || _buffer_pool->Lookup(page_id) != nullptr) break;
+    count++;
+    if (page_id % PER_THREAD_PAGE_NUM == 0) break;
+    if (_buffer_pool->Lookup(page_id) != nullptr) continue;
     victim = _buffer_pool->Evict();
     victims.emplace_back(victim);
     prefetch_page_ids.emplace_back(page_id);
+    prefetch_num++;
   }
 
   // 预取
+  // LOG_INFO("[%d] prefetch_num %d", cur_thread_id, prefetch_num);
   for (int i = 0; i < prefetch_num; i++) {
     victim = victims[i];
     page_id = prefetch_page_ids[i];
