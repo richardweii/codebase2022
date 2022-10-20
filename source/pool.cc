@@ -16,10 +16,11 @@
 #include "util/rwlock.h"
 
 namespace kv {
+HashTable *table = new HashTable(kHashIndexSize);
+BufferPool *buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum);
 Pool::Pool(RDMAClient *client, MemoryAccess *global_rdma_access) : _access_table(global_rdma_access), _client(client) {
-  _buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum);
-  _hash_index = new HashTable(kHashIndexSize);
-  ;
+  _buffer_pool = buffer_pool;
+  _hash_index = table;
   _replacement =
       std::bind(&Pool::replacement, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 }

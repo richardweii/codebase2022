@@ -67,8 +67,8 @@ constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 constexpr int kHashIndexSize = 201326611;
 
 // read时预取的page个数
-constexpr int kPrefetchPageNum = 4;
-constexpr int kPrefetchLinerProbePageNum = 8;
+constexpr int kPrefetchPageNum = 8;
+constexpr int kPrefetchLinerProbePageNum = 12;
 
 constexpr int kPreFlushPageNum = 4;
 // net buffer的相关配置项
@@ -80,7 +80,7 @@ constexpr int MAX_BATCH_NUM = 256;
 constexpr int MAX_CQE = MAX_BATCH_NUM;
 constexpr int MAX_QP_WR = MAX_BATCH_NUM;
 constexpr int MAX_CQ = MAX_BATCH_NUM;
-constexpr int MAX_INITIATOR_DEPTH = 16;
+constexpr int MAX_INITIATOR_DEPTH = 128;
 
 using Addr = int32_t;
 constexpr Addr INVALID_ADDR = (-1);
