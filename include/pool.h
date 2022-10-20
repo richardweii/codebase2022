@@ -70,7 +70,7 @@ class alignas(64) NetBuffer NOCOPYABLE {
 
 class Pool NOCOPYABLE {
  public:
-  Pool(uint8_t shard, RDMAClient *client, MemoryAccess *global_rdma_access);
+  Pool(RDMAClient *client, MemoryAccess *global_rdma_access);
   ~Pool();
 
   void Init();
@@ -112,8 +112,6 @@ class Pool NOCOPYABLE {
   BufferPool *_buffer_pool = nullptr;
 
   RDMAClient *_client = nullptr;
-
-  uint8_t _shard;
 
   SpinLock _lock;
   SpinLatch _latch;

@@ -64,9 +64,11 @@ constexpr size_t kMaxPoolBlockSize = (size_t)1 * 1024 * 1024 * 1024;  // 1GB mr
 // remote pool mrblock的个数
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
 constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
+constexpr int kHashIndexSize = 201326611;
 
 // read时预取的page个数
 constexpr int kPrefetchPageNum = 4;
+constexpr int kPreFlushPageNum = 4;
 // net buffer的相关配置项
 constexpr int kNetBufferPageNum = 63;
 constexpr int kRemoteThreadWorkNum = 4;

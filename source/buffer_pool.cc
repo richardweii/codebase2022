@@ -1,5 +1,6 @@
 #include "buffer_pool.h"
 #include <list>
+#include <thread>
 #include "config.h"
 #include "hash_index.h"
 
@@ -137,10 +138,9 @@ class FrameHashTable {
   Slot *_slots;
 };
 
-BufferPool::BufferPool(size_t buffer_pool_size, uint8_t shard) : _buffer_pool_size(buffer_pool_size), _shard(shard) {
+BufferPool::BufferPool(size_t buffer_pool_size) : _buffer_pool_size(buffer_pool_size) {
   size_t page_num = buffer_pool_size / kPageSize;
   _per_thread_page_num = page_num / kThreadNum;
-  // _pages = new PageData[page_num];
   _pages = (PageData *)aligned_alloc(4096, sizeof(PageData) * page_num);
   _hash_table = new FrameHashTable(kPoolSize / kPageSize);
   _replacer = new ClockReplacer(page_num);
@@ -169,18 +169,19 @@ BufferPool::~BufferPool() {
 
 bool BufferPool::Init(ibv_pd *pd) {
   size_t per_mr_bp_sz = _buffer_pool_size / kPoolMrBlockNum;
-  for (int i = 0; i < kPoolMrBlockNum; i++) {
-    _mr[i] = ibv_reg_mr(pd, (char *)_pages + per_mr_bp_sz * i, per_mr_bp_sz, RDMA_MR_FLAG);
-    if (_mr[i] == nullptr) {
-      LOG_FATAL("Register %lu memory failed.", per_mr_bp_sz);
-      return false;
-    }
+  std::vector<std::thread> threads;
+  for (int t = 0; t < kPoolMrBlockNum; t++) {
+    threads.emplace_back(
+        [&](int i) {
+          _mr[i] = ibv_reg_mr(pd, (char *)_pages + per_mr_bp_sz * i, per_mr_bp_sz, RDMA_MR_FLAG);
+          if (_mr[i] == nullptr) {
+            LOG_FATAL("Register %lu memory failed.", per_mr_bp_sz);
+          }
+        },
+        t);
   }
-
-  compress_page_buff_mr = ibv_reg_mr(pd, compress_page_buff, sizeof(compress_page_buff), RDMA_MR_FLAG);
-  if (compress_page_buff_mr == nullptr) {
-    LOG_FATAL("Register %lu memory failed.", sizeof(compress_page_buff));
-    return false;
+  for (auto &th : threads) {
+    th.join();
   }
 
   return true;

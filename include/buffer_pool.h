@@ -39,7 +39,7 @@ class PageEntry {
 
 class BufferPool {
  public:
-  BufferPool(size_t buffer_pool_size, uint8_t shard);
+  BufferPool(size_t buffer_pool_size);
   ~BufferPool();
 
   bool Init(ibv_pd *pd);
@@ -63,8 +63,6 @@ class BufferPool {
   // ibv_mr *MR() const { return _mr; }
   ibv_mr *MR(int id) const { return _mr[id]; }
 
-  ibv_mr *CompressMR() const { return compress_page_buff_mr; }
-  alignas(4096) PageData compress_page_buff[kThreadNum << 1];
   size_t pg_com_szs[TOTAL_PAGE_NUM];
 
  private:
@@ -76,10 +74,7 @@ class BufferPool {
   ClockReplacer *_replacer;
   FrameHashTable *_hash_table;
   size_t _buffer_pool_size;
-  uint8_t _shard;
   uint32_t _per_thread_page_num;
   SpinLatch _latch;
-  // for compress
-  ibv_mr *compress_page_buff_mr;
 };
 }  // namespace kv

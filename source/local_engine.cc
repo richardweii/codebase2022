@@ -36,10 +36,6 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
   if (!_client->Init(addr, port)) return false;
   _client->Start();
 
-  LOG_INFO("client start");
-  Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
-  global_page_manager = new PageManager(kPoolSize / kPageSize);
-  LOG_INFO("global_page_manager created");
   int thread_num = 10;
   std::vector<std::thread> threads;
   // RDMA access global table
@@ -73,16 +69,14 @@ bool LocalEngine::start(const std::string addr, const std::string port) {
         t);
   }
 
-  _pool = new Pool(0, _client, _global_access_table);
+  Arena::getInstance().Init(64 * 1024 * 1024);  // 64MB;
+  global_page_manager = new PageManager(kPoolSize / kPageSize);
+  _pool = new Pool(_client, _global_access_table);
   _pool->Init();
-
-  LOG_INFO("pool init");
 
   for (auto &th : threads) {
     th.join();
   }
-
-  LOG_INFO("remote Value block allocated");
 
   auto watcher = std::thread([&]() {
     sleep(60 * 6);
@@ -200,7 +194,7 @@ bool LocalEngine::encrypt(const std::string value, std::string &encrypt_value) {
   /* 6. Remove secret and release resources */
   ippsAESInit(0, _aes.key_len, m_pAES, m_ctxsize);
 
-  if (m_pAES) delete[](Ipp8u *) m_pAES;
+  if (m_pAES) delete[] (Ipp8u *)m_pAES;
   m_pAES = nullptr;
   std::string tmp(reinterpret_cast<const char *>(m_encrypt_val), value.size());
   encrypt_value = tmp;
