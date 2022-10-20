@@ -10,53 +10,66 @@ class ClockReplacer {
   static constexpr uint8_t UNREF = 0x7f;
 
   explicit ClockReplacer(size_t frame_num) : frame_num_(frame_num) {
-    frames_ = new Frame[frame_num];
-    for (size_t i = 0; i < frame_num; i++) {
-      frames_[i]._frame = i;
-      free_list_.push_back(i);
+    per_thread_frame_num = frame_num / kThreadNum;
+    for (int i = 0; i < kThreadNum; i++) {
+      frames_[i] = new Frame[per_thread_frame_num];
+      hand_[i] = 0;
+    }
+    for (int i = 0; i < kThreadNum; i++) {
+      for (int j = 0; j < per_thread_frame_num; j++) {
+        frames_[i][j]._frame = i * per_thread_frame_num + j;
+        free_list_[i].push_back(frames_[i][j]._frame);
+      }
     }
   }
-  ~ClockReplacer() { delete[] frames_; }
+  ~ClockReplacer() {
+    for (int i = 0; i < kThreadNum; i++) delete[] frames_[i];
+  }
 
   // thread-safe
   bool Victim(FrameId *frame_id) {
+    FrameId fid;
     assert(frame_id != nullptr);
-    _lock.Lock();
-    *frame_id = this->pop();
-    frames_[*frame_id]._victim = true;
-    _lock.Unlock();
-    LOG_ASSERT(!frames_[*frame_id]._pin, "frame_id %d is pinned", *frame_id);
+    fid = this->pop();
+    LOG_ASSERT(fid < per_thread_frame_num, "fid %d", fid);
+    frames_[cur_thread_id][fid]._victim = true;
+    LOG_ASSERT(!frames_[cur_thread_id][fid]._pin, "frame_id %d is pinned", *frame_id);
+    *frame_id = cur_thread_id * per_thread_frame_num + fid;
     return *frame_id != INVALID_FRAME_ID;
   }
 
   // thread-safe
-  bool GetFrame(FrameId *frame_id) {
-    _lock.Lock();
-    if (free_list_.empty()) {
-      _lock.Unlock();
+  bool GetFrame(FrameId *frame_id, int tid) {
+    FrameId fid;
+    if (free_list_[tid].empty()) {
       return false;
     }
-    *frame_id = free_list_.front();
-    free_list_.pop_front();
-    _lock.Unlock();
+    *frame_id = free_list_[tid].front();
+    free_list_[tid].pop_front();
     return true;
   }
 
   // thread-safe
   void Pin(FrameId frame_id) {
-    LOG_ASSERT(!frames_[frame_id]._pin, "frame_id %d is pinned", frame_id);
-    frames_[frame_id]._pin = true;
+    int tid = frame_id / per_thread_frame_num;
+    int off = frame_id % per_thread_frame_num;
+    LOG_ASSERT(!frames_[tid][off]._pin, "frame_id %d is pinned", frame_id);
+    frames_[tid][off]._pin = true;
   }
 
   // thread-safe
   void Unpin(FrameId frame_id) {
-    assert(frames_[frame_id]._pin);
-    frames_[frame_id]._pin = false;
+    int tid = frame_id / per_thread_frame_num;
+    int off = frame_id % per_thread_frame_num;
+    assert(frames_[tid][off]._pin);
+    frames_[tid][off]._pin = false;
   }
 
   void Ref(FrameId frame_id) {
-    if (frames_[frame_id]._victim) frames_[frame_id]._victim = false;
-    if (!frames_[frame_id]._ref) frames_[frame_id]._ref = true;
+    int tid = frame_id / per_thread_frame_num;
+    int off = frame_id % per_thread_frame_num;
+    if (frames_[tid][off]._victim) frames_[tid][off]._victim = false;
+    if (!frames_[tid][off]._ref) frames_[tid][off]._ref = true;
   }
 
  private:
@@ -69,28 +82,30 @@ class ClockReplacer {
   };
 
   int walk() {
-    int ret = hand_;
-    hand_ = (hand_ + 1) % frame_num_;
+    int ret = hand_[cur_thread_id];
+    hand_[cur_thread_id] = (hand_[cur_thread_id] + 1) % per_thread_frame_num;
+    LOG_ASSERT(ret < per_thread_frame_num, "fid %d", ret);
     return ret;
   }
 
   FrameId pop() {
     while (true) {
-      uint8_t tmp = 0;
-      if (!frames_[hand_]._pin && !frames_[hand_]._ref && !frames_[hand_]._victim) {
+      if (!frames_[cur_thread_id][hand_[cur_thread_id]]._pin && !frames_[cur_thread_id][hand_[cur_thread_id]]._ref &&
+          !frames_[cur_thread_id][hand_[cur_thread_id]]._victim) {
         break;
-      } else if (!frames_[hand_]._pin) {
-        frames_[hand_]._ref = false;
+      } else if (!frames_[cur_thread_id][hand_[cur_thread_id]]._pin) {
+        frames_[cur_thread_id][hand_[cur_thread_id]]._ref = false;
       }
       walk();
     }
     return walk();
   }
-  int hand_ = 0;
+  int hand_[kThreadNum];
   size_t frame_num_;
-  Frame *frames_ = nullptr;
-  std::list<FrameId> free_list_;
+  Frame *frames_[kThreadNum];
+  std::list<FrameId> free_list_[kThreadNum];
   SpinLock _lock;
+  uint32_t per_thread_frame_num;
 };
 
 struct Slot {
@@ -102,9 +117,7 @@ struct Slot {
 // thread-safe
 class FrameHashTable {
  public:
-  FrameHashTable(size_t size) {
-    _slots = new Slot[size];
-  }
+  FrameHashTable(size_t size) { _slots = new Slot[size]; }
 
   FrameId Find(PageId page_id) { return _slots[page_id]._frame; }
 
@@ -126,8 +139,9 @@ class FrameHashTable {
 constexpr int a = kPoolSize / kPageSize;
 BufferPool::BufferPool(size_t buffer_pool_size, uint8_t shard) : _buffer_pool_size(buffer_pool_size), _shard(shard) {
   size_t page_num = buffer_pool_size / kPageSize;
+  _per_thread_page_num = page_num / kThreadNum;
   // _pages = new PageData[page_num];
-  _pages = (PageData*) aligned_alloc(4096, sizeof(PageData) * page_num);
+  _pages = (PageData *)aligned_alloc(4096, sizeof(PageData) * page_num);
   _hash_table = new FrameHashTable(kPoolSize / kPageSize);
   _replacer = new ClockReplacer(page_num);
   _entries = new PageEntry[page_num];
@@ -172,9 +186,9 @@ bool BufferPool::Init(ibv_pd *pd) {
   return true;
 }
 
-PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class) {
+PageEntry *BufferPool::FetchNew(PageId page_id, uint8_t slab_class, int tid) {
   FrameId fid;
-  if (_replacer->GetFrame(&fid)) {
+  if (_replacer->GetFrame(&fid, tid)) {
     PageEntry *new_entry = &_entries[fid];
     new_entry->_page_id = page_id;
     new_entry->_slab_class = slab_class;
