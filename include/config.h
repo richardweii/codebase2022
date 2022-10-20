@@ -76,7 +76,7 @@ constexpr int kNetBufferPageNum = 63;
 constexpr int kRemoteThreadWorkNum = 4;
 
 // RDMA相关参数配置
-constexpr int MAX_BATCH_NUM = 256;
+constexpr int MAX_BATCH_NUM = 128;
 constexpr int MAX_CQE = MAX_BATCH_NUM;
 constexpr int MAX_QP_WR = MAX_BATCH_NUM;
 constexpr int MAX_CQ = MAX_BATCH_NUM;
