@@ -146,6 +146,7 @@ bool LocalEngine::set_aes() {
 
 crypto_message_t *LocalEngine::get_aes() {
   open_compress = false;
+  open_prefetch = false;
   return &_aes;
 }
 
@@ -273,6 +274,7 @@ std::shared_ptr<_Result> _do[TOTAL_PAGE_NUM];
 thread_local int cur_thread_id = -1;
 bool open_compress = false;
 bool finished = false;
+bool open_prefetch = true;
 SpinLock thread_map_lock_;
 std::unordered_map<pthread_t, int> thread_map;
 }  // namespace kv

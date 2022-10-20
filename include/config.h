@@ -67,8 +67,8 @@ constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 constexpr int kHashIndexSize = 201326611;
 
 // read时预取的page个数
-constexpr int kPrefetchPageNum = 8;
-constexpr int kPrefetchLinerProbePageNum = kPrefetchPageNum << 1;
+constexpr int kPrefetchPageNum = 32;
+constexpr int kPrefetchLinerProbePageNum = 48;
 
 constexpr int kPreFlushPageNum = 4;
 // net buffer的相关配置项
@@ -122,4 +122,5 @@ struct _Result {
 extern std::shared_ptr<_Result> _do[TOTAL_PAGE_NUM];
 extern thread_local int cur_thread_id;
 extern bool open_compress;
+extern bool open_prefetch;
 }  // namespace kv

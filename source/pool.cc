@@ -18,8 +18,7 @@
 namespace kv {
 HashTable *table = new HashTable(kHashIndexSize);
 BufferPool *buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum);
-Pool::Pool(RDMAClient *client, MemoryAccess *global_rdma_access)
-    : _access_table(global_rdma_access), _client(client) {
+Pool::Pool(RDMAClient *client, MemoryAccess *global_rdma_access) : _access_table(global_rdma_access), _client(client) {
   _buffer_pool = buffer_pool;
   _hash_index = table;
   _replacement =
@@ -124,6 +123,7 @@ bool Pool::Write(const Slice &key, uint32_t hash, const Slice &val) {
 }
 
 bool Pool::Delete(const Slice &key, uint32_t hash) {
+  if (UNLIKELY(open_prefetch)) open_prefetch = false;
   KeySlot *slot = _hash_index->Remove(key, hash);
   if (slot == nullptr) {
     LOG_ERROR("delete invalid file %s", key.data());
@@ -292,47 +292,62 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
 
 constexpr int PER_THREAD_PAGE_NUM = kPoolSize / kPageSize / kThreadNum;
 PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
-  auto batch = _client->BeginBatchTL(cur_thread_id);
-  std::vector<PageEntry *> victims;
-  std::vector<PageId> prefetch_page_ids;
-  PageEntry *victim = _buffer_pool->Evict();
-  victims.emplace_back(victim);
-  prefetch_page_ids.emplace_back(page_id);
-  int prefetch_num = 1;
-  int count = 0;
-  for (; count < kPrefetchLinerProbePageNum && prefetch_num < kPrefetchPageNum;) {
-    page_id++;
-    count++;
-    if (page_id % PER_THREAD_PAGE_NUM == 0) break;
-    if (_buffer_pool->Lookup(page_id) != nullptr) continue;
-    victim = _buffer_pool->Evict();
+  if (open_prefetch) {
+    auto batch = _client->BeginBatchTL(cur_thread_id);
+    std::vector<PageEntry *> victims;
+    std::vector<PageId> prefetch_page_ids;
+    PageEntry *victim = _buffer_pool->Evict();
     victims.emplace_back(victim);
     prefetch_page_ids.emplace_back(page_id);
-    prefetch_num++;
-  }
+    int prefetch_num = 1;
+    int count = 0;
+    for (; count < kPrefetchLinerProbePageNum && prefetch_num < kPrefetchPageNum;) {
+      page_id++;
+      count++;
+      if (page_id % PER_THREAD_PAGE_NUM == 0) break;
+      if (_buffer_pool->Lookup(page_id) != nullptr) continue;
+      victim = _buffer_pool->Evict();
+      victims.emplace_back(victim);
+      prefetch_page_ids.emplace_back(page_id);
+      prefetch_num++;
+    }
 
-  // 预取
-  // LOG_INFO("[%d] prefetch_num %d", cur_thread_id, prefetch_num);
-  for (int i = 0; i < prefetch_num; i++) {
-    victim = victims[i];
-    page_id = prefetch_page_ids[i];
+    // 预取
+    for (int i = 0; i < prefetch_num; i++) {
+      victim = victims[i];
+      page_id = prefetch_page_ids[i];
+      if (victim->Dirty) {
+        writeToRemote(victim, batch, false);
+        victim->Dirty = false;
+      }
+      readFromRemote(victim, page_id, batch);
+    }
+    batch->FinishBatchTL();
+
+    PageMeta *meta;
+    for (int i = 0; i < prefetch_num; i++) {
+      victim = victims[i];
+      page_id = prefetch_page_ids[i];
+      meta = global_page_manager->Page(page_id);
+      _buffer_pool->InsertPage(victim, page_id, meta->SlabClass());
+    }
+
+    return victims[0];
+  } else {
+    PageEntry *victim = _buffer_pool->Evict();
+    auto batch = _client->BeginBatch();
     if (victim->Dirty) {
-      writeToRemote(victim, batch, false);
+      auto ret = writeToRemote(victim, batch, false);
+      LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
       victim->Dirty = false;
     }
-    readFromRemote(victim, page_id, batch);
+    auto ret = readFromRemote(victim, page_id, batch);
+    ret = batch->FinishBatch();
+    delete batch;
+    _buffer_pool->InsertPage(victim, page_id, slab_class);
+    LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
+    return victim;
   }
-  batch->FinishBatchTL();
-
-  PageMeta *meta;
-  for (int i = 0; i < prefetch_num; i++) {
-    victim = victims[i];
-    page_id = prefetch_page_ids[i];
-    meta = global_page_manager->Page(page_id);
-    _buffer_pool->InsertPage(victim, page_id, meta->SlabClass());
-  }
-
-  return victims[0];
 }
 
 bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
