@@ -67,7 +67,7 @@ constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 constexpr int kHashIndexSize = 201326611;
 
 // read时预取的page个数
-constexpr int kPrefetchPageNum = 4;
+constexpr int kPrefetchPageNum = 1;
 constexpr int kPreFlushPageNum = 4;
 // net buffer的相关配置项
 constexpr int kNetBufferPageNum = 63;
