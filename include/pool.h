@@ -85,6 +85,7 @@ class Pool NOCOPYABLE {
   PageEntry *mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch **batch_ret, int tid);
 
   PageEntry *replacement(PageId page_id, uint8_t slab_class, bool writer = false);
+  PageEntry *write_replacement(PageId page_id, uint8_t slab_class);
   using ReplacementFunc = std::function<PageEntry *(PageId, uint8_t, bool)>;
   ReplacementFunc _replacement;
 

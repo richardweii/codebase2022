@@ -233,12 +233,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
       // write dirty page back
       if (entry->Dirty) {
         auto batch = _client->BeginBatchTL(cur_thread_id);
-#ifdef STAT
-        stat::dirty_write.fetch_add(1);
-#endif
         auto ret = writeToRemote(entry, batch, false);
-        // writeToRemote(old_entry, batch, false);
-        // old_entry->Dirty = false;
         // LOG_ASSERT(ret == 0, "rdma write failed.");
         *batch_ret = batch;
         entry->Dirty = false;
@@ -283,7 +278,7 @@ PageEntry *Pool::mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Ba
   entry = _buffer_pool->Lookup(page_id, true);
   if (entry == nullptr) {
     // replacement
-    entry = replacement(page_id, slab_class, true);
+    entry = write_replacement(page_id, slab_class);
   }
   _buffer_pool->PinPage(entry);
   _allocing_pages[al_index][slab_class] = entry;
@@ -335,19 +330,33 @@ PageEntry *Pool::replacement(PageId page_id, uint8_t slab_class, bool writer) {
     return victims[0];
   } else {
     PageEntry *victim = _buffer_pool->Evict();
-    auto batch = _client->BeginBatch();
+    auto batch = _client->BeginBatchTL(cur_thread_id);
     if (victim->Dirty) {
       auto ret = writeToRemote(victim, batch, false);
       LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
       victim->Dirty = false;
     }
     auto ret = readFromRemote(victim, page_id, batch);
-    ret = batch->FinishBatch();
-    delete batch;
+    ret = batch->FinishBatchTL();
     _buffer_pool->InsertPage(victim, page_id, slab_class);
     LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
     return victim;
   }
+}
+
+PageEntry *Pool::write_replacement(PageId page_id, uint8_t slab_class) {
+  PageEntry *victim = _buffer_pool->Evict();
+  auto batch = _client->BeginBatchTL(cur_thread_id);
+  if (victim->Dirty) {
+    auto ret = writeToRemote(victim, batch, false);
+    LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
+    victim->Dirty = false;
+  }
+  auto ret = readFromRemote(victim, page_id, batch);
+  ret = batch->FinishBatchTL();
+  _buffer_pool->InsertPage(victim, page_id, slab_class);
+  LOG_ASSERT(ret == 0, "write page %d to remote failed.", victim->PageId());
+  return victim;
 }
 
 bool Pool::writeNew(const Slice &key, uint32_t hash, const Slice &val) {
