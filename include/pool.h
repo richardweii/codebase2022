@@ -81,8 +81,6 @@ class Pool NOCOPYABLE {
 
  private:
   bool writeNew(const Slice &key, uint32_t hash, const Slice &val);
-  using WriteNewFunc = std::function<bool(const Slice &, uint32_t, const Slice &)>;
-  WriteNewFunc _writeNew;
 
   PageEntry *mountNewPage(uint8_t slab_class, uint32_t hash, RDMAManager::Batch **batch_ret, int tid);
 
@@ -103,7 +101,6 @@ class Pool NOCOPYABLE {
   HashTable *_hash_index = nullptr;
 
   SingleFlight<PageId, PageEntry *> _replacement_sgfl;
-  SingleFlight<std::string, bool> _write_new_sgfl;
 
   PageEntry *_allocing_pages[kAllocingListShard][kSlabSizeMax + 1];
   PageMeta *_allocing_tail[kAllocingListShard][kSlabSizeMax + 1];

@@ -14,15 +14,12 @@
 #include "util/rwlock.h"
 
 namespace kv {
-bool done = true;
-SpinLock lock_;
 Pool::Pool(uint8_t shard, RDMAClient *client, MemoryAccess *global_rdma_access)
     : _access_table(global_rdma_access), _client(client), _shard(shard) {
   _buffer_pool = new BufferPool(kBufferPoolSize / kPoolShardingNum, shard);
   _hash_index = new HashTable(kKeyNum / kPoolShardingNum);
   _replacement =
       std::bind(&Pool::replacement, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-  _writeNew = std::bind(&Pool::writeNew, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 }
 
 Pool::~Pool() {
@@ -70,18 +67,6 @@ bool Pool::Read(const Slice &key, uint32_t hash, std::string &val) {
     my_memcpy((char *)val.data(), entry->Data() + val_len * AddrParser::Off(addr), val_len);
     _buffer_pool->Release(entry);
     return true;
-  }
-
-  if (UNLIKELY(!done)) {
-    lock_.Lock();
-    if (!done) {
-      for (int i = 0; i < kThreadNum; i++) {
-        auto dirtyFlushBatch = _client->DirtyFlushBatch(i);
-        dirtyFlushBatch->asyncPollCQ(dirtyFlushBatch->BatchNum());
-      }
-    }
-    done = true;
-    lock_.Unlock();
   }
 
   // cache miss

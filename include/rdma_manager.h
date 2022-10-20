@@ -195,8 +195,6 @@ class RDMAManager {
     return &batchs[tid];
   }
 
-  Batch *DirtyFlushBatch(int tid) { return &batchs[kDirtyFlushConn + tid]; }
-
  protected:
   volatile bool stop_;
   MsgBuffer *msg_buffer_ = nullptr;

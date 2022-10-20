@@ -169,12 +169,6 @@ bool RDMAClient::Init(std::string ip, std::string port) {
   for (int i = 1; i < kOneSideWorkerNum; i++) {
     rdma_one_side_->InitConnection(i, pd_, ip, port);
   }
-  for (int i = kDirtyFlushConn; i < kOneSideWorkerNum; i++) {
-    auto conn = rdma_one_side_->At(i);
-    assert(conn != nullptr);
-    conn->BeginBatch();
-    batchs[i].SetConn(conn);
-  }
   return true;
 }
 }  // namespace kv

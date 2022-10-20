@@ -10,7 +10,7 @@ class ClockReplacer {
   static constexpr uint8_t UNREF = 0x7f;
 
   explicit ClockReplacer(size_t frame_num) : frame_num_(frame_num) {
-    per_thread_frame_num = frame_num / kThreadNum;
+    per_thread_frame_num = frame_num_ / kThreadNum;
     for (int i = 0; i < kThreadNum; i++) {
       frames_[i] = new Frame[per_thread_frame_num];
       hand_[i] = 0;
