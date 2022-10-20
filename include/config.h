@@ -65,10 +65,14 @@ constexpr size_t kMaxPoolBlockSize = (size_t)1 * 1024 * 1024 * 1024;  // 1GB mr
 constexpr int kMrBlockNum = kPoolSize / kMaxBlockSize;
 constexpr int kPoolMrBlockNum = kBufferPoolSize / kMaxPoolBlockSize;
 
+// read时预取的page个数
+constexpr int kPrefetchPageNum = 4;
+// net buffer的相关配置项
 constexpr int kNetBufferPageNum = 63;
 constexpr int kRemoteThreadWorkNum = 4;
 
-constexpr int MAX_BATCH_NUM = 2048;
+// RDMA相关参数配置
+constexpr int MAX_BATCH_NUM = 256;
 constexpr int MAX_CQE = MAX_BATCH_NUM;
 constexpr int MAX_QP_WR = MAX_BATCH_NUM;
 constexpr int MAX_CQ = MAX_BATCH_NUM;

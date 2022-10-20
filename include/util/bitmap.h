@@ -167,14 +167,7 @@ __always_inline void DeleteBitmap(Bitmap *bitmap) { Arena::getInstance().Free(bi
 
 /** 并发安全的bitmap 的实现 **/
 #define ALIGN_UP(a, siz) (((a) + (siz)-1) & (~((siz)-1)))
-#define atomic_xadd(P, V) __sync_fetch_and_add((P), (V))
 #define cmpxchg(P, O, N) __sync_bool_compare_and_swap((P), (O), (N))
-#define atomic_inc(P) __sync_add_and_fetch((P), 1)
-#define atomic_dec(P) __sync_add_and_fetch((P), -1)
-#define atomic_add(P, V) __sync_add_and_fetch((P), (V))
-#define atomic_set_bit(P, V) __sync_or_and_fetch((P), 1 << (V))
-#define atomic_clear_bit(P, V) __sync_and_and_fetch((P), ~(1 << (V)))
-
 class ConBitmap {
  public:
   ConBitmap() = delete;
@@ -224,11 +217,9 @@ class ConBitmap {
 
   void put_back(int bk) {
     unsigned long old_val;
-    // assert((this->data[bk >> 6] >> (bk & 63)) & 1);
     do {
       old_val = this->data[bk >> 6];
     } while (UNLIKELY(!cmpxchg(&this->data[bk >> 6], old_val, old_val ^ (1UL << (bk & 63)))));
-    // atomic_inc(&this->free_cnt);
     free_cnt++;
   }
 
